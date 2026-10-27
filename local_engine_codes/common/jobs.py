@@ -112,16 +112,17 @@ class Job:
                     "summary": (self.result or {}).get("summary")}
 
 
-def run_cmd(cmd, env=None, job=None, merge=False, on_line=None):
+def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None):
     """subprocess.run lookalike. With a job: cancellable. With merge=True stderr is folded
-    into stdout and each line is passed to on_line as it arrives."""
+    into stdout and each line is passed to on_line as it arrives. Standard input is always
+    closed: some tools (IEDB's bundle) otherwise sit waiting for it forever."""
     if job is None and on_line is None:
-        return subprocess.run(cmd, capture_output=True, text=True, env=env)
+        return subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cwd, stdin=subprocess.DEVNULL)
     env = dict(env or os.environ, PYTHONUNBUFFERED="1")     # so progress lines arrive immediately
     if job:
         job.check()
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT if merge else subprocess.PIPE,
-                         text=True, env=env, bufsize=1, start_new_session=True)
+                         stdin=subprocess.DEVNULL, text=True, env=env, bufsize=1, start_new_session=True, cwd=cwd)
     if job:
         job._register(p)
     try:

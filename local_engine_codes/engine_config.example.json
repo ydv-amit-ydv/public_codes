@@ -23,6 +23,16 @@
       "enabled": true,
       "python": "auto",
       "home": "auto"
+    },
+    "mhcflurry": {
+      "enabled": true,
+      "python": "auto",
+      "command": "auto"
+    },
+    "iedb_bundle": {
+      "enabled": true,
+      "home": "auto",
+      "python": "auto"
     }
   }
 }

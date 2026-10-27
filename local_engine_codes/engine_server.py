@@ -14,7 +14,7 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.serving import run_simple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts"):
+for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts", "MHC1/Processing_scripts"):
     sys.path.insert(0, os.path.join(HERE, sub))
 sys.path.insert(0, HERE)
 
@@ -22,6 +22,7 @@ from common import alleles as allele_lib, config            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
+import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
 import pipeline                                              # noqa: E402
 import pandas as pd                                          # noqa: E402
 
@@ -136,7 +137,59 @@ def health_prime(deep):
     return checks
 
 
-HEALTH = {"netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "prime": health_prime, "bigmhc": health_bigmhc}
+def health_mhcflurry(deep):
+    m = config.model("mhcflurry")
+    py = m.get("python") or ""
+    checks = [_check("python (has mhcflurry)", bool(py),
+                     (py or "no environment with mhcflurry found: see README, or set models.mhcflurry.python") + _auto(m, "python"))]
+    if not py:
+        return checks
+    cmd = m.get("command")
+    cmd = os.path.join(os.path.dirname(py), "mhcflurry-predict") if not cmd or cmd == "auto" else cmd
+    checks.append(_check("mhcflurry-predict", os.path.isfile(cmd), cmd))
+    r = subprocess.run([py, "-c", "import os, mhcflurry; from mhcflurry.downloads import get_path; "
+                        "p = get_path('models_class1_presentation', test_exists=False); "
+                        "print(p); raise SystemExit(0 if os.path.isdir(p) else 3)"], capture_output=True, text=True)
+    checks.append(_check("models_class1_presentation downloaded", r.returncode == 0,
+                         "ok" if r.returncode == 0 else "run: mhcflurry-downloads fetch models_class1_presentation"
+                         if r.returncode == 3 else (r.stderr.strip().splitlines() or ["import mhcflurry failed"])[-1]))
+    if deep and all(c["ok"] for c in checks):
+        try:
+            df, _ = mf.predict(pd.DataFrame({"Protein": ["t"], "Start": [1], "Peptide": ["GILGFVFTL"]}), ["HLA-A*02:01"])
+            good = len(df) == 1 and float(df["MHCF_Affinity_nM"].iloc[0]) < 100
+            checks.append(_check("GILGFVFTL / A*02:01 prediction", good,
+                                 f"{float(df['MHCF_Affinity_nM'].iloc[0]):.1f} nM" if len(df) else "no result"))
+        except Exception as e:
+            checks.append(_check("GILGFVFTL / A*02:01 prediction", False, e))
+    return checks
+
+
+def health_iedb_bundle(deep):
+    import shutil
+    m = config.model("iedb_bundle")
+    home, py = m.get("home") or "", m.get("python") or ""
+    checks = [_check("IEDB bundle folder", os.path.isfile(os.path.join(home, "src", "tcell_mhci.py")),
+                     (home or f"not found under {config.search_root()}: download IEDB_NG_TC1-*.tar.gz (see README)") + _auto(m, "home"))]
+    if checks[0]["ok"]:
+        checks.append(_check("bundle environment (.venv)", bool(py), (py or "run `uv sync` then `./configure` inside the bundle") + _auto(m, "python")))
+        miss = [t for t in ("tcsh", "gawk") if not shutil.which(t, path="/usr/bin:/bin")]
+        checks.append(_check("tcsh and gawk", not miss, "ok" if not miss else "missing: sudo apt install " + " ".join(miss)))
+        if len(home) > 51:
+            checks.append(_check("path length", True, f"{len(home)} characters; NetCTL (not NetCTLpan) needs 51 or fewer"))
+    if deep and all(c["ok"] for c in checks) and py:
+        try:
+            df, _ = ip.netctlpan([("t", "MSLLTEVETYVLSIIPSGPLKAEIAQRLEDVFAGKNTDLEVLMEWLKTRPILSPLTKGILGFVFTLTVPSERG")], [9], ["HLA-A*02:01"])
+            hit = df[df["Peptide"] == "GILGFVFTL"]
+            good = len(hit) == 1 and float(hit["CTLpan_%Rank"].iloc[0]) < 5
+            checks.append(_check("NetCTLpan: GILGFVFTL / A*02:01", good,
+                                 f"%Rank {float(hit['CTLpan_%Rank'].iloc[0]):.2f}" if len(hit) else "no result"))
+        except Exception as e:
+            checks.append(_check("NetCTLpan: GILGFVFTL / A*02:01", False, e))
+    return checks
+
+
+HEALTH = {"netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "mhcflurry": health_mhcflurry,
+          "prime": health_prime, "iedb_bundle": health_iedb_bundle, "bigmhc": health_bigmhc}
 
 
 @main.get("/api/config")
@@ -200,6 +253,8 @@ def _needed_models(params):
     if m.get("netmhcpan"): need.append("netmhcpan")
     if m.get("mixmhcpred") or m.get("prime"): need.append("mixmhcpred")      # PRIME calls MixMHCpred
     if m.get("prime"): need.append("prime")
+    if m.get("mhcflurry"): need.append("mhcflurry")
+    if m.get("netctlpan") or m.get("netchop"): need.append("iedb_bundle")
     if m.get("bigmhc_el") or m.get("bigmhc_im"): need.append("bigmhc")
     return need
 

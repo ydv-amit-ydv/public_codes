@@ -16,14 +16,17 @@ import pandas as pd
 from common import alleles as allele_lib, config
 import bigmhc_runner as bm
 import calis_immunogenicity as ci
+import iedb_processing as ip
+import mhcflurry_runner as mf
 import mixmhcpred_runner as mx
 import netmhcpan_app as nm
 import prime_runner as pr
 
 MAX_PAIRS = 3_000_000
-MODEL_KEYS = ("netmhcpan", "mixmhcpred", "prime", "iedb_imm", "bigmhc_el", "bigmhc_im")
+MODEL_KEYS = ("netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_imm", "netctlpan", "netchop", "bigmhc_el", "bigmhc_im")
 FILTER_KEYS = ("rank_el_max", "rank_ba_max", "aff_max", "mix_rank_max", "prime_rank_max",
-               "iedb_imm_min", "bm_el_min", "bm_im_min")
+               "iedb_imm_min", "mhcf_pres_rank_max", "mhcf_aff_max", "ctlpan_rank_max", "netchop_min",
+               "bm_el_min", "bm_im_min")
 
 
 def _num(x):
@@ -47,6 +50,9 @@ def normalise(params):
     nmp = {"ba": bool((p.get("nmp") or {}).get("ba", True)),
            "rankS": float((p.get("nmp") or {}).get("rankS", 0.5)),
            "rankW": float((p.get("nmp") or {}).get("rankW", 2.0))}
+    if p.get("mode", "scan") == "peptides" and (models["netctlpan"] or models["netchop"]):
+        raise ValueError("NetCTLpan and NetChop need the protein the peptides come from (cleavage depends on the "
+                         "surrounding residues): choose 'Cut a protein / FASTA into fragments'.")
     iedb = {"mask_choice": (p.get("iedb") or {}).get("mask_choice", "default"),
             "positions": str((p.get("iedb") or {}).get("positions", ""))}
     if iedb["mask_choice"] not in ci.MASK_CHOICES:
@@ -95,18 +101,20 @@ def preview(params):
     nm_ok, bm_ok, notes = _supported(p["alleles"], m)
     n_pep = int(peps["Peptide"].nunique()) if not peps.empty else 0
     use_bm = m["bigmhc_el"] or m["bigmhc_im"]
-    fast = (m["mixmhcpred"] or m["prime"])
+    fast = (m["mixmhcpred"] or m["prime"] or m["mhcflurry"] or m["netctlpan"])
+    if m["netctlpan"] and any(not (8 <= l <= 11) for l in p["lengths"]):
+        notes = notes + ["NetCTLpan scores 8-11-mers only; other lengths get no NetCTLpan score"]
     out = {"n_peptides": n_pep, "n_alleles": len(p["alleles"]), "warnings": warns + notes,
            "n_pairs_netmhcpan": n_pep * len(nm_ok) if m["netmhcpan"] else 0,
            "n_pairs_fast": n_pep * len(p["alleles"]) if fast else 0,
            "n_pairs_bigmhc": n_pep * len(bm_ok) if use_bm else 0,
-           "chained": bool(p["chain"] and use_bm and (m["netmhcpan"] or m["mixmhcpred"]))}
+           "chained": bool(p["chain"] and use_bm and (m["netmhcpan"] or m["mixmhcpred"] or m["mhcflurry"]))}
     out["too_big"] = max(out["n_pairs_netmhcpan"], out["n_pairs_fast"], out["n_pairs_bigmhc"]) > MAX_PAIRS
     return out
 
 
 def _binding_pass(df, f):
-    """NetMHCpan / MixMHCpred filters (the ones that gate BigMHC when chained)."""
+    """NetMHCpan / MixMHCpred / MHCflurry binding filters (the ones that gate BigMHC when chained)."""
     ok = pd.Series(True, index=df.index)
     if "NMP_%Rank_EL" in df:
         if f["rank_el_max"] is not None: ok &= df["NMP_%Rank_EL"] <= f["rank_el_max"]
@@ -114,6 +122,9 @@ def _binding_pass(df, f):
         if f["aff_max"] is not None and "NMP_Aff_nM" in df: ok &= df["NMP_Aff_nM"] <= f["aff_max"]
     if "MixMHC_%Rank" in df and f["mix_rank_max"] is not None:
         ok &= df["MixMHC_%Rank"] <= f["mix_rank_max"]
+    if "MHCF_Presentation_%Rank" in df:
+        if f["mhcf_pres_rank_max"] is not None: ok &= df["MHCF_Presentation_%Rank"] <= f["mhcf_pres_rank_max"]
+        if f["mhcf_aff_max"] is not None: ok &= df["MHCF_Affinity_nM"] <= f["mhcf_aff_max"]
     return ok
 
 
@@ -145,6 +156,12 @@ def run(params, job):
         job.stage("prime", "PRIME 2.1 (immunogenicity)", weight=0.5)
     if m["iedb_imm"]:
         job.stage("iedb_imm", "IEDB immunogenicity (Calis 2013)", weight=0.2)
+    if m["mhcflurry"]:
+        job.stage("mhcflurry", "MHCflurry 2 (affinity, processing, presentation)", weight=1.0)
+    if m["netctlpan"]:
+        job.stage("netctlpan", "NetCTLpan 1.1 (processing)", weight=0.5)
+    if m["netchop"]:
+        job.stage("netchop", "NetChop 3.1 (proteasome cleavage)", weight=0.2)
     for x in bm_models:
         job.stage(f"bigmhc_{x}", f"BigMHC {x.upper()}", weight=2.0)
     job.stage("merge", "Merging and filtering", weight=0.3)
@@ -181,6 +198,23 @@ def run(params, job):
         warns += n
         job.finish_stage("iedb_imm", f"{len(iedb):,} scores")
 
+    seqs = nm.read_sequences(p["text"]) if p["mode"] == "scan" else None
+    mhcf = ctl = chop = None
+    if m["mhcflurry"]:
+        mhcf, n = mf.predict(peps, p["alleles"], sequences=seqs, job=job)
+        warns += n
+        job.finish_stage("mhcflurry", f"{len(mhcf):,} predictions")
+    if m["netctlpan"]:
+        ctl, n = ip.netctlpan(seqs, p["lengths"], p["alleles"], job=job)
+        warns += n
+        job.finish_stage("netctlpan", f"{len(ctl):,} scores")
+    if m["netchop"]:
+        chop = ip.netchop_cterm(seqs, peps, job=job)
+        job.finish_stage("netchop", f"{len(chop):,} scores")
+    if seqs and any(set(sq) - set("ACDEFGHIKLMNPQRSTVWY") for _, sq in seqs) and (m["netctlpan"] or m["netchop"]):
+        warns.append("Characters that are not amino acids were replaced by X before NetCTLpan / NetChop; "
+                     "scores near them are less reliable")
+
     # ---- 3. assemble the pair table so far (the chain gate needs it) ---------------------------------
     if nmp is not None:
         base = peps.merge(nmp, on="Peptide")
@@ -189,11 +223,16 @@ def run(params, job):
     for extra in (mix, pri, iedb):
         if extra is not None and not extra.empty:
             base = base.merge(extra, on=["Peptide", "Allele"], how="left")
+    for extra in (mhcf, ctl):                                     # context-dependent: keyed by position
+        if extra is not None and not extra.empty:
+            base = base.merge(extra, on=["Protein", "Start", "Peptide", "Allele"], how="left")
+    if chop is not None and not chop.empty:
+        base = base.merge(chop, on=["Protein", "Start", "Peptide"], how="left")
 
     # ---- 4. BigMHC (on the pairs that pass the binding filters when chained) -------------------------
     bmres = None
     if use_bm:
-        gated = p["chain"] and (nmp is not None or mix is not None)
+        gated = p["chain"] and (nmp is not None or mix is not None or mhcf is not None)
         pairs = base[_binding_pass(base, f)] if gated else base
         pairs = pairs[pairs["Allele"].isin(bm_ok)][["Peptide", "Allele"]].drop_duplicates()
         if gated:
@@ -230,6 +269,18 @@ def run(params, job):
         have = "PRIME_%Rank" in base
         flag("Pass_PRIME", (base["PRIME_%Rank"] <= f["prime_rank_max"]) if (have and f["prime_rank_max"] is not None) else yes,
              ["PRIME_%Rank"] if have else [])
+    if mhcf is not None:
+        have = "MHCF_Presentation_%Rank" in base
+        ok = _binding_pass(base[[c for c in ("MHCF_Presentation_%Rank", "MHCF_Affinity_nM") if c in base]], f) if have else yes
+        flag("Pass_MHCF", ok, ["MHCF_Presentation_%Rank"] if have else [])
+    if ctl is not None:
+        have = "CTLpan_%Rank" in base
+        flag("Pass_CTLpan", (base["CTLpan_%Rank"] <= f["ctlpan_rank_max"]) if (have and f["ctlpan_rank_max"] is not None) else yes,
+             ["CTLpan_%Rank"] if have else [])
+    if chop is not None:
+        have = "NetChop_Cterm" in base
+        flag("Pass_NetChop", (base["NetChop_Cterm"] >= f["netchop_min"]) if (have and f["netchop_min"] is not None) else yes,
+             ["NetChop_Cterm"] if have else [])
     if iedb is not None:
         flag("Pass_IEDB", (base["IEDB_Immunogenicity"] >= f["iedb_imm_min"]) if f["iedb_imm_min"] is not None else yes,
              ["IEDB_Immunogenicity"])
@@ -240,13 +291,15 @@ def run(params, job):
         flag("Pass_BigMHC", ok, [c for c in base if c.startswith("BigMHC_")])
     skipped = [k for k, models in (("rank_el_max", "netmhcpan"), ("rank_ba_max", "netmhcpan"), ("aff_max", "netmhcpan"),
                                    ("mix_rank_max", "mixmhcpred"), ("prime_rank_max", "prime"),
-                                   ("iedb_imm_min", "iedb_imm")) if f[k] is not None and not m[models]]
+                                   ("iedb_imm_min", "iedb_imm"), ("mhcf_pres_rank_max", "mhcflurry"), ("mhcf_aff_max", "mhcflurry"),
+                                   ("ctlpan_rank_max", "netctlpan"), ("netchop_min", "netchop")) if f[k] is not None and not m[models]]
     if skipped:
         warns.append("Filters ignored because their model was not run: " + ", ".join(skipped))
     base["Pass_All"] = base[flags].all(axis=1) if flags else pd.Series(True, index=base.index)
 
     sort_cols, asc = ["Pass_All"], [False]
-    for col, a in (("NMP_%Rank_EL", True), ("MixMHC_%Rank", True), ("PRIME_%Rank", True), ("BigMHC_IM", False)):
+    for col, a in (("NMP_%Rank_EL", True), ("MixMHC_%Rank", True), ("MHCF_Presentation_%Rank", True),
+                   ("PRIME_%Rank", True), ("CTLpan_%Rank", True), ("BigMHC_IM", False)):
         if col in base:
             sort_cols.append(col); asc.append(a)
     base = base.sort_values(sort_cols, ascending=asc, na_position="last", kind="stable").reset_index(drop=True)
@@ -260,11 +313,13 @@ def run(params, job):
     summ["Alleles_passed_list"] = summ["Alleles_passed_list"].fillna("")
     for col, fn, name in (("NMP_%Rank_EL", "min", "Best_NMP_%Rank_EL"), ("NMP_Aff_nM", "min", "Best_NMP_Aff_nM"),
                           ("MixMHC_%Rank", "min", "Best_MixMHC_%Rank"), ("PRIME_%Rank", "min", "Best_PRIME_%Rank"),
-                          ("IEDB_Immunogenicity", "max", "Max_IEDB_Immunogenicity"), ("BigMHC_EL", "max", "Max_BigMHC_EL"), ("BigMHC_IM", "max", "Max_BigMHC_IM")):
+                          ("IEDB_Immunogenicity", "max", "Max_IEDB_Immunogenicity"),
+                          ("MHCF_Presentation_%Rank", "min", "Best_MHCF_Presentation_%Rank"), ("CTLpan_%Rank", "min", "Best_CTLpan_%Rank"),
+                          ("NetChop_Cterm", "max", "Max_NetChop_Cterm"), ("BigMHC_EL", "max", "Max_BigMHC_EL"), ("BigMHC_IM", "max", "Max_BigMHC_IM")):
         if col in base:
             summ = summ.merge(getattr(g[col], fn)().rename(name).reset_index(), on=keys, how="left")
     order, asc = ["Alleles_passed"], [False]
-    for col, a_ in (("Best_NMP_%Rank_EL", True), ("Best_MixMHC_%Rank", True), ("Best_PRIME_%Rank", True), ("Max_BigMHC_IM", False)):
+    for col, a_ in (("Best_NMP_%Rank_EL", True), ("Best_MixMHC_%Rank", True), ("Best_MHCF_Presentation_%Rank", True), ("Best_PRIME_%Rank", True), ("Max_BigMHC_IM", False)):
         if col in summ:
             order.append(col); asc.append(a_)
     summ = summ.sort_values(order, ascending=asc, na_position="last", kind="stable").reset_index(drop=True)
@@ -279,6 +334,6 @@ def run(params, job):
         "peptides": n_pep, "pairs": int(len(base)), "pairs_passed": int(base["Pass_All"].sum()),
         "peptides_passed": int((summ["Alleles_passed"] > 0).sum()),
         "seconds": round(time.time() - t0, 1), "warnings": list(dict.fromkeys(warns)),
-        "chained": bool(use_bm and p["chain"] and (nmp is not None or mix is not None))}}
+        "chained": bool(use_bm and p["chain"] and (nmp is not None or mix is not None or mhcf is not None))}}
     job.log(f"done in {time.time() - t0:.1f}s: {int(base['Pass_All'].sum()):,} pairs / "
             f"{int((summ['Alleles_passed'] > 0).sum()):,} peptides pass")

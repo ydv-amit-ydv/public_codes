@@ -90,9 +90,54 @@ open(f"{PRM}/lib/PRIME.cc", "w").write(""); open(f"{PRM}/lib/PRIME.x", "wb").wri
 open(f"{PRM}/lib/alleles.txt", "w").write("A0201\nB0702\nA0101\n")
 open(f"{PRM}/PRIME", "w").write("#!/bin/bash\nexec python3 - \"$@\" <<'EOF'\n" + STUBPY.replace("sys.argv[0]", "'PRIME'") + "EOF\n")
 
+
+# stand-in for MHCflurry's command: it only gives a good processing score when flanks are supplied
+MFD = os.path.join(TMP, "mfd"); os.makedirs(MFD)
+open(f"{MFD}/mhcflurry-predict", "w").write("#!%s\n" % sys.executable + textwrap.dedent('''\
+    import sys, csv
+    a = sys.argv[1:]; inp = a[0]; out = a[a.index("--out") + 1]
+    rows = list(csv.DictReader(open(inp)))
+    with open(out, "w") as f:
+        f.write("allele,peptide,mhcflurry_affinity,mhcflurry_affinity_percentile,mhcflurry_processing_score,mhcflurry_presentation_score,mhcflurry_presentation_percentile\\n")
+        for r in rows:
+            hit = r["peptide"] == "GILGFVFTL"
+            if r["allele"].startswith("H-2"): f.write(f"{r['allele']},{r['peptide']},,,,,\\n"); continue      # --no-throw: NaN
+            flank = bool(r.get("n_flank")) or bool(r.get("c_flank"))
+            f.write(f"{r['allele']},{r['peptide']},{25.0 if hit else 5000.0},{0.1 if hit else 9.0},{0.9 if flank else 0.1},{0.8 if hit else 0.01},{0.2 if hit else 40.0}\\n")
+    '''))
+os.chmod(f"{MFD}/mhcflurry-predict", 0o755)
+
+# stand-in for the IEDB T Cell Class I bundle: refuses what the real one refuses
+BUN = os.path.join(TMP, "bundle", "ng_tc1-v0.2-beta"); os.makedirs(f"{BUN}/src"); os.makedirs(f"{BUN}/.venv/bin")
+open(f"{BUN}/pyproject.toml", "w").write("[project]\nname='ng_tc1'\n")
+os.symlink(sys.executable, f"{BUN}/.venv/bin/python")
+open(f"{BUN}/src/tcell_mhci.py", "w").write(textwrap.dedent('''\
+    import json, sys
+    a = sys.argv[1:]; j = json.load(open(a[a.index("-j") + 1])); pred = j["predictors"][0]
+    seqs = [l for l in j["input_sequence_text"].splitlines()]
+    if any(c not in ">0123456789ACDEFGHIKLMNPQRSTVWYX" for l in seqs for c in l): sys.exit("stub: stray character reached the bundle")
+    recs = list(zip(seqs[0::2], seqs[1::2]))
+    if pred["method"] == "netchop":
+        print("sequence_number\\tposition\\tamino_acid\\tprediction_score")
+        for i, (_, sq) in enumerate(recs, 1):
+            for k, c in enumerate(sq, 1): print(f"{i}\\t{k}\\t{c}\\t{0.9 if c == 'L' else 0.1}")
+    else:
+        if "," in j["alleles"]: sys.exit("stub: several alleles in one job (the real bundle mislabels them)")
+        if j["alleles"] == "HLA-A*99:99": sys.stderr.write("Allele(s) incompatible with netctlpan: HLA-A*99:99. try quotes.\\n"); sys.exit(1)
+        lo, hi = j["peptide_length_range"]
+        print("sequence_number\\tstart\\tpeptide\\tallele\\tmhc_prediction\\ttap_prediction_score\\tcleavage_prediction_score\\tcombined_prediction_score\\tpercentile_rank")
+        for i, (_, sq) in enumerate(recs, 1):
+            for L in range(lo, hi + 1):
+                for st in range(len(sq) - L + 1):
+                    pep = sq[st:st + L]; hit = pep == "GILGFVFTL"
+                    print(f"{i}\\t{st + 1}\\t{pep}\\t{j['alleles']}\\t0.5\\t1.0\\t0.9\\t{0.96 if hit else 0.1}\\t{0.4 if hit else 50.0}")
+    '''))
+
 settings = {"tmp_dir": os.path.join(TMP, "work"),
             "models": {"netmhcpan": {"home": NMP}, "bigmhc": {"python": sys.executable, "home": BM},
-                       "mixmhcpred": {"home": MIX, "python": sys.executable}, "prime": {"home": PRM, "python": sys.executable}}}
+                       "mixmhcpred": {"home": MIX, "python": sys.executable}, "prime": {"home": PRM, "python": sys.executable},
+                       "mhcflurry": {"python": sys.executable, "command": f"{MFD}/mhcflurry-predict"},
+                       "iedb_bundle": {"home": BUN, "python": f"{BUN}/.venv/bin/python"}}}
 
 # ---- discovery: copy-and-run layout (no explicit paths anywhere) ----------------------
 import shutil                                  # noqa: E402
@@ -232,6 +277,8 @@ assert 40 in dones, dones                                                    # 7
 # the pipeline preflights BigMHC's imports, so give the stub env fake torch/psutil modules
 FAKE = os.path.join(TMP, "fake"); os.makedirs(FAKE)
 open(f"{FAKE}/torch.py", "w").write("__version__ = 'stub'\n"); open(f"{FAKE}/psutil.py", "w").write("")
+os.makedirs(f"{FAKE}/mhcflurry"); open(f"{FAKE}/mhcflurry/__init__.py", "w").write("__version__ = 'stub'\n")
+open(f"{FAKE}/mhcflurry/downloads.py", "w").write(f"def get_path(name, test_exists=True):\n    return {MFD!r}\n")
 os.environ["PYTHONPATH"] = FAKE
 
 
@@ -383,6 +430,64 @@ assert sc[("FGPWFRAIEK", "HLA-A*02:01")] != sc[("FGPWFRAIEK", "HLA-A*24:02")], s
 r = c.post("/api/pipeline/run", json={**iedb, "iedb": {"mask_choice": "custom", "positions": "x,y"}})
 assert r.status_code == 400 and "Positions to mask" in r.get_json()["error"], r.get_json()
 r = c.post("/api/pipeline/run", json={**iedb, "iedb": {"mask_choice": "bogus"}}); assert r.status_code == 400
+
+
+# ---- MHCflurry, NetCTLpan, NetChop ---------------------------------------------------------------------
+import shutil as _sh                                                       # noqa: E402
+SEQ = "MSLLTEVETYVLSIIPSGPLKAEIAQRLEDVFAGKNTDLEVLMEWLKTRPILSPLTKGILGFVFTLTVPSERG"
+proc = {"text": ">flu desc\n" + SEQ, "mode": "scan", "lengths": [9], "alleles": ["HLA-A*02:01", "HLA-B*07:02", "H-2-Kb"],
+        "chain": False, "filters": {}}
+# MHCflurry: flanks are passed in scan mode (processing 0.9) and absent for loose peptides (0.1); unsupported allele reported
+d = wait_job(c.post("/api/pipeline/run", json={**proc, "models": {"mhcflurry": True}}).get_json()["id"])
+assert d["state"] == "done", d
+rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"] if r["Allele"] != "H-2-Kb"}
+g = rows[("GILGFVFTL", "HLA-A*02:01")]
+assert g["MHCF_Affinity_nM"] == 25.0 and g["MHCF_Processing"] == 0.9 and g["MHCF_Presentation_%Rank"] == 0.2 and g["Pass_MHCF"], g
+assert any("MHCflurry does not support: H-2-Kb" in w for w in d["summary"]["warnings"]), d["summary"]["warnings"]
+d = wait_job(c.post("/api/pipeline/run", json={**proc, "mode": "peptides", "text": "GILGFVFTL", "alleles": ["HLA-A*02:01"],
+                                              "models": {"mhcflurry": True}}).get_json()["id"])
+assert c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"][0]["MHCF_Processing"] == 0.1
+# filters and ranking
+d = wait_job(c.post("/api/pipeline/run", json={**proc, "alleles": ["HLA-A*02:01"], "models": {"mhcflurry": True},
+                                              "filters": {"mhcf_pres_rank_max": 1, "mhcf_aff_max": 100}}).get_json()["id"])
+assert d["summary"]["pairs_passed"] == 1, d["summary"]
+# MHCflurry gates BigMHC when chained
+d = wait_job(c.post("/api/pipeline/run", json={**proc, "alleles": ["HLA-A*02:01"], "chain": True,
+                                              "models": {"mhcflurry": True, "bigmhc_el": True},
+                                              "filters": {"mhcf_pres_rank_max": 1}}).get_json()["id"])
+rows = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+assert rows["GILGFVFTL"]["BigMHC_EL"] is not None and rows["MSLLTEVET"]["BigMHC_EL"] is None and d["summary"]["chained"], d["summary"]
+
+if _sh.which("tcsh", path="/usr/bin:/bin") and _sh.which("gawk", path="/usr/bin:/bin"):
+    seqq = SEQ[:30] + '"' + SEQ[31:]                                # a stray quote must not reach the bundle
+    d = wait_job(c.post("/api/pipeline/run", json={**proc, "text": ">flu\n" + seqq, "lengths": [9, 12], "alleles": ["HLA-A*02:01", "HLA-B*07:02", "HLA-A*99:99"],
+                                                  "models": {"netctlpan": True, "netchop": True}}).get_json()["id"])
+    assert d["state"] == "done", d
+    rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+    a2, b7 = rows[("GILGFVFTL", "HLA-A*02:01")], rows[("GILGFVFTL", "HLA-B*07:02")]
+    assert a2["CTLpan_%Rank"] == 0.4 and a2["CTLpan_Combined"] == 0.96 and b7["CTLpan_%Rank"] == 0.4, (a2, b7)     # one job per allele, labelled right
+    assert a2["NetChop_Cterm"] == 0.9, a2                      # cleavage after the peptide's last residue (L)
+    w = d["summary"]["warnings"]
+    assert any("NetCTLpan does not support: HLA-A*99:99" in x for x in w) and any("8-11-mers only" in x for x in w) and any("replaced by X" in x for x in w), w
+    d = wait_job(c.post("/api/pipeline/run", json={**proc, "alleles": ["HLA-A*02:01"], "models": {"netctlpan": True},
+                                                  "filters": {"ctlpan_rank_max": 1}}).get_json()["id"])
+    assert d["summary"]["pairs_passed"] == 1, d["summary"]
+    d = wait_job(c.post("/api/pipeline/run", json={**proc, "alleles": ["HLA-A*02:01"], "models": {"netchop": True},
+                                                  "filters": {"netchop_min": 0.5}}).get_json()["id"])
+    assert 0 < d["summary"]["pairs_passed"] < d["summary"]["pairs"], d["summary"]
+    for name in ("mhcflurry", "iedb_bundle"):
+        h = c.post(f"/api/health/{name}?deep=1").get_json(); assert h["ok"], h
+else:
+    print("skipped NetCTLpan/NetChop tests: tcsh and gawk are not installed")
+# they need the protein: loose peptides are refused with the reason
+r = c.post("/api/pipeline/run", json={**proc, "mode": "peptides", "text": "GILGFVFTL", "models": {"netctlpan": True}})
+assert r.status_code == 400 and "need the protein" in r.get_json()["error"], r.get_json()
+# an unready bundle is refused up front
+nob = json.loads(json.dumps(settings)); nob["models"]["iedb_bundle"]["home"] = "/nonexistent"
+c.put("/api/config", json={"text": json.dumps(nob)})
+r = c.post("/api/pipeline/run", json={**proc, "models": {"netchop": True}})
+assert r.status_code == 400 and "iedb_bundle is not ready" in r.get_json()["error"], r.get_json()
+c.put("/api/config", json={"text": json.dumps(settings)})
 
 os.environ.pop("PYTHONPATH", None)
 

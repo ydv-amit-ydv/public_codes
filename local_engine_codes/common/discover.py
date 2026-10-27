@@ -13,7 +13,8 @@ always win over discovery.
 import glob, hashlib, os, re, subprocess, sys
 
 _SKIP = {".git", "data", "models", "nb", "test", "node_modules", "__pycache__", ".venv",
-         "lib", "code", "proteome", "pwm", "temp", "input", "output"}      # inside the tools, never a tool root
+         "lib", "code", "proteome", "pwm", "temp", "input", "output",
+         "method", "test_data", "docker", "deploy", "examples"}      # inside the tools, never a tool root
 _MAX_DEPTH = 6
 
 
@@ -61,6 +62,20 @@ def find_prime(root):
     return min(hits, key=lambda p: p.count(os.sep)) if hits else None
 
 
+def find_iedb_bundle(root):
+    """IEDB next-generation T Cell Class I standalone: a folder with src/tcell_mhci.py and pyproject.toml."""
+    hits = [dp for dp, dns, fns in _walk(root)
+            if "pyproject.toml" in fns and os.path.isfile(os.path.join(dp, "src", "tcell_mhci.py"))]
+    return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
+def find_iedb_bundle_python(root):
+    """The bundle's own uv environment (./.venv created by `uv sync`)."""
+    home = find_iedb_bundle(root)
+    py = os.path.join(home, ".venv", "bin", "python") if home else None
+    return py if py and os.path.isfile(py) else None
+
+
 _py_cache = {}
 
 
@@ -93,6 +108,20 @@ def find_python(mods=("numpy", "pandas")):
     """An interpreter that can import `mods`: the server's own first, then conda envs."""
     for py in [sys.executable] + _conda_pythons():
         if os.path.isfile(py) and _can_import(py, mods):
+            return py
+    return None
+
+
+def find_mhcflurry_python():
+    """An interpreter that can import mhcflurry. MHCFLURRY_PYTHON wins; an env named like
+    'mhcflurry' is tried first."""
+    forced = os.environ.get("MHCFLURRY_PYTHON")
+    if forced:
+        return os.path.expanduser(forced)
+    envs = _conda_pythons()
+    envs.sort(key=lambda p: ("mhcflurry" not in p.lower(), p))
+    for py in [sys.executable] + envs:
+        if os.path.isfile(py) and _can_import(py, ("mhcflurry",)):
             return py
     return None
 

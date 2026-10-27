@@ -6,12 +6,14 @@ Local, offline prediction tools that produce IEDB-style tables for epitope filte
 
 | What | Status |
 |---|---|
-| **Pipeline** tab: one form, five models, chained, filters, per-peptide summary | working |
+| **Pipeline** tab: one form, nine models, chained, filters, per-peptide summary | working |
 | NetMHCpan 4.2: binding affinity + eluted ligand (`MHC1/BA_EL_scripts/`) | working, runs in parallel |
 | MixMHCpred 3.0: presentation (`MHC1/BA_EL_scripts/`) | working (reproduces the authors' test output) |
+| MHCflurry 2: affinity + processing + presentation (`MHC1/BA_EL_scripts/`) | working (real model checked) |
 | PRIME 2.1: immunogenicity (`MHC1/Immunogenicity_scripts/`) | working (reproduces the authors' test output) |
+| IEDB Class I immunogenicity (Calis 2013, "Positions to mask") baseline | working, built in |
 | BigMHC EL + IM (`MHC1/Immunogenicity_scripts/`) | working |
-| IEDB Class I immunogenicity (Calis 2013, "Positions to mask") as a baseline (`MHC1/Immunogenicity_scripts/calis_immunogenicity.py`) | working, built in, nothing to install |
+| NetCTLpan 1.1 + NetChop 3.1 antigen processing, via IEDB's bundle (`MHC1/Processing_scripts/`) | working (real tools checked) |
 | MHC class II BA/EL and CD4 immunogenicity | planned, see below |
 
 Third-party predictors are licensed separately and are not stored here.
@@ -92,6 +94,49 @@ MixMHCpred needs only numpy and pandas, which the engine's own environment alrea
 ships a binary for other systems, so the engine rebuilds `lib/PRIME.x` for Linux the first time
 PRIME runs. Settings -> **Test run** checks each one with GILGFVFTL on A*02:01. PRIME calls
 MixMHCpred, so selecting PRIME needs MixMHCpred installed.
+
+## Installing MHCflurry
+
+Open source (Apache 2.0), runs on torch, needs Python 3.10+, so it gets its own environment:
+
+```bash
+conda create -n mhcflurry python=3.11 -y && conda activate mhcflurry
+pip install mhcflurry --extra-index-url https://download.pytorch.org/whl/cpu     # CPU-only torch is enough
+mhcflurry-downloads fetch models_class1_presentation                              # 160 MB of trained models
+```
+
+The engine finds the environment (one named like `mhcflurry` is tried first), checks that the models are
+downloaded, and shows the reason in Settings if not. For peptides cut from a protein it passes 15 residues of
+flanking sequence on each side, which is what its processing predictor is designed for.
+
+## Installing NetCTLpan and NetChop (IEDB's bundle)
+
+Both are DTU programs that IEDB redistributes inside its next-generation T Cell Class I standalone
+(free for academic and non-profit use; the bundle carries DTU's licence text). The engine drives the
+bundle's own `tcell_mhci.py` in its own environment:
+
+```bash
+sudo apt install -y tcsh gawk
+pip install uv                                    # or: curl -LsSf https://astral.sh/uv/install.sh | sh
+mkdir -p ~/local_engines/iedb && cd ~/local_engines/iedb
+wget https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/IEDB_NG_TC1-v0.2-beta.tar.gz    # 743 MB; the README in that folder names the current file
+tar -xzf IEDB_NG_TC1-v0.2-beta.tar.gz
+cd ng_tc1-v0.2-beta && uv sync && source .venv/bin/activate && ./configure
+```
+
+Then Settings -> **Test run** on `iedb_bundle`. Notes from testing the real tools:
+
+- **They need the protein.** Cleavage depends on the residues around a peptide, so NetCTLpan and NetChop apply when a
+  protein is cut into fragments, not to loose peptides (the form switches them off in that mode).
+- **NetCTLpan scores 8-11-mers only**; other lengths get no NetCTLpan score and the page says so.
+- **One bundle job per allele.** With several alleles in one job the bundle labels every row with the whole allele
+  list, so the engine runs alleles separately (up to 4 in parallel).
+- **Stray characters** (a `"` or `*` in a FASTA) make NetCTLpan return nothing for the whole protein, so they are
+  replaced by `X` first, with a warning. The bundle's programs also hang if their standard input is left open;
+  the engine always closes it.
+- Speed (warm, 4 cores): the HEV FASTA (4,901 peptides, 3 alleles) takes about 2.5 minutes through all nine models;
+  MHCflurry about 45 s, NetCTLpan about 45 s for 3 alleles (it grows with the number of alleles), BigMHC about 25 s
+  per model on the chained pairs. The first run is slower while disk caches fill.
 
 ## Settings (optional override, edited live in the GUI)
 

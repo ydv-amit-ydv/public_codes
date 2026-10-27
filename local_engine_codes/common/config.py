@@ -18,6 +18,8 @@ DEFAULT = {
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
         "bigmhc": {"enabled": True, "python": "auto", "home": "auto", "device": "cpu", "jobs": 0},
+        "mhcflurry": {"enabled": True, "python": "auto", "command": "auto"},
+        "iedb_bundle": {"enabled": True, "home": "auto", "python": "auto"},
         "mixmhcpred": {"enabled": True, "python": "auto", "home": "auto"},
         "prime": {"enabled": True, "python": "auto", "home": "auto"},
     },
@@ -26,6 +28,9 @@ DEFAULT = {
 _FINDERS = {("netmhcpan", "home"): lambda root: discover.find_netmhcpan(root),
             ("bigmhc", "home"): lambda root: discover.find_bigmhc(root),
             ("bigmhc", "python"): lambda root: discover.find_bigmhc_python(),
+            ("mhcflurry", "python"): lambda root: discover.find_mhcflurry_python(),
+            ("iedb_bundle", "home"): lambda root: discover.find_iedb_bundle(root),
+            ("iedb_bundle", "python"): lambda root: discover.find_iedb_bundle_python(root),
             ("mixmhcpred", "home"): lambda root: discover.find_mixmhcpred(root),
             ("mixmhcpred", "python"): lambda root: discover.find_python(("numpy", "pandas")),
             ("prime", "home"): lambda root: discover.find_prime(root),
@@ -33,7 +38,7 @@ _FINDERS = {("netmhcpan", "home"): lambda root: discover.find_netmhcpan(root),
 
 # key -> accepted type, per known model key
 _TYPES = {"enabled": bool, "home": str, "python": str, "device": str, "jobs": int,
-          "workers": int, "alleles_per_call": int}
+          "workers": int, "alleles_per_call": int, "command": str}
 
 
 class ConfigError(ValueError):
@@ -95,7 +100,7 @@ def model(name):
     {'enabled': False}."""
     m = dict(load()["models"].get(name, {"enabled": False}))
     auto = []
-    for k in ("home", "python"):
+    for k in ("home", "python", "command"):
         v = m.get(k)
         finder = _FINDERS.get((name, k))
         if finder and (not v or v == "auto"):
