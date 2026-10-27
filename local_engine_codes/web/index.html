@@ -13,6 +13,7 @@ nav button{background:#3a4468;color:#fff;border:0;padding:7px 14px;border-radius
 nav button.on{background:var(--acc)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#888;margin-right:6px}
 .dot.ok{background:#3c3}.dot.bad{background:#e44}
+.fdot{margin-right:7px}
 .pane{flex:1;display:none;min-height:0}.pane.on{display:flex}
 iframe{flex:1;border:0;width:100%}
 #form{width:430px;max-width:100%;padding:14px;overflow:auto;background:var(--card);border-right:1px solid var(--line)}
@@ -78,11 +79,12 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <button class="b" id="clearA">clear all</button>
 
   <h3>3. Models</h3>
-  <label class="i"><input type="checkbox" id="m_nmp" checked> NetMHCpan 4.2: binding (EL + BA)</label>
-  <label class="i"><input type="checkbox" id="m_mix" checked> MixMHCpred 3.0: presentation</label>
-  <label class="i"><input type="checkbox" id="m_prime" checked> PRIME 2.1: immunogenicity</label>
-  <label class="i"><input type="checkbox" id="m_el" checked> BigMHC EL: presentation</label>
-  <label class="i"><input type="checkbox" id="m_im" checked> BigMHC IM: immunogenicity</label>
+  <label class="i"><span class="dot fdot" data-m="netmhcpan"></span><input type="checkbox" id="m_nmp" checked> NetMHCpan 4.2: binding (EL + BA)</label>
+  <label class="i"><span class="dot fdot" data-m="mixmhcpred"></span><input type="checkbox" id="m_mix" checked> MixMHCpred 3.0: presentation</label>
+  <label class="i"><span class="dot fdot" data-m="prime"></span><input type="checkbox" id="m_prime" checked> PRIME 2.1: immunogenicity</label>
+  <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_el" checked> BigMHC EL: presentation</label>
+  <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_im" checked> BigMHC IM: immunogenicity</label>
+  <div id="notready" class="bad" style="font-size:12px;margin:2px 0 4px"></div>
   <label class="i muted"><input type="checkbox" disabled> IEDB Class I immunogenicity (baseline; not installed yet)</label>
   <label class="i muted"><input type="checkbox" disabled> MHC class II models (planned)</label>
   <label class="i" style="margin-top:6px"><input type="checkbox" id="chain" checked>
@@ -328,9 +330,25 @@ async function saveCfg(){
   $("msg").innerHTML = r.ok ? '<span class="ok">saved</span>' : `<span class="bad">${esc(d.error)}</span>`;
   if (r.ok) { loadCfg(); checkAll(false); }
 }
+const BOXES = {netmhcpan: ["m_nmp"], mixmhcpred: ["m_mix"], prime: ["m_prime"], bigmhc: ["m_el", "m_im"]};
+const NOTREADY = {}, AUTOOFF = {};
+function showReadiness(m, d){
+  document.querySelectorAll(`.fdot[data-m="${m}"]`).forEach(e => e.className = "dot fdot " + (d.ok ? "ok" : "bad"));
+  const why = d.ok ? "" : ((d.checks.find(c => !c.ok) || {}).name || "not ready");
+  NOTREADY[m] = d.ok ? null : why;
+  (BOXES[m] || []).forEach(id => {
+    const box = $(id), lab = box.parentElement;
+    if (!d.ok) { if (box.checked) AUTOOFF[id] = true; box.checked = false; box.disabled = true; lab.title = "Not ready: " + why + " (see Settings)"; }
+    else { box.disabled = false; lab.title = ""; if (AUTOOFF[id]) { box.checked = true; AUTOOFF[id] = false; } }
+  });
+  const bad = Object.keys(NOTREADY).filter(k => NOTREADY[k]);
+  $("notready").innerHTML = bad.length ? "Not ready: " + bad.map(k => `${k} (${esc(NOTREADY[k])})`).join(", ") + ". See Settings." : "";
+  queuePreview();
+}
 async function check(m, deep){
   const d = await (await fetch(`api/health/${m}` + (deep ? "?deep=1" : ""), {method:"POST"})).json();
-  const dot = $("d_" + m); if (dot) dot.className = "dot " + (d.ok ? "ok" : "bad"); return d;
+  const dot = $("d_" + m); if (dot) dot.className = "dot " + (d.ok ? "ok" : "bad");
+  showReadiness(m, d); return d;
 }
 async function checkAll(deep){
   let html = "";
