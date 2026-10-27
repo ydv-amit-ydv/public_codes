@@ -1,7 +1,7 @@
 # Epitope Filter Engine (local)
 
-Local, offline prediction tools that produce IEDB-style tables for epitope filtering
-(an Epitope Workbench ingests them). Each model is its own tool;
+Local, offline prediction tools that produce the IEDB-style tables the Epitope
+Workbench (`IEDB/HEV/Scripts/epitope_app.py`) filters. Each model is its own tool;
 `engine_server.py` hosts them side by side and will become the combined pipeline.
 
 | What | Status |
@@ -44,6 +44,31 @@ set the filters, press **Run**.
   3,000,000 predictions are refused (use fewer alleles or sizes).
 - Stray characters in a FASTA (for example a `"` left by GenBank formatting) make the
   windows containing them skip, and the page says so.
+
+## Consensus, agreement and population-weighted ranking
+
+Every run ends with a consensus step (`consensus.py`, tested in `test_consensus.py`) that turns the tools' outputs into one ranked answer.
+
+- **Votes.** Each tool casts one vote per peptide-allele pair. Tools with a percentile against random human peptides (NetMHCpan, MixMHCpred,
+  MHCflurry, NetMHCIIpan, MixMHC2pred, PRIME, NetCTLpan) vote at an absolute cut-off (binding %Rank <= 2 for class I, 5 for class II by default).
+  BigMHC-EL votes at score >= 0.2. Tools with no absolute scale for immunogenicity (BigMHC-IM, IEDB/Calis, CD4episcore) vote relatively: top q %
+  among the plausible binders of the run (needs >= 8 of them, otherwise the tool gives no vote and says so).
+- **Agreement** = votes / tools that scored the pair, in total and per group (binding, immunogenicity, processing). A pair is a **binder** when
+  enough binding tools agree (strict majority by default); the binding consensus is the **median** %Rank of the percentile tools.
+- **Population weighting.** Point `population.weights_csv` (Settings) at an HLA allele weightage CSV (`india_hla_allele_weightage.csv` from the
+  Epitope Workbench, or drop it beside the engine folder; env `ENGINE_POPULATION_CSV` also works). A peptide's **coverage** is the share of the
+  population carrying at least one allele it is a binder for (Hardy-Weinberg per region, loci independent, regions weighted as in the file).
+  The weighted agreement and weighted binding rank use allele frequencies as weights. No file: coverage falls back to the share of your
+  chosen alleles, and the page says so. Alleles with no data (HLA-DP, mouse) count in agreement but not in coverage.
+- **Priority score** = weighted mean of the peptide's percentile standing in the run on coverage, agreement, binding and immunogenicity
+  (0.35 / 0.25 / 0.20 / 0.20). Every component is a column, so any other ranking can be rebuilt in a spreadsheet.
+- **Strategies** (Balanced, Strict, Max coverage, IEDB cut-offs, Wide net) state every rule; the "Adjust the rules" box overrides single rules.
+  Overlapping windows collapse to one region (70 % overlap with the best one); a greedy **minimum panel** reaches the coverage goal.
+- **Funnel & suggestions** show where peptides drop out, what each strategy would give on the same data, what single relaxations would add,
+  and which common alleles are missing from your selection.
+- **Downloads.** `Master CSV`: one row per peptide x allele, every tool's raw value, every vote, agreement counts, consensus, peptide-level
+  coverage / rank / cluster / panel marks, sorted best first. Also peptides, candidates, panel and `run details` (json: the exact rules,
+  tools, population and warnings behind the run).
 
 ## Copy, paste, run
 

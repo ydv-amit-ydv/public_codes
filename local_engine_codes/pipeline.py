@@ -21,6 +21,8 @@ import mhcflurry_runner as mf
 import mixmhcpred_runner as mx
 import netmhcpan_app as nm
 import prime_runner as pr
+import consensus
+import report
 
 MAX_PAIRS = 3_000_000
 MODEL_KEYS = ("netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_imm", "netctlpan", "netchop", "bigmhc_el", "bigmhc_im")
@@ -61,7 +63,8 @@ def normalise(params):
         ci.parse_positions(iedb["positions"])                  # ValueError with a readable message
     return {"text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths,
             "alleles": alleles, "models": models, "chain": bool(p.get("chain", True)),
-            "filters": f, "nmp": nmp, "iedb": iedb}
+            "filters": f, "nmp": nmp, "iedb": iedb,
+            "preset": p.get("preset") or "balanced", "rules": p.get("rules") or {}}
 
 
 def _safe_supported(fn, home_key, alleles, tool):
@@ -233,7 +236,12 @@ def run(params, job):
     bmres = None
     if use_bm:
         gated = p["chain"] and (nmp is not None or mix is not None or mhcf is not None)
-        pairs = base[_binding_pass(base, f)] if gated else base
+        if gated:
+            rules = consensus.resolve_rules(1, p["preset"], p["rules"])
+            keep = _binding_pass(base, f) & consensus.gate_mask(base, 1, rules)      # a superset of every agreement rule
+            pairs = base[keep]
+        else:
+            pairs = base
         pairs = pairs[pairs["Allele"].isin(bm_ok)][["Peptide", "Allele"]].drop_duplicates()
         if gated:
             job.log(f"chain: {len(pairs):,} pairs pass the binding filters -> BigMHC")
@@ -324,13 +332,20 @@ def run(params, job):
             order.append(col); asc.append(a_)
     summ = summ.sort_values(order, ascending=asc, na_position="last", kind="stable").reset_index(drop=True)
 
+    job.update("merge", msg="consensus, population coverage, ranking", state="running")
+    info = {"mode": p["mode"], "lengths": p["lengths"], "alleles": p["alleles"], "peptides": n_pep,
+            "models": [k for k, on in m.items() if on], "filters": {k: v for k, v in f.items() if v is not None},
+            "chain": p["chain"], "input_chars": len(p["text"]),
+            "input_peptides": peps["Peptide"].drop_duplicates().tolist() if p["mode"] == "peptides" else None}
+    cons = report.finish(base, 1, p, job, info, warns, base["Pass_All"])
+
     jobdir = os.path.join(config.tmp_dir(), "jobs"); os.makedirs(jobdir, exist_ok=True)
     pairs_csv, summ_csv = (os.path.join(jobdir, f"{job.id}_{n}.csv") for n in ("pairs", "summary"))
     base.round(6).to_csv(pairs_csv, index=False)
     summ.round(6).to_csv(summ_csv, index=False)
     job.finish_stage("merge", "done")
 
-    job.result = {"pairs_csv": pairs_csv, "summary_csv": summ_csv, "summary": {
+    job.result = {**{k: v for k, v in cons.items()}, "pairs_csv": pairs_csv, "summary_csv": summ_csv, "summary": {
         "peptides": n_pep, "pairs": int(len(base)), "pairs_passed": int(base["Pass_All"].sum()),
         "peptides_passed": int((summ["Alleles_passed"] > 0).sum()),
         "seconds": round(time.time() - t0, 1), "warnings": list(dict.fromkeys(warns)),

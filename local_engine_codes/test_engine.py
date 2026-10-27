@@ -377,6 +377,21 @@ summ = c.get(f"/api/jobs/{d['id']}/result?table=summary").get_json()["rows"][0]
 assert summ["Alleles_passed"] == 1 and summ["Alleles_passed_list"] == "HLA-A*02:01", summ
 assert c.get(f"/api/jobs/{d['id']}/csv?table=pairs").data.startswith(b"Protein,Start,Peptide")
 
+# consensus outputs: master CSV (every tool value + votes + consensus), peptides, candidates, panel, report
+mcsv = c.get(f"/api/jobs/{d['id']}/csv?table=master").data.decode().splitlines()
+mh = mcsv[0].split(",")
+for col in ("Priority_Rank", "Peptide", "Allele", "NMP_%Rank_EL", "BigMHC_EL", "BigMHC_IM", "Vote_NMP_EL", "Agree_Fraction",
+            "Bind_Consensus_%Rank", "Binder", "Coverage_Binder", "Priority_Score"):
+    assert col in mh, (col, mh)
+assert len(mcsv) == 2, mcsv
+for t in ("peptides", "candidates", "panel"):
+    assert c.get(f"/api/jobs/{d['id']}/csv?table={t}").status_code == 200, t
+pep = c.get(f"/api/jobs/{d['id']}/result?table=peptides").get_json()["rows"][0]
+assert pep["Peptide"] == "GILGFVFTL" and pep["Mass_Da"] > 900 and pep["N_Alleles_Binder"] == 1, pep
+rep = c.get(f"/api/jobs/{d['id']}/report").get_json()
+assert rep["consensus"]["funnel"][0]["n"] == 1 and "HLA-A*02:01" in rep["details"]["input"]["alleles"] and rep["consensus"]["headline"]["candidates"] == 1, rep["consensus"]["headline"]
+assert c.get("/api/rules?mhc_class=2").get_json()["presets"]["strict"]["rules"]["bind_min_agree"] == "all"
+
 # a filter nothing passes: BigMHC is told there is nothing to score, the run still succeeds
 r = c.post("/api/pipeline/run", json={**params, "filters": {"rank_el_max": 0.01}})
 d = wait_job(r.get_json()["id"]); assert d["state"] == "done" and d["summary"]["pairs_passed"] == 0, d

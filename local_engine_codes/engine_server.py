@@ -7,6 +7,7 @@ Each model keeps its own interpreter/install (see common/config.py); this proces
 only needs flask and pandas. Settings are re-read on every request, so saving in
 the GUI takes effect immediately.
 """
+import json
 import os, subprocess, sys
 
 from flask import Flask, jsonify, request, send_file
@@ -384,7 +385,8 @@ def job_cancel(job_id):
 def _table_path(job, table):
     if not job or not job.result:
         return None
-    return job.result["summary_csv" if table == "summary" else "pairs_csv"]
+    key = {"summary": "summary_csv", "pairs": "pairs_csv", "details": "details_json"}.get(table, f"{table}_csv")
+    return job.result.get(key)
 
 
 @main.get("/api/jobs/<job_id>/result")
@@ -405,7 +407,39 @@ def job_csv(job_id):
     path = _table_path(MANAGER.get(job_id), table)
     if not path:
         return jsonify(error="no result"), 404
+    if table == "details":
+        return send_file(path, mimetype="application/json", as_attachment=True, download_name="epitope_run_details.json")
     return send_file(path, mimetype="text/csv", as_attachment=True, download_name=f"epitopes_{table}.csv")
+
+
+@main.get("/api/jobs/<job_id>/detail")
+def job_detail(job_id):
+    """Every tool value for one peptide window, per allele (the expandable row in the results)."""
+    job = MANAGER.get(job_id)
+    if not job or not job.result:
+        return jsonify(error="no result"), 404
+    df = pd.read_csv(job.result["master_csv"])
+    df = df[(df["Peptide"] == request.args.get("peptide", "")) & (df["Start"] == int(request.args.get("start", 0)))]
+    df = df.astype(object).where(df.notna(), None)
+    return jsonify(columns=list(df.columns), rows=df.to_dict("records"))
+
+
+@main.get("/api/rules")
+def api_rules():
+    import consensus
+    cls = int(request.args.get("mhc_class", 1))
+    return jsonify(presets={k: {"label": consensus.PRESET_INFO[k][0], "why": consensus.PRESET_INFO[k][1], "rules": v}
+                            for k, v in consensus.preset_rules(cls).items()}, rank_by=list(consensus.RANK_BY))
+
+
+@main.get("/api/jobs/<job_id>/report")
+def job_report(job_id):
+    job = MANAGER.get(job_id)
+    if not job or not job.result:
+        return jsonify(error="no result"), 404
+    with open(job.result["details_json"]) as f:
+        details = json.load(f)
+    return jsonify(consensus=job.result["consensus"], details=details, summary=job.result["summary"])
 
 
 @main.get("/")

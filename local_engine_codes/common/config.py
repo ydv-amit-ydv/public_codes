@@ -15,6 +15,7 @@ CONFIG_PATH = os.path.expanduser(
 # "auto" = look beside this directory (see common/discover.py). Explicit paths win.
 DEFAULT = {
     "tmp_dir": "auto",
+    "population": {"label": "India", "weights_csv": "auto"},
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
         "bigmhc": {"enabled": True, "python": "auto", "home": "auto", "device": "cpu", "jobs": 0},

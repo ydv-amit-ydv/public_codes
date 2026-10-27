@@ -12,6 +12,9 @@ import os, time
 
 import pandas as pd
 
+import consensus
+import report
+
 from common import alleles as allele_lib, config
 import cd4episcore_runner as cd
 import mixmhc2pred_runner as m2
@@ -50,7 +53,8 @@ def normalise(params):
         raise ValueError(f"NetMHCIIpan version must be one of {nn.VERSIONS}.")
     f = {k: _num((p.get("filters") or {}).get(k)) for k in FILTER_KEYS}
     return {"text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths, "alleles": alleles,
-            "models": models, "chain": bool(p.get("chain", True)), "filters": f, "version": version}
+            "models": models, "chain": bool(p.get("chain", True)), "filters": f, "version": version,
+            "preset": p.get("preset") or "balanced", "rules": p.get("rules") or {}}
 
 
 def preview(params):
@@ -130,7 +134,11 @@ def run(params, job):
     chop = None
     if m["cd4episcore"]:
         gated = p["chain"] and (nii is not None or mix is not None)
-        use = base[_binding_pass(base, f)]["Peptide"].drop_duplicates().tolist() if gated else uniq
+        if gated:
+            rules = consensus.resolve_rules(2, p["preset"], p["rules"])
+            use = base[_binding_pass(base, f) & consensus.gate_mask(base, 2, rules)]["Peptide"].drop_duplicates().tolist()
+        else:
+            use = uniq
         if gated:
             job.log(f"chain: {len(use):,} of {n_pep:,} peptides pass the binding filters -> CD4episcore")
         if use:
@@ -192,12 +200,18 @@ def run(params, job):
             order.append(col); asc.append(True)
     summ = summ.sort_values(order, ascending=asc, na_position="last", kind="stable").reset_index(drop=True)
 
+    job.update("merge", msg="consensus, population coverage, ranking", state="running")
+    info = {"mode": p["mode"], "lengths": p["lengths"], "alleles": p["alleles"], "peptides": n_pep,
+            "models": [k for k, on in m.items() if on], "filters": {k: v for k, v in f.items() if v is not None},
+            "chain": p["chain"], "netmhciipan_version": p["version"], "input_chars": len(p["text"])}
+    cons = report.finish(base, 2, p, job, info, warns, base["Pass_All"])
+
     jobdir = os.path.join(config.tmp_dir(), "jobs"); os.makedirs(jobdir, exist_ok=True)
     pairs_csv, summ_csv = (os.path.join(jobdir, f"{job.id}_{n}.csv") for n in ("pairs", "summary"))
     base.round(6).to_csv(pairs_csv, index=False)
     summ.round(6).to_csv(summ_csv, index=False)
     job.finish_stage("merge", "done")
-    job.result = {"pairs_csv": pairs_csv, "summary_csv": summ_csv, "summary": {
+    job.result = {**cons, "pairs_csv": pairs_csv, "summary_csv": summ_csv, "summary": {
         "peptides": n_pep, "pairs": int(len(base)), "pairs_passed": int(base["Pass_All"].sum()),
         "peptides_passed": int((summ["Alleles_passed"] > 0).sum()), "seconds": round(time.time() - t0, 1),
         "warnings": list(dict.fromkeys(warns)), "chained": bool(m["cd4episcore"] and p["chain"] and (nii is not None or mix is not None))}}

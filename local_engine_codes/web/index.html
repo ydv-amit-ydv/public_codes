@@ -50,6 +50,17 @@ table{border-collapse:collapse;font-size:13px}
 th,td{border:1px solid var(--line);padding:2px 7px;white-space:nowrap}
 th{background:var(--card);cursor:pointer;position:sticky;top:0;z-index:1}
 tr.pass{background:var(--pass)}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.kpi{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:120px}
+.kpi b{display:block;font-size:22px;line-height:1.1}.kpi span{color:var(--muted);font-size:12px}
+.cov{display:inline-block;width:70px;height:8px;background:var(--bar);border-radius:4px;vertical-align:middle;margin-right:5px;overflow:hidden}
+.cov i{display:block;height:100%;background:var(--acc)}
+.vd{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:2px;background:var(--bar)}.vd.y{background:var(--ok)}.vd.n{background:var(--bad);opacity:.55}
+tr.rowc{cursor:pointer} tr.rowc:hover{background:var(--bar)}
+td.detail{white-space:normal;background:var(--bg)}
+.fun{display:grid;grid-template-columns:260px 1fr 70px;gap:3px 8px;align-items:center;margin:2px 0}
+.dls a{margin-right:6px;text-decoration:none;color:inherit;display:inline-block}
+#advr{margin:6px 0}#advr .grid2{margin-top:4px}
 .tabs button{margin-right:4px}.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 #settings{padding:14px;flex-direction:column;gap:8px;overflow:auto}
 #cfg{width:100%;height:240px}
@@ -115,16 +126,32 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <label class="i c2" style="margin-top:6px"><input type="checkbox" id="chain2" checked>
     <b>Chain:</b> run CD4episcore only on peptides that pass the binding filters for at least one allele</label>
 
-  <h3>4. Keep a peptide-allele pair when</h3>
+  <h3>4. Strategy</h3>
+  <select id="strat" style="width:100%"></select>
+  <div id="stratwhy" class="muted" style="font-size:12px;margin:4px 0"></div>
+  <details id="advr"><summary class="muted">Adjust the rules (blank = the strategy's value)</summary>
+   <div class="grid2">
+    <span>Rank candidates by</span><select id="r_rank_by" style="width:90px"><option value="">-</option><option value="consensus">consensus</option><option value="coverage">coverage</option><option value="promiscuity">alleles</option><option value="binding">binding</option><option value="immunogenicity">immunogenicity</option></select>
+    <span>Binder when tools agree</span><select id="r_bind_min_agree" style="width:90px"><option value="">-</option><option value="any">any one</option><option value="majority">majority</option><option value="all">all</option></select>
+    <span>Binding %Rank &le;</span><input type="number" id="r_bind_rank_max" step="0.5" min="0">
+    <span>Immunogenic when</span><select id="r_imm_min_agree" style="width:90px"><option value="">-</option><option value="off">not required</option><option value="any">any one</option><option value="majority">majority</option><option value="all">all</option></select>
+    <span>...in the top (% of binders)</span><input type="number" id="r_imm_top_q" step="5" min="1" max="100">
+    <span>At least this many alleles</span><input type="number" id="r_min_alleles" step="1" min="1">
+    <span>Population coverage at least (%)</span><input type="number" id="r_min_coverage" step="5" min="0" max="100">
+    <span>Merge overlapping windows</span><select id="r_collapse" style="width:90px"><option value="">-</option><option value="1">yes</option><option value="0">no</option></select>
+    <span>Panel goal (coverage %)</span><input type="number" id="r_panel_target" step="5" min="10" max="100">
+   </div></details>
+
+  <h3>5. Optional per-tool filters <span class="muted" style="font-weight:normal">(advanced; the strategy above already combines the tools)</span></h3>
   <div class="grid2 c2">
-    <span>NetMHCIIpan %Rank EL &le;</span><input type="number" id="f2_nii_el_rank_max" value="2" step="0.1" min="0">
+    <span>NetMHCIIpan %Rank EL &le;</span><input type="number" id="f2_nii_el_rank_max" step="0.1" min="0" placeholder="off">
     <span>NetMHCIIpan %Rank BA &le;</span><input type="number" id="f2_nii_ba_rank_max" step="0.1" min="0" placeholder="off">
     <span>NetMHCIIpan IC50 &le; (nM)</span><input type="number" id="f2_nii_ic50_max" step="50" min="0" placeholder="off">
     <span>MixMHC2pred %Rank &le;</span><input type="number" id="f2_mix2_rank_max" step="0.5" min="0" placeholder="off">
     <span>CD4episcore percentile &le;</span><input type="number" id="f2_cd4_max" step="1" min="0" max="100" placeholder="off">
   </div>
   <div class="grid2 c1">
-    <span>NetMHCpan %Rank EL &le;</span><input type="number" id="f_rank_el_max" value="2" step="0.1" min="0">
+    <span>NetMHCpan %Rank EL &le;</span><input type="number" id="f_rank_el_max" step="0.1" min="0" placeholder="off">
     <span>NetMHCpan %Rank BA &le;</span><input type="number" id="f_rank_ba_max" step="0.1" min="0" placeholder="off">
     <span>NetMHCpan affinity &le; (nM)</span><input type="number" id="f_aff_max" step="50" min="0" placeholder="off">
     <span>MixMHCpred %Rank &le;</span><input type="number" id="f_mix_rank_max" step="0.1" min="0" placeholder="off">
@@ -157,17 +184,20 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   </div>
 
   <div class="card" id="results" style="display:none">
-   <div id="summary"></div>
+   <div class="kpis" id="kpis"></div>
    <div id="warnings" class="warn" style="margin:4px 0"></div>
+   <div class="dls" id="dls"></div>
    <div class="tabs" style="margin:10px 0 6px">
-     <button class="b on" data-tab="summary">By peptide</button>
-     <button class="b" data-tab="pairs">Every peptide-allele pair</button>
-     <label style="margin-left:12px"><input type="checkbox" id="onlyPass" checked> passing only</label>
+     <button class="b on" data-tab="candidates">Candidates</button>
+     <button class="b" data-tab="peptides">All peptides</button>
+     <button class="b" data-tab="master">Every value (master table)</button>
+     <button class="b" data-tab="insight">Funnel &amp; suggestions</button>
+     <label style="margin-left:12px" id="onlylab"><input type="checkbox" id="onlyPass" checked> candidates only</label>
      <input type="text" id="tfilter" placeholder="filter rows..." style="margin-left:8px;width:170px">
-     <a id="dl" class="b" style="text-decoration:none;color:inherit;margin-left:8px;display:inline-block">Download CSV</a>
    </div>
    <div id="tnote" class="muted" style="margin-bottom:4px"></div>
-   <div style="overflow:auto;max-height:68vh"><table id="tbl"></table></div>
+   <div id="tblwrap" style="overflow:auto;max-height:68vh"><table id="tbl"></table></div>
+   <div id="insight" style="display:none"></div>
   </div>
 
   <div id="empty" class="muted">Fill in the form and press <b>Run</b>. Progress, time left and the final table appear here.</div>
@@ -222,7 +252,7 @@ function applyClass(){
   $("form").dataset.cls = CLS(); store.set("cls", CLS());
   $("asearch").placeholder = CLS() == 1 ? "search alleles, e.g. A*24 or H-2-K" : "search class II alleles, e.g. DRB1*15 or DQA1*05:01/DQB1*02";
   $("hits").style.display = "none"; $("asearch").value = "";
-  renderPresets(); drawChips(); refreshNotReady(); queuePreview();
+  renderPresets(); drawChips(); refreshNotReady(); loadStrategies(); queuePreview();
 }
 document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = applyClass);
 const mode = () => document.querySelector("input[name=mode]:checked").value;
@@ -269,7 +299,7 @@ $("asearch").oninput = () => {
 };
 $("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { $("text").value = t; queuePreview(); }); };
 
-function params(){
+function baseParams(){
   const n = id => { const v = $(id).value; return v === "" ? null : +v; };
   if (CLS() == 2) return {
     mhc_class: 2, text: $("text").value, mode: mode(),
@@ -295,6 +325,33 @@ function params(){
               bm_el_min: n("f_bm_el_min"), bm_im_min: n("f_bm_im_min")}
   };
 }
+function advRules(){
+  const o = {}, num = (id, k, f = 1) => { const v = $(id).value; if (v !== "") o[k] = +v * f; };
+  for (const [id, k] of [["r_rank_by","rank_by"],["r_bind_min_agree","bind_min_agree"],["r_imm_min_agree","imm_min_agree"]]) if ($(id).value) o[k] = $(id).value;
+  num("r_bind_rank_max","bind_rank_max"); num("r_imm_top_q","imm_top_q",.01); num("r_min_alleles","min_alleles");
+  num("r_min_coverage","min_coverage",.01); num("r_panel_target","panel_target",.01);
+  if ($("r_collapse").value) o.collapse = $("r_collapse").value == "1";
+  return o;
+}
+function params(){ return {...baseParams(), preset: $("strat").value || "balanced", rules: advRules()}; }
+let STRATS = {}, STRAT_CLS = 0;
+async function loadStrategies(){
+  if (STRAT_CLS == CLS()) return; STRAT_CLS = CLS();
+  const d = await (await fetch(`api/rules?mhc_class=${CLS()}`)).json(); STRATS = d.presets;
+  const keep = store.get("strat" + CLS()) || "balanced";
+  $("strat").innerHTML = Object.entries(STRATS).map(([k,v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
+  $("strat").value = STRATS[keep] ? keep : "balanced"; stratInfo();
+}
+function stratInfo(){
+  const v = STRATS[$("strat").value]; if (!v) return; store.set("strat" + CLS(), $("strat").value);
+  $("stratwhy").textContent = v.why; const r = v.rules;
+  const ph = {r_bind_rank_max: r.bind_rank_max, r_imm_top_q: Math.round(r.imm_top_q * 100), r_min_alleles: r.min_alleles, r_min_coverage: Math.round(r.min_coverage * 100), r_panel_target: Math.round(r.panel_target * 100)};
+  for (const [id, val] of Object.entries(ph)) $(id).placeholder = val;
+  for (const [id, k] of [["r_rank_by","rank_by"],["r_bind_min_agree","bind_min_agree"],["r_imm_min_agree","imm_min_agree"]]) $(id).options[0].textContent = String(r[k]);
+  $("r_collapse").options[0].textContent = r.collapse ? "yes" : "no";
+}
+$("strat").onchange = () => { stratInfo(); queuePreview(); };
+document.querySelectorAll("#advr input,#advr select").forEach(e => e.onchange = queuePreview);
 function queuePreview(){ clearTimeout(previewTimer); previewTimer = setTimeout(doPreview, 350); }
 async function doPreview(){
   const r = await fetch("api/pipeline/preview", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(params())});
@@ -363,37 +420,97 @@ function stopPolling(msg){
 }
 
 /* ---------- results ---------- */
-function loadResults(d){
+let REPORT = null, OPEN = null;
+const pct = x => x == null || x === "" ? "" : (100 * x).toFixed(1) + "%";
+const kpi = (v, l) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`;
+async function loadResults(d){
   const s = d.summary;
   $("results").style.display = "block";
-  $("summary").innerHTML = `<b>${s.peptides_passed.toLocaleString()}</b> of ${s.peptides.toLocaleString()} peptides pass for at least one allele
-     &middot; <b>${s.pairs_passed.toLocaleString()}</b> of ${s.pairs.toLocaleString()} peptide-allele pairs
-     <span class="muted">&middot; ${fmtT(s.seconds)}${s.chained ? " &middot; chained" : ""}</span>`;
+  REPORT = await (await fetch(`api/jobs/${JOB}/report`)).json();
+  const c = REPORT.consensus, h = c.headline, pan = c.panel, last = pan.length ? pan[pan.length - 1] : null;
+  const what = c.coverage_metric == "population" ? (REPORT.consensus.population.label + " population") : "of the chosen alleles";
+  $("kpis").innerHTML = kpi(s.peptides.toLocaleString(), "peptides scanned") + kpi(h.candidates.toLocaleString(), "candidates") +
+    kpi(h.regions.toLocaleString(), "regions (windows merged)") +
+    kpi(last ? pct(last.cumulative_coverage) : "-", `coverage by a ${pan.length}-peptide panel (${what})`) +
+    kpi(fmtT(s.seconds), s.chained ? "run time, chained" : "run time");
   $("warnings").innerHTML = (s.warnings || []).map(esc).join("<br>");
-  TABLE = "summary"; setTab("summary");
+  const dl = t => `api/jobs/${JOB}/csv?table=${t}`;
+  $("dls").innerHTML = `<span class="muted">Download:</span> <a class="b" href="${dl("master")}" style="padding:3px 9px;border:1px solid var(--line);border-radius:4px">Master CSV (every value)</a>
+    <a class="b" href="${dl("peptides")}">peptides</a> <a class="b" href="${dl("candidates")}">candidates</a> <a class="b" href="${dl("panel")}">panel</a>
+    <a class="b" href="${dl("details")}">run details (json)</a>`;
+  document.querySelectorAll("#dls a").forEach(a => a.style.cssText += ";padding:3px 9px;border:1px solid var(--line);border-radius:4px");
+  setTab("candidates");
 }
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
 async function setTab(t){
-  TABLE = t; sortKey = null;
+  TABLE = t; sortKey = null; OPEN = null;
   document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab == t));
-  $("dl").href = `api/jobs/${JOB}/csv?table=${t}`;
+  const ins = t == "insight";
+  $("insight").style.display = ins ? "" : "none"; $("tblwrap").style.display = ins ? "none" : ""; $("tnote").style.display = ins ? "none" : "";
+  $("onlylab").style.display = (t == "peptides" || t == "master") ? "" : "none"; $("tfilter").style.display = ins ? "none" : "";
+  if (ins) { renderInsight(); return; }
   const r = await fetch(`api/jobs/${JOB}/result?table=${t}&limit=5000`);
   DATA = await r.json(); renderTable();
 }
 $("onlyPass").onchange = renderTable; $("tfilter").oninput = renderTable;
-function passing(r){ return TABLE == "summary" ? (r.Alleles_passed || 0) > 0 : r.Pass_All === true || r.Pass_All === "True"; }
+function passing(r){
+  if (TABLE == "peptides") return r.Candidate === true || r.Candidate === "True";
+  if (TABLE == "master") return r.Pair_Candidate === true || r.Pair_Candidate === "True";
+  return TABLE == "candidates";
+}
+const SHOW = {candidates: ["Priority_Rank","Peptide","Region","Length","Best_Allele","N_Alleles_Candidate","Coverage_Candidate","Agree_Fraction_PopW","Bind_Consensus_Best","Imm_TopPct_Best","In_Panel","Synthesis_Notes"],
+              peptides: ["Priority_Rank","Peptide","Start","Length","Candidate","Best_Allele","N_Alleles_Binder","Coverage_Binder","Agree_Fraction_PopW","Bind_Consensus_PopW","Imm_TopPct_Best","Priority_Score","Region","In_Panel"]};
+function cell(c, v){
+  if (v == null) return "";
+  if (c.startsWith("Coverage_")) return `<span class="cov"><i style="width:${Math.round(100 * v)}%"></i></span>${pct(v)}`;
+  if (c == "Agree_Fraction_PopW" || c == "Agree_Fraction") return pct(v);
+  if (typeof v == "number") return Math.abs(v) >= 100 ? v.toFixed(1) : +v.toFixed(4);
+  return esc(v);
+}
 function renderTable(){
   if (!DATA || !DATA.columns) return;
   let rows = DATA.rows.slice();
-  if ($("onlyPass").checked) rows = rows.filter(passing);
+  if ($("onlyPass").checked && (TABLE == "peptides" || TABLE == "master")) rows = rows.filter(passing);
   const q = $("tfilter").value.trim().toLowerCase();
   if (q) rows = rows.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q)));
   if (sortKey) rows.sort((a,b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);
-  const cols = DATA.columns;
-  $("tnote").textContent = `${rows.length.toLocaleString()} rows shown` + (DATA.total > DATA.shown ? ` (the first ${DATA.shown.toLocaleString()} of ${DATA.total.toLocaleString()}, best first; download the CSV for all)` : "");
+  const cols = SHOW[TABLE] ? SHOW[TABLE].filter(c => DATA.columns.includes(c)) : DATA.columns;
+  $("tnote").textContent = `${rows.length.toLocaleString()} rows shown` + (DATA.total > DATA.shown ? ` (the first ${DATA.shown.toLocaleString()} of ${DATA.total.toLocaleString()}, best first; download the CSV for all)` : "") +
+    (TABLE != "master" ? " - click a row for every tool and allele" : "");
+  const rc = TABLE != "master" ? "rowc" : "";
   $("tbl").innerHTML = "<tr>" + cols.map(c => `<th data-c="${esc(c)}">${esc(c)}</th>`).join("") + "</tr>" +
-    rows.slice(0, 2000).map(r => `<tr class="${passing(r) ? "pass" : ""}">` + cols.map(c => `<td>${esc(r[c])}</td>`).join("") + "</tr>").join("");
+    rows.slice(0, 2000).map((r, i) => `<tr class="${rc} ${passing(r) && TABLE == "master" ? "pass" : ""}" data-i="${i}">` + cols.map(c => `<td>${cell(c, r[c])}</td>`).join("") + "</tr>").join("");
   document.querySelectorAll("#tbl th").forEach(th => th.onclick = () => { sortDir = sortKey == th.dataset.c ? -sortDir : 1; sortKey = th.dataset.c; renderTable(); });
+  if (rc) document.querySelectorAll("#tbl tr.rowc").forEach(tr => tr.onclick = () => toggleDetail(tr, rows[+tr.dataset.i], cols.length));
+}
+async function toggleDetail(tr, r, ncol){
+  const nxt = tr.nextElementSibling;
+  if (nxt && nxt.classList.contains("detrow")) { nxt.remove(); return; }
+  const d = await (await fetch(`api/jobs/${JOB}/detail?peptide=${r.Peptide}&start=${r.Start ?? 0}`)).json();
+  const tools = REPORT.consensus.tools, row = document.createElement("tr"); row.className = "detrow";
+  const head = "<tr><th>Allele</th><th>Frequency</th>" + tools.map(t => `<th>${esc(t.label)}</th>`).join("") + "<th>Agree</th><th>Consensus %Rank</th><th>Call</th></tr>";
+  const body = d.rows.map(x => `<tr class="${x.Pair_Candidate ? "pass" : ""}"><td>${esc(x.Allele)}</td><td>${x.Allele_Freq ? pct(x.Allele_Freq) : "-"}</td>` +
+    tools.map(t => { const v = x["Vote_" + t.key], val = x[t.col];
+      return `<td>${v == null ? "" : `<span class="vd ${v ? "y" : "n"}"></span>`}${val == null ? "" : cell(t.col, val)}</td>`; }).join("") +
+    `<td>${x.Agree_Votes}/${x.Agree_Tools}</td><td>${x["Bind_Consensus_%Rank"] == null ? "" : +(+x["Bind_Consensus_%Rank"]).toFixed(3)}</td><td>${esc(x.Pair_Call)}${x.Pair_Candidate ? " &#10003;" : ""}</td></tr>`).join("");
+  row.innerHTML = `<td class="detail" colspan="${ncol}"><div style="overflow:auto"><table>${head}${body}</table></div>
+     <div class="muted" style="margin-top:4px">Green dot = this tool votes yes at the strategy's cut-off, red = no. ${r.Synthesis_Notes ? esc(r.Synthesis_Notes) : ""}</div></td>`;
+  tr.after(row);
+}
+function renderInsight(){
+  const c = REPORT.consensus, sg = c.suggestions, top = c.funnel[0].n || 1;
+  let h = "<h3>Funnel</h3>" + c.funnel.map(f => `<div class="fun"><span>${esc(f.label)}</span><div class="bar thin"><i style="width:${100 * f.n / top}%"></i></div><b>${f.n.toLocaleString()}</b></div>`).join("");
+  if (sg.advice.length) h += "<h3>Suggestions</h3>" + sg.advice.map(a => `<div>&bull; ${esc(a)}</div>`).join("");
+  if (sg.relax && sg.relax.length) h += "<h3>What would change the answer</h3><table><tr><th>Change</th><th>Candidates</th><th>Regions</th><th>Gain</th></tr>" +
+    sg.relax.map(x => `<tr><td>${esc(x.label)}</td><td>${x.candidates}</td><td>${x.regions}</td><td>${x.gain > 0 ? "+" : ""}${x.gain}</td></tr>`).join("") + "</table>";
+  if (sg.presets && sg.presets.length) h += "<h3>The same data under each strategy</h3><table><tr><th>Strategy</th><th>Candidates</th><th>Regions</th><th>Panel</th><th>Panel coverage</th></tr>" +
+    sg.presets.map(x => `<tr class="${x.preset == $("strat").value ? "pass" : ""}"><td>${esc(x.label)}</td><td>${x.candidates}</td><td>${x.regions}</td><td>${x.panel}</td><td>${pct(x.panel_coverage)}</td></tr>`).join("") + "</table>";
+  if (c.panel.length) h += `<h3>Minimum panel (${c.coverage_metric == "population" ? "population coverage" : "share of the chosen alleles"})</h3><table><tr><th>#</th><th>Peptide</th><th>Region</th><th>Gain</th><th>Cumulative</th><th>New alleles</th></tr>` +
+    c.panel.map(x => `<tr><td>${x.order}</td><td>${esc(x.peptide)}</td><td>${esc(x.region)}</td><td>+${pct(x.gain)}</td><td><span class="cov"><i style="width:${100 * x.cumulative_coverage}%"></i></span>${pct(x.cumulative_coverage)}</td><td style="white-space:normal">${esc(x.new_alleles.join(", "))}</td></tr>`).join("") + "</table>";
+  if (sg.alleles && sg.alleles.add.length) h += `<h3>Alleles worth adding</h3><div class="muted">The most common alleles of these loci that are not in your selection (national frequency):</div>` +
+    sg.alleles.add.map(a => `<span class="chip">${esc(a.allele)} ${pct(a.frequency)}</span>`).join("");
+  h += `<details style="margin-top:12px"><summary class="muted">Run details (rules, tools, input) - also in the downloadable json</summary><pre>${esc(JSON.stringify(REPORT.details, null, 1))}</pre></details>`;
+  $("insight").innerHTML = h;
 }
 
 /* resume a job after a page reload */
