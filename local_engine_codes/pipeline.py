@@ -15,14 +15,15 @@ import pandas as pd
 
 from common import alleles as allele_lib, config
 import bigmhc_runner as bm
+import calis_immunogenicity as ci
 import mixmhcpred_runner as mx
 import netmhcpan_app as nm
 import prime_runner as pr
 
 MAX_PAIRS = 3_000_000
-MODEL_KEYS = ("netmhcpan", "mixmhcpred", "prime", "bigmhc_el", "bigmhc_im")
+MODEL_KEYS = ("netmhcpan", "mixmhcpred", "prime", "iedb_imm", "bigmhc_el", "bigmhc_im")
 FILTER_KEYS = ("rank_el_max", "rank_ba_max", "aff_max", "mix_rank_max", "prime_rank_max",
-               "bm_el_min", "bm_im_min")
+               "iedb_imm_min", "bm_el_min", "bm_im_min")
 
 
 def _num(x):
@@ -46,9 +47,15 @@ def normalise(params):
     nmp = {"ba": bool((p.get("nmp") or {}).get("ba", True)),
            "rankS": float((p.get("nmp") or {}).get("rankS", 0.5)),
            "rankW": float((p.get("nmp") or {}).get("rankW", 2.0))}
+    iedb = {"mask_choice": (p.get("iedb") or {}).get("mask_choice", "default"),
+            "positions": str((p.get("iedb") or {}).get("positions", ""))}
+    if iedb["mask_choice"] not in ci.MASK_CHOICES:
+        raise ValueError("Positions to mask must be default, by_allele or custom.")
+    if models["iedb_imm"] and iedb["mask_choice"] == "custom":
+        ci.parse_positions(iedb["positions"])                  # ValueError with a readable message
     return {"text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths,
             "alleles": alleles, "models": models, "chain": bool(p.get("chain", True)),
-            "filters": f, "nmp": nmp}
+            "filters": f, "nmp": nmp, "iedb": iedb}
 
 
 def _safe_supported(fn, home_key, alleles, tool):
@@ -136,6 +143,8 @@ def run(params, job):
         job.stage("mixmhcpred", "MixMHCpred 3.0 (presentation)", weight=0.5)
     if m["prime"]:
         job.stage("prime", "PRIME 2.1 (immunogenicity)", weight=0.5)
+    if m["iedb_imm"]:
+        job.stage("iedb_imm", "IEDB immunogenicity (Calis 2013)", weight=0.2)
     for x in bm_models:
         job.stage(f"bigmhc_{x}", f"BigMHC {x.upper()}", weight=2.0)
     job.stage("merge", "Merging and filtering", weight=0.3)
@@ -166,12 +175,18 @@ def run(params, job):
         warns += [x for x in n if x not in warns]
         job.finish_stage("prime", f"{len(pri):,} predictions")
 
+    iedb = None
+    if m["iedb_imm"]:
+        iedb, n = ci.predict(uniq, p["alleles"], p["iedb"]["mask_choice"], p["iedb"]["positions"])
+        warns += n
+        job.finish_stage("iedb_imm", f"{len(iedb):,} scores")
+
     # ---- 3. assemble the pair table so far (the chain gate needs it) ---------------------------------
     if nmp is not None:
         base = peps.merge(nmp, on="Peptide")
     else:
         base = peps.merge(pd.DataFrame({"Allele": p["alleles"]}), how="cross")
-    for extra in (mix, pri):
+    for extra in (mix, pri, iedb):
         if extra is not None and not extra.empty:
             base = base.merge(extra, on=["Peptide", "Allele"], how="left")
 
@@ -215,13 +230,17 @@ def run(params, job):
         have = "PRIME_%Rank" in base
         flag("Pass_PRIME", (base["PRIME_%Rank"] <= f["prime_rank_max"]) if (have and f["prime_rank_max"] is not None) else yes,
              ["PRIME_%Rank"] if have else [])
+    if iedb is not None:
+        flag("Pass_IEDB", (base["IEDB_Immunogenicity"] >= f["iedb_imm_min"]) if f["iedb_imm_min"] is not None else yes,
+             ["IEDB_Immunogenicity"])
     if use_bm:
         ok = yes.copy()
         if f["bm_el_min"] is not None and "BigMHC_EL" in base: ok &= base["BigMHC_EL"] >= f["bm_el_min"]
         if f["bm_im_min"] is not None and "BigMHC_IM" in base: ok &= base["BigMHC_IM"] >= f["bm_im_min"]
         flag("Pass_BigMHC", ok, [c for c in base if c.startswith("BigMHC_")])
     skipped = [k for k, models in (("rank_el_max", "netmhcpan"), ("rank_ba_max", "netmhcpan"), ("aff_max", "netmhcpan"),
-                                   ("mix_rank_max", "mixmhcpred"), ("prime_rank_max", "prime")) if f[k] is not None and not m[models]]
+                                   ("mix_rank_max", "mixmhcpred"), ("prime_rank_max", "prime"),
+                                   ("iedb_imm_min", "iedb_imm")) if f[k] is not None and not m[models]]
     if skipped:
         warns.append("Filters ignored because their model was not run: " + ", ".join(skipped))
     base["Pass_All"] = base[flags].all(axis=1) if flags else pd.Series(True, index=base.index)
@@ -241,7 +260,7 @@ def run(params, job):
     summ["Alleles_passed_list"] = summ["Alleles_passed_list"].fillna("")
     for col, fn, name in (("NMP_%Rank_EL", "min", "Best_NMP_%Rank_EL"), ("NMP_Aff_nM", "min", "Best_NMP_Aff_nM"),
                           ("MixMHC_%Rank", "min", "Best_MixMHC_%Rank"), ("PRIME_%Rank", "min", "Best_PRIME_%Rank"),
-                          ("BigMHC_EL", "max", "Max_BigMHC_EL"), ("BigMHC_IM", "max", "Max_BigMHC_IM")):
+                          ("IEDB_Immunogenicity", "max", "Max_IEDB_Immunogenicity"), ("BigMHC_EL", "max", "Max_BigMHC_EL"), ("BigMHC_IM", "max", "Max_BigMHC_IM")):
         if col in base:
             summ = summ.merge(getattr(g[col], fn)().rename(name).reset_index(), on=keys, how="left")
     order, asc = ["Alleles_passed"], [False]

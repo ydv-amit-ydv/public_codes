@@ -11,7 +11,7 @@ Local, offline prediction tools that produce IEDB-style tables for epitope filte
 | MixMHCpred 3.0: presentation (`MHC1/BA_EL_scripts/`) | working (reproduces the authors' test output) |
 | PRIME 2.1: immunogenicity (`MHC1/Immunogenicity_scripts/`) | working (reproduces the authors' test output) |
 | BigMHC EL + IM (`MHC1/Immunogenicity_scripts/`) | working |
-| IEDB Class I immunogenicity ("Positions to mask") as a baseline | needs your download, see below |
+| IEDB Class I immunogenicity (Calis 2013, "Positions to mask") as a baseline (`MHC1/Immunogenicity_scripts/calis_immunogenicity.py`) | working, built in, nothing to install |
 | MHC class II BA/EL and CD4 immunogenicity | planned, see below |
 
 Third-party predictors are licensed separately and are not stored here.
@@ -133,15 +133,27 @@ Run the tests: `python3 test_engine.py`. With real BigMHC:
 - Jobs live in server memory: restarting the server forgets them (finished CSVs stay in
   `/tmp/epitope_engine/jobs`). Only one job runs at a time.
 
-## Adding the IEDB immunogenicity tool
+## IEDB Class I immunogenicity (baseline)
 
-The "Class I pMHC Immunogenicity" tool with *Positions to mask* (default `1,2,C Terminal`)
-is IEDB's. It is not wired in yet because it has to be downloaded under IEDB's licence:
-<https://tools.iedb.org/immunogenicity/download/> (v3.0 README:
-<https://downloads.iedb.org/tools/immunogenicity/LATEST/README>) or the newer bundle
-<https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/README>. Send me its README, its
-`--help`, and the list of options in the *Positions to mask* dropdown; the wrapper then becomes
-one more stage in the Pipeline (`config.py` already has an `iedb_immunogenicity` slot).
+IEDB's "Class I pMHC Immunogenicity" model (Calis et al. 2013, *PLoS Comput Biol* 9:e1003266) is
+tiny: a 20-value amino-acid scale times nine position weights, with some positions masked. It is
+implemented natively here (`calis_immunogenicity.py`), so there is **nothing to download**.
+
+- **Positions to mask**, as on the IEDB site: *1,2,C Terminal (Default)*, *By allele* (IEDB's
+  per-allele table; an allele without an entry falls back to the default and the page says so) or
+  *Custom* (1-based positions such as `2,5,9`). Default and Custom give the same score for every
+  allele; By allele differs per allele.
+- **Verified** two ways: it equals IEDB's own `immunogenicity_predictor.py` (next-generation T Cell
+  Class I package v0.2-beta) exactly on 28,000 random peptides over all lengths and mask choices,
+  and it reproduces all 11,781 peptide scores in the HEV export produced by IEDB's website
+  (maximum difference 0.0). `test_engine.py` keeps reference values from both.
+- Higher means more immunogenic. IEDB defines no cut-off, so the filter is off by default.
+- The constants come from IEDB's package (Non-Profit Open Software License 3.0, La Jolla Institute for
+  Immunology); the code here is an independent implementation of the published model.
+
+IEDB's full standalone bundle (<https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/>, 743 MB,
+`uv` + Python 3.11) also contains NetMHCpan 4.1/4.2, MHCflurry, NetChop and NetCTL for antigen
+processing. It is not needed for anything above; it is the place to look if you later want those.
 
 ## MHC class II: official sources found
 

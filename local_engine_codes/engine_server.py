@@ -188,6 +188,7 @@ def api_alleles():
     key = netmhcpan_app.netmhc_path()
     if key not in _all_cache:
         seen = {allele_lib.canonical(a) for a in netmhcpan_app.list_alleles()}
+        seen |= {a for v in allele_lib.PRESETS.values() for a in v["alleles"]}     # searchable even if NetMHCpan is missing
         _all_cache.clear()
         _all_cache[key] = sorted(seen)
     return jsonify(presets=allele_lib.PRESETS, all=_all_cache[key])

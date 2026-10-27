@@ -85,7 +85,10 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_el" checked> BigMHC EL: presentation</label>
   <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_im" checked> BigMHC IM: immunogenicity</label>
   <div id="notready" class="bad" style="font-size:12px;margin:2px 0 4px"></div>
-  <label class="i muted"><input type="checkbox" disabled> IEDB Class I immunogenicity (baseline; not installed yet)</label>
+  <label class="i"><span class="dot fdot ok" title="built in, nothing to install"></span><input type="checkbox" id="m_iedb" checked> IEDB Class I immunogenicity (baseline)</label>
+  <div id="iedbopts" style="margin:0 0 6px 30px">Positions to mask
+    <select id="iedb_mask"><option value="default">1,2,C Terminal (Default)</option><option value="by_allele">By allele</option><option value="custom">Custom</option></select>
+    <input type="text" id="iedb_pos" placeholder="e.g. 2,5,9" style="width:90px;display:none"></div>
   <label class="i muted"><input type="checkbox" disabled> MHC class II models (planned)</label>
   <label class="i" style="margin-top:6px"><input type="checkbox" id="chain" checked>
     <b>Chain:</b> run BigMHC only on pairs that pass the NetMHCpan / MixMHCpred filters <span class="muted">(much faster)</span></label>
@@ -97,6 +100,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
     <span>NetMHCpan affinity &le; (nM)</span><input type="number" id="f_aff_max" step="50" min="0" placeholder="off">
     <span>MixMHCpred %Rank &le;</span><input type="number" id="f_mix_rank_max" step="0.1" min="0" placeholder="off">
     <span>PRIME %Rank &le;</span><input type="number" id="f_prime_rank_max" step="0.1" min="0" placeholder="off">
+    <span>IEDB immunogenicity &ge;</span><input type="number" id="f_iedb_imm_min" step="0.05" placeholder="off">
     <span>BigMHC EL &ge;</span><input type="number" id="f_bm_el_min" step="0.05" min="0" max="1" placeholder="off">
     <span>BigMHC IM &ge;</span><input type="number" id="f_bm_im_min" step="0.05" min="0" max="1" placeholder="off">
   </div>
@@ -184,13 +188,16 @@ function drawChips(){
   store.set("alleles", JSON.stringify(SEL)); queuePreview();
 }
 $("clearA").onclick = () => { SEL = []; drawChips(); };
+const canonAllele = a => { const m = a.trim().match(/^(?:HLA-)?([ABCEFG])\*?(\d{2,3}):(\d{2,3})/i); return m ? `HLA-${m[1].toUpperCase()}*${m[2]}:${m[3]}` : a.trim(); };
 $("asearch").oninput = () => {
-  const q = $("asearch").value.trim().toLowerCase().replace("*","");
+  const raw = $("asearch").value.trim(), q = raw.toLowerCase().replace("*","");
   if (q.length < 2) { $("hits").style.display = "none"; return; }
   const m = ALL.filter(a => a.toLowerCase().replace("*","").includes(q) && !SEL.includes(a)).slice(0, 80);
-  $("hits").innerHTML = m.map(a => `<div>${esc(a)}</div>`).join("") || `<div class="muted">no match</div>`;
+  const typed = canonAllele(raw);
+  $("hits").innerHTML = m.map(a => `<div data-a="${esc(a)}">${esc(a)}</div>`).join("") +
+    (m.includes(typed) || SEL.includes(typed) ? "" : `<div data-a="${esc(typed)}" class="muted">add "${esc(typed)}" as typed</div>`);
   $("hits").style.display = "block";
-  document.querySelectorAll("#hits div").forEach(d => d.onclick = () => { if (!SEL.includes(d.textContent)) SEL.push(d.textContent); drawChips(); $("asearch").value = ""; $("hits").style.display = "none"; });
+  document.querySelectorAll("#hits div").forEach(d => d.onclick = () => { if (!SEL.includes(d.dataset.a)) SEL.push(d.dataset.a); drawChips(); $("asearch").value = ""; $("hits").style.display = "none"; });
 };
 $("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { $("text").value = t; queuePreview(); }); };
 
@@ -200,11 +207,12 @@ function params(){
     text: $("text").value, mode: mode(),
     lengths: [...document.querySelectorAll(".len:checked")].map(x => +x.value),
     alleles: SEL,
-    models: {netmhcpan: $("m_nmp").checked, mixmhcpred: $("m_mix").checked, prime: $("m_prime").checked,
+    iedb: {mask_choice: $("iedb_mask").value, positions: $("iedb_pos").value},
+    models: {netmhcpan: $("m_nmp").checked, mixmhcpred: $("m_mix").checked, prime: $("m_prime").checked, iedb_imm: $("m_iedb").checked,
              bigmhc_el: $("m_el").checked, bigmhc_im: $("m_im").checked},
     chain: $("chain").checked,
     filters: {rank_el_max: n("f_rank_el_max"), rank_ba_max: n("f_rank_ba_max"), aff_max: n("f_aff_max"),
-              mix_rank_max: n("f_mix_rank_max"), prime_rank_max: n("f_prime_rank_max"),
+              mix_rank_max: n("f_mix_rank_max"), prime_rank_max: n("f_prime_rank_max"), iedb_imm_min: n("f_iedb_imm_min"),
               bm_el_min: n("f_bm_el_min"), bm_im_min: n("f_bm_im_min")}
   };
 }
@@ -222,8 +230,9 @@ async function doPreview(){
   (d.warnings || []).forEach(w => h += `<div class="warn">${esc(w)}</div>`);
   el.innerHTML = h;
 }
-["text","chain","m_nmp","m_mix","m_prime","m_el","m_im","f_rank_el_max","f_rank_ba_max","f_aff_max","f_mix_rank_max","f_prime_rank_max","f_bm_el_min","f_bm_im_min"].forEach(id => $(id).addEventListener("input", queuePreview));
+["text","chain","m_nmp","m_mix","m_prime","m_iedb","iedb_mask","iedb_pos","f_iedb_imm_min","m_el","m_im","f_rank_el_max","f_rank_ba_max","f_aff_max","f_mix_rank_max","f_prime_rank_max","f_bm_el_min","f_bm_im_min"].forEach(id => $(id).addEventListener("input", queuePreview));
 document.querySelectorAll(".len").forEach(c => c.onchange = queuePreview);
+$("iedb_mask").onchange = () => { $("iedb_pos").style.display = $("iedb_mask").value == "custom" ? "" : "none"; $("iedbopts").style.opacity = ""; };
 
 /* ---------- run + progress ---------- */
 $("run").onclick = async () => {

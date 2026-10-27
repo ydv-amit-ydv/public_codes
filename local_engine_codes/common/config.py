@@ -20,7 +20,6 @@ DEFAULT = {
         "bigmhc": {"enabled": True, "python": "auto", "home": "auto", "device": "cpu", "jobs": 0},
         "mixmhcpred": {"enabled": True, "python": "auto", "home": "auto"},
         "prime": {"enabled": True, "python": "auto", "home": "auto"},
-        "iedb_immunogenicity": {"enabled": False, "python": "", "home": ""},
     },
 }
 

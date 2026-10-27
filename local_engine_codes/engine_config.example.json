@@ -23,11 +23,6 @@
       "enabled": true,
       "python": "auto",
       "home": "auto"
-    },
-    "iedb_immunogenicity": {
-      "enabled": false,
-      "python": "",
-      "home": ""
     }
   }
 }

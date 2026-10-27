@@ -341,6 +341,49 @@ c.put("/api/config", json={"text": json.dumps(settings)})
 for name in ("mixmhcpred", "prime"):
     h = c.post(f"/api/health/{name}?deep=1").get_json(); assert h["ok"], h
 
+
+# ---- IEDB Class I immunogenicity (Calis 2013), native implementation --------------------------------
+import calis_immunogenicity as ci                 # noqa: E402
+# scores IEDB's website produced for HEV ORF1 peptides (default mask), lengths 8-14, and scores from
+# IEDB's own immunogenicity_predictor.py (next-generation T Cell Class I v0.2-beta) for the other masks
+CALIS = {"web_default": {"AARWFEAN": 0.48096, "LAARWFEA": 0.47518, "LAARWFEAN": 0.49804, "FGPWFRAIE": 0.49279, "FGPWFRAIEK": 0.59134, "ELAARWFEAN": 0.53573, "LFGPWFRAIEK": 0.58759, "TGNFWFHPEGL": 0.57076, "ALFGPWFRAIEK": 0.64905, "CALFGPWFRAIE": 0.6256, "CALFGPWFRAIEK": 0.72415, "RNAWRRRGFAAFT": 0.67204, "RNAWRRRGFAAFTP": 0.7302, "FCALFGPWFRAIEK": 0.72549}, "peps": ["AARWFEAN", "LAARWFEA", "LAARWFEAN", "FGPWFRAIE", "FGPWFRAIEK", "ELAARWFEAN"], "custom_2_5_9": [0.36318, 0.28234, 0.28234, 0.37879, 0.41884, 0.46247], "by_allele_A2402": [0.44416, 0.41354, 0.41354, 0.45977, 0.49601, 0.40267], "by_allele_B0801": [0.36318, 0.28234, 0.28234, 0.37879, 0.41884, 0.46247]}
+for pep, want in CALIS["web_default"].items():
+    assert abs(ci.score_peptides([pep])[0] - want) < 1e-9, (pep, want)
+P6 = CALIS["peps"]
+got, _ = ci.predict(P6, ["HLA-A*02:01"], "custom", "2,5,9"); assert list(got["IEDB_Immunogenicity"]) == [x for _, x in sorted(zip(P6, CALIS["custom_2_5_9"]))] or \
+    dict(zip(got.Peptide, got.IEDB_Immunogenicity)) == dict(zip(P6, CALIS["custom_2_5_9"]))
+for a, key in (("HLA-A*24:02", "by_allele_A2402"), ("HLA-B*08:01", "by_allele_B0801")):
+    got, notes = ci.predict(P6, [a], "by_allele"); assert not notes
+    assert dict(zip(got.Peptide, got.IEDB_Immunogenicity)) == dict(zip(P6, CALIS[key])), a
+got, notes = ci.predict(P6, ["HLA-A*99:99"], "by_allele")
+assert dict(zip(got.Peptide, got.IEDB_Immunogenicity)) == CALIS["web_default"] | {} or notes   # falls back to default, says so
+assert notes and "default mask" in notes[0]
+for bad in ("", "0", "a,b", "-2"):
+    try:
+        ci.parse_positions(bad); raise SystemExit(f"accepted bad positions {bad!r}")
+    except ValueError:
+        pass
+
+iedb = {"text": "RNAWRRRGFAAFTP\nFGPWFRAIEK", "mode": "peptides", "alleles": ["HLA-A*02:01", "HLA-B*07:02"],
+        "models": {"iedb_imm": True}, "filters": {"iedb_imm_min": 0.6}, "iedb": {"mask_choice": "default"}}
+d = wait_job(c.post("/api/pipeline/run", json=iedb).get_json()["id"])
+rows = c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]
+by = {(r["Peptide"], r["Allele"]): r for r in rows}
+assert by[("RNAWRRRGFAAFTP", "HLA-A*02:01")]["IEDB_Immunogenicity"] == 0.7302 and by[("RNAWRRRGFAAFTP", "HLA-A*02:01")]["Pass_All"]
+assert by[("FGPWFRAIEK", "HLA-B*07:02")]["IEDB_Immunogenicity"] == 0.59134 and not by[("FGPWFRAIEK", "HLA-B*07:02")]["Pass_All"]   # 0.59 < 0.6
+assert d["summary"]["pairs"] == 4 and d["summary"]["pairs_passed"] == 2, d["summary"]
+srow = c.get(f"/api/jobs/{d['id']}/result?table=summary").get_json()["rows"][0]
+assert srow["Max_IEDB_Immunogenicity"] == 0.7302, srow
+# allele-specific masks differ between alleles
+d = wait_job(c.post("/api/pipeline/run", json={**iedb, "filters": {}, "iedb": {"mask_choice": "by_allele"},
+                                              "alleles": ["HLA-A*02:01", "HLA-A*24:02"]}).get_json()["id"])
+sc = {(r["Peptide"], r["Allele"]): r["IEDB_Immunogenicity"] for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+assert sc[("FGPWFRAIEK", "HLA-A*02:01")] != sc[("FGPWFRAIEK", "HLA-A*24:02")], sc
+# bad custom positions are refused with a readable message
+r = c.post("/api/pipeline/run", json={**iedb, "iedb": {"mask_choice": "custom", "positions": "x,y"}})
+assert r.status_code == 400 and "Positions to mask" in r.get_json()["error"], r.get_json()
+r = c.post("/api/pipeline/run", json={**iedb, "iedb": {"mask_choice": "bogus"}}); assert r.status_code == 400
+
 os.environ.pop("PYTHONPATH", None)
 
 # ---- optional: real BigMHC ----------------------------------------------------------
