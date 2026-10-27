@@ -14,7 +14,7 @@ import glob, hashlib, os, re, subprocess, sys
 
 _SKIP = {".git", "data", "models", "nb", "test", "node_modules", "__pycache__", ".venv",
          "lib", "code", "proteome", "pwm", "temp", "input", "output",
-         "method", "test_data", "docker", "deploy", "examples"}      # inside the tools, never a tool root
+         "method", "test_data", "docker", "deploy", "examples", "PWMdef", "nnetsDef", "rpep"}      # inside the tools, never a tool root
 _MAX_DEPTH = 6
 
 
@@ -60,6 +60,25 @@ def find_prime(root):
     hits = [dp for dp, dns, fns in _walk(root)
             if "PRIME" in fns and os.path.isfile(os.path.join(dp, "lib", "PRIME.cc"))]
     return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
+def find_mixmhc2pred(root):
+    """MixMHC2pred clone/release: the Linux binary MixMHC2pred_unix beside nnetsDef/."""
+    hits = [dp for dp, dns, fns in _walk(root) if "MixMHC2pred_unix" in fns and os.path.isdir(os.path.join(dp, "nnetsDef"))]
+    return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
+def find_iedb_bundle_ii(root):
+    """IEDB next-generation T Cell Class II standalone: src/tcell_mhcii.py beside pyproject.toml."""
+    hits = [dp for dp, dns, fns in _walk(root)
+            if "pyproject.toml" in fns and os.path.isfile(os.path.join(dp, "src", "tcell_mhcii.py"))]
+    return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
+def find_iedb_bundle_ii_python(root):
+    home = find_iedb_bundle_ii(root)
+    py = os.path.join(home, ".venv", "bin", "python") if home else None
+    return py if py and os.path.isfile(py) else None
 
 
 def find_iedb_bundle(root):

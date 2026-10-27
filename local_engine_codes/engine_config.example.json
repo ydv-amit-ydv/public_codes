@@ -33,6 +33,15 @@
       "enabled": true,
       "home": "auto",
       "python": "auto"
+    },
+    "mixmhc2pred": {
+      "enabled": true,
+      "home": "auto"
+    },
+    "iedb_bundle_ii": {
+      "enabled": true,
+      "home": "auto",
+      "python": "auto"
     }
   }
 }

@@ -99,14 +99,14 @@ def read_sequences(text):
     return seqs
 
 
-def build_peptides(text, mode, lengths):
-    """DataFrame[Protein, Start, Peptide] plus a list of warnings."""
+def build_peptides(text, mode, lengths, bounds=(8, 14)):
+    """DataFrame[Protein, Start, Peptide] plus a list of warnings. `bounds` = accepted length of loose peptides."""
     warns, rows = [], []
     if mode == "peptides":
         for i, tok in enumerate(text.replace(">", " ").split(), 1):
             p = tok.upper()
-            if not (8 <= len(p) <= 14) or set(p) - AA:
-                warns.append(f"skipped '{tok}' (needs 8-14 standard aa)")
+            if not (bounds[0] <= len(p) <= bounds[1]) or set(p) - AA:
+                warns.append(f"skipped '{tok}' (needs {bounds[0]}-{bounds[1]} standard aa)")
                 continue
             rows.append(("peptide", i, p))
     else:

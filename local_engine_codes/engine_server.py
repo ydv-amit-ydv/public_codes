@@ -14,7 +14,8 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.serving import run_simple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts", "MHC1/Processing_scripts"):
+for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts", "MHC1/Processing_scripts",
+            "MHC2/BA_EL_scripts", "MHC2/Immunogenicity_scripts"):
     sys.path.insert(0, os.path.join(HERE, sub))
 sys.path.insert(0, HERE)
 
@@ -23,7 +24,8 @@ from common.jobs import MANAGER                              # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
-import pipeline                                              # noqa: E402
+import pipeline, pipeline_ii                                  # noqa: E402
+import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import pandas as pd                                          # noqa: E402
 
 main = Flask(__name__)
@@ -188,8 +190,61 @@ def health_iedb_bundle(deep):
     return checks
 
 
+def health_mixmhc2pred(deep):
+    m = config.model("mixmhc2pred")
+    home = m.get("home") or ""
+    checks = [_check("MixMHC2pred folder", os.path.isfile(os.path.join(home, "MixMHC2pred_unix")),
+                     (home or f"not found under {config.search_root()} (clone GfellerLab/MixMHC2pred there)") + _auto(m, "home"))]
+    if not checks[0]["ok"]:
+        return checks
+    pwm = os.path.join(home, "PWMdef")
+    have = os.path.isdir(pwm) and any(f.endswith(".txt") for f in os.listdir(pwm))
+    checks.append(_check("allele definitions (PWMdef)", have,
+                         "ok" if have else mx2.HINT))
+    if deep and have:
+        try:
+            import pandas as _pd
+            df, _ = mx2.predict(_pd.DataFrame({"Protein": ["t"], "Start": [1], "Peptide": ["PKYVKQNTLKLAT"]}), ["HLA-DRB1*01:01"])
+            good = len(df) == 1 and float(df["MIX2_%Rank"].iloc[0]) < 20
+            checks.append(_check("PKYVKQNTLKLAT / DRB1*01:01 prediction", good,
+                                 f"%Rank {float(df['MIX2_%Rank'].iloc[0]):.2f}" if len(df) else "no result"))
+        except Exception as e:
+            checks.append(_check("PKYVKQNTLKLAT / DRB1*01:01 prediction", False, e))
+    return checks
+
+
+def health_iedb_bundle_ii(deep):
+    import shutil
+    m = config.model("iedb_bundle_ii")
+    home, py = m.get("home") or "", m.get("python") or ""
+    checks = [_check("IEDB class II bundle folder", os.path.isfile(os.path.join(home, "src", "tcell_mhcii.py")),
+                     (home or f"not found under {config.search_root()}: download IEDB_NG_TC2-*.tar.gz (see README)") + _auto(m, "home"))]
+    if checks[0]["ok"]:
+        checks.append(_check("bundle environment (.venv)", bool(py), (py or "run `uv sync` inside the bundle") + _auto(m, "python")))
+        miss = [t for t in ("tcsh", "gawk", "perl", "R") if not shutil.which(t, path="/usr/bin:/bin")]
+        checks.append(_check("tcsh, gawk, perl, R", not miss, "ok" if not miss else
+                             "missing: " + " ".join(miss) + "  (sudo apt install tcsh gawk perl r-base-core)"))
+    if deep and all(c["ok"] for c in checks) and py:
+        import pandas as _pd
+        rows = _pd.DataFrame({"Protein": ["t"], "Start": [1], "Peptide": ["PKYVKQNTLKLAT"]})
+        try:
+            df, _ = nn2.predict(rows, ["HLA-DRB1*01:01"], [13], None, kinds=("el",), version="4.3")
+            good = len(df) == 1 and float(df["NII_%Rank_EL"].iloc[0]) < 2
+            checks.append(_check("NetMHCIIpan: PKYVKQNTLKLAT / DRB1*01:01", good,
+                                 f"EL %Rank {float(df['NII_%Rank_EL'].iloc[0]):.2f}" if len(df) else "no result"))
+        except Exception as e:
+            checks.append(_check("NetMHCIIpan: PKYVKQNTLKLAT / DRB1*01:01", False, e))
+        try:
+            e = cd4.predict(["PKYVKQNTLKLAT"])
+            checks.append(_check("CD4episcore", len(e) == 1, f"score {float(e['CD4_Episcore'].iloc[0]):.2f}" if len(e) else "no result"))
+        except Exception as ex:
+            checks.append(_check("CD4episcore", False, ex))
+    return checks
+
+
 HEALTH = {"netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "mhcflurry": health_mhcflurry,
-          "prime": health_prime, "iedb_bundle": health_iedb_bundle, "bigmhc": health_bigmhc}
+          "prime": health_prime, "iedb_bundle": health_iedb_bundle, "bigmhc": health_bigmhc,
+          "mixmhc2pred": health_mixmhc2pred, "iedb_bundle_ii": health_iedb_bundle_ii}
 
 
 @main.get("/api/config")
@@ -244,12 +299,16 @@ def api_alleles():
         seen |= {a for v in allele_lib.PRESETS.values() for a in v["alleles"]}     # searchable even if NetMHCpan is missing
         _all_cache.clear()
         _all_cache[key] = sorted(seen)
-    return jsonify(presets=allele_lib.PRESETS, all=_all_cache[key])
+    return jsonify(presets=allele_lib.PRESETS, all=_all_cache[key], presets_ii=allele_lib.PRESETS_II)
 
 
 def _needed_models(params):
     m = params.get("models") or {}
     need = []
+    if int(params.get("mhc_class", 1)) == 2:
+        if m.get("netmhciipan_el") or m.get("netmhciipan_ba") or m.get("cd4episcore"): need.append("iedb_bundle_ii")
+        if m.get("mixmhc2pred"): need.append("mixmhc2pred")
+        return need
     if m.get("netmhcpan"): need.append("netmhcpan")
     if m.get("mixmhcpred") or m.get("prime"): need.append("mixmhcpred")      # PRIME calls MixMHCpred
     if m.get("prime"): need.append("prime")
@@ -259,10 +318,33 @@ def _needed_models(params):
     return need
 
 
+def _pipe(params):
+    return pipeline_ii if int(params.get("mhc_class", 1)) == 2 else pipeline
+
+
+@main.get("/api/alleles/search")
+def api_allele_search():
+    """Class II allele search (MixMHC2pred's table has ~350,000 names, so it is searched here, not in the browser)."""
+    q = request.args.get("q", "").strip().lower().replace("*", "").replace(":", "").replace("_", "")
+    if len(q) < 2:
+        return jsonify(hits=[])
+    pool = {a for v in allele_lib.PRESETS_II.values() for a in v["alleles"]}
+    try:
+        home = config.model("mixmhc2pred").get("home")
+        if home and os.path.isdir(os.path.join(home, "PWMdef")):
+            pool |= set(mx2.allele_map(home))
+    except OSError:
+        pass
+    norm = lambda a: a.lower().replace("*", "").replace(":", "").replace("_", "")
+    hits = sorted((a for a in pool if q in norm(a)), key=lambda a: (len(a), a))[:80]
+    return jsonify(hits=hits)
+
+
 @main.post("/api/pipeline/preview")
 def pipeline_preview():
     try:
-        return jsonify(pipeline.preview(request.get_json(force=True)))
+        params = request.get_json(force=True)
+        return jsonify(_pipe(params).preview(params))
     except (ValueError, config.ConfigError) as e:
         return jsonify(hint=str(e))            # normal while the form is half filled: not an HTTP error
 
@@ -271,7 +353,7 @@ def pipeline_preview():
 def pipeline_run():
     params = request.get_json(force=True)
     try:
-        pipeline.normalise(params)
+        _pipe(params).normalise(params)
         for name in _needed_models(params):
             if not config.model(name).get("enabled", True):
                 return jsonify(error=f"{name} is disabled in Settings."), 400
@@ -280,7 +362,7 @@ def pipeline_run():
                 return jsonify(error=f"{name} is not ready: " + "; ".join(f"{c['name']} ({c['detail']})" for c in bad)), 400
     except (ValueError, config.ConfigError) as e:
         return jsonify(error=str(e)), 400
-    job = MANAGER.submit(lambda j: pipeline.run(params, j))
+    job = MANAGER.submit(lambda j, mod=_pipe(params): mod.run(params, j))
     return jsonify(id=job.id)
 
 

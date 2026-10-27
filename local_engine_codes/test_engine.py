@@ -133,11 +133,73 @@ open(f"{BUN}/src/tcell_mhci.py", "w").write(textwrap.dedent('''\
                     print(f"{i}\\t{st + 1}\\t{pep}\\t{j['alleles']}\\t0.5\\t1.0\\t0.9\\t{0.96 if hit else 0.1}\\t{0.4 if hit else 50.0}")
     '''))
 
+
+# ---- MHC class II stand-ins ----------------------------------------------------------------------------
+# MixMHC2pred: errors out (no output file) on an allele it has no definition for; PKYVKQNTLKLATGM is the one strong hit
+MIX2 = os.path.join(TMP, "mix2"); os.makedirs(f"{MIX2}/nnetsDef"); os.makedirs(f"{MIX2}/PWMdef")
+open(f"{MIX2}/PWMdef/Alleles_map_Human.txt", "w").write("# list\nOfficialName\tAlleleName\tmapName\tseqSimilarity\n"
+    "HLA-DRB1*01:01\tDRB1_01_01\tDRB1_01_01\t1\nHLA-DRB1*15:01\tDRB1_15_01\tDRB1_15_01\t1\n"
+    "HLA-DQA1*05:01/DQB1*02:01\tDQA1_05_01__DQB1_02_01\tx\t1\n")
+open(f"{MIX2}/PWMdef/Alleles_map_Mouse.txt", "w").write("OfficialName\tAlleleName\tmapName\tseqSimilarity\nH2-IAb\tH2_Aa_b__H2_Ab_b\tx\t1\n")
+open(f"{MIX2}/PWMdef/DRB1_01_01.txt", "w").write("x")
+open(f"{MIX2}/MixMHC2pred_unix", "w").write("#!%s\n" % sys.executable + textwrap.dedent('''\
+    import sys
+    a = sys.argv[1:]; inp = a[a.index("-i") + 1]; out = a[a.index("-o") + 1]
+    names = a[a.index("-a") + 1:]; names = [n for n in names if not n.startswith("--")]; ctx = "--no_context" not in a
+    known = {"DRB1_01_01", "DRB1_15_01", "DQA1_05_01__DQB1_02_01", "H2_Aa_b__H2_Ab_b"}
+    bad = [n for n in names if n not in known]
+    if bad: print("** Something went wrong!: The allele(s) %s aren't defined"); sys.exit(0)
+    rows = [l.rstrip("\\n").split("\\t") for l in open(inp) if l.strip()]
+    if ctx and any(len(r) != 2 or len(r[1]) != 12 for r in rows): print("bad context"); sys.exit(0)
+    with open(out, "w") as f:
+        f.write("####################\\n# Output from MixMHC2pred (stub)\\n####################\\n")
+        f.write("Peptide\\t" + ("Context\\t" if ctx else "") + "BestAllele\\t%Rank_best\\t" + "\\t".join(f"%Rank_{n}\\tCoreP1_{n}" for n in names) + "\\n")
+        for r in rows:
+            rk = 0.5 if r[0].startswith("PKYVKQNTLKLAT") else 50.0
+            f.write(r[0] + "\\t" + (r[1] + "\\t" if ctx else "") + names[0] + f"\\t{rk}\\t" + "\\t".join(f"{rk}\\t5" for n in names) + "\\n")
+    '''))
+os.chmod(f"{MIX2}/MixMHC2pred_unix", 0o755)
+
+# IEDB T Cell Class II bundle: refuses peptide_list like the real v0.2.3-beta, answers unknown alleles with an empty table
+BUN2 = os.path.join(TMP, "bundle2", "ng_tc2-v0.2.3-beta"); os.makedirs(f"{BUN2}/src"); os.makedirs(f"{BUN2}/.venv/bin")
+open(f"{BUN2}/pyproject.toml", "w").write("[project]\nname='ng_tc2'\n")
+os.symlink(sys.executable, f"{BUN2}/.venv/bin/python")
+open(f"{BUN2}/src/tcell_mhcii.py", "w").write(textwrap.dedent('''\
+    import json, sys
+    a = sys.argv[1:]; j = json.load(open(a[a.index("-j") + 1])); pred = j["predictors"][0]
+    sys.stdin.read() if False else None
+    seqs = j["input_sequence_text"].splitlines()          # KeyError for peptide_list, as in the real tool
+    recs = list(zip(seqs[0::2], seqs[1::2])); lo, hi = j["peptide_length_range"]
+    HIT = "PKYVKQNTLKLATGM"
+    if pred["type"] == "immunogenicity":
+        print("Temporary directory created: /tmp/x"); print("#Read command line. Process ID: 1")
+        print("seq_num\\tpeptide\\tstart\\tend\\tpeptide_length\\tcore\\tscore")
+        for i, (_, sq) in enumerate(recs, 1):
+            for st in range(len(sq) - lo + 1):
+                pep = sq[st:st + lo]; print(f"{i}\\t{pep}\\t{st + 1}\\t{st + lo}\\t{lo}\\t{pep[:9]}\\t{96.32 if pep.startswith("PKYVKQNTLKLAT") else 99.0}")
+        sys.exit(0)
+    meth = pred["method"]; ver = meth.split("-")[1] if "-" in meth else "default"
+    el_hit = {"4.3": 0.86, "4.2": 0.77, "default": 0.615}[ver]
+    known = {"HLA-DRB1*01:01", "HLA-DRB1*15:01", "HLA-DQA1*05:01/DQB1*02:01", "H2-IAb"}
+    ba = "_ba" in meth
+    print("allele\\tseq_num\\tstart\\tend\\tpeptide_length\\tcore\\tpeptide\\t" + ("ic50" if ba else "score") + "\\tpercentile")
+    for al in j["alleles"].split(","):
+        al = al if al.startswith(("HLA-", "H2")) else "HLA-" + al
+        if al not in known: continue
+        for i, (_, sq) in enumerate(recs, 1):
+            for L in range(lo, hi + 1):
+                for st in range(len(sq) - L + 1):
+                    pep = sq[st:st + L]; hit = pep.startswith("PKYVKQNTLKLAT") and al == "HLA-DRB1*01:01"
+                    val = (6.34 if hit else 20000.0) if ba else (el_hit if hit else 0.01)
+                    print(f"{al}\\t{i}\\t{st + 1}\\t{st + L}\\t{L}\\t{pep[:9]}\\t{pep}\\t{val}\\t{0.68 if hit else 60.0}")
+    '''))
+
 settings = {"tmp_dir": os.path.join(TMP, "work"),
             "models": {"netmhcpan": {"home": NMP}, "bigmhc": {"python": sys.executable, "home": BM},
                        "mixmhcpred": {"home": MIX, "python": sys.executable}, "prime": {"home": PRM, "python": sys.executable},
                        "mhcflurry": {"python": sys.executable, "command": f"{MFD}/mhcflurry-predict"},
-                       "iedb_bundle": {"home": BUN, "python": f"{BUN}/.venv/bin/python"}}}
+                       "iedb_bundle": {"home": BUN, "python": f"{BUN}/.venv/bin/python"},
+                       "mixmhc2pred": {"home": MIX2}, "iedb_bundle_ii": {"home": BUN2, "python": f"{BUN2}/.venv/bin/python"}}}
 
 # ---- discovery: copy-and-run layout (no explicit paths anywhere) ----------------------
 import shutil                                  # noqa: E402
@@ -488,6 +550,77 @@ c.put("/api/config", json={"text": json.dumps(nob)})
 r = c.post("/api/pipeline/run", json={**proc, "models": {"netchop": True}})
 assert r.status_code == 400 and "iedb_bundle is not ready" in r.get_json()["error"], r.get_json()
 c.put("/api/config", json={"text": json.dumps(settings)})
+
+
+# ---- MHC class II ------------------------------------------------------------------------------------------
+import calis_immunogenicity                                                    # noqa: E402,F401
+from common import alleles as al_lib                                           # noqa: E402
+assert al_lib.canonical_ii("DQA1_05_01__DQB1_02_01") == "HLA-DQA1*05:01/DQB1*02:01" and al_lib.mix2_name("DRB1*15:01") == "DRB1_15_01"
+assert len(al_lib.PRESETS_II["IEDB class II reference panel 27"]["alleles"]) == 27
+hits = c.get("/api/alleles/search?q=DQA1*05:01/DQB1*02").get_json()["hits"]
+assert "HLA-DQA1*05:01/DQB1*02:01" in hits and c.get("/api/alleles/search?q=x").get_json()["hits"] == []
+assert "IEDB class II reference panel 27" in c.get("/api/alleles").get_json()["presets_ii"]
+
+HA = "SGTNGVTVACPYSDPDLNLQPKYVKQNTLKLATGMRNVPEKQTRGIFGAIAGFIENGWEGMIDGWYGFRHQ"
+ii = {"mhc_class": 2, "text": ">HA desc\n" + HA, "mode": "scan", "lengths": [15], "chain": True, "nii": {"version": "4.3"},
+      "alleles": ["DRB1*01:01", "HLA-DRB1*15:01", "DQA1*05:01/DQB1*02:01", "H2-IAb", "HLA-DRB1*99:99"],
+      "models": {"netmhciipan_el": True, "netmhciipan_ba": True, "mixmhc2pred": True, "cd4episcore": True},
+      "filters": {"nii_el_rank_max": 2}}
+pv = c.post("/api/pipeline/preview", json=ii).get_json()
+assert pv["n_peptides"] == len(HA) - 14 and pv["chained"] and any("MixMHC2pred does not support: HLA-DRB1*99:99" in w for w in pv["warnings"]), pv
+r = c.post("/api/pipeline/run", json={**ii, "alleles": ["HLA-A*02:01"]})
+assert r.status_code == 400 and "Not MHC class II alleles" in r.get_json()["error"], r.get_json()
+r = c.post("/api/pipeline/run", json={**ii, "nii": {"version": "9.9"}}); assert r.status_code == 400
+
+have_tools = all(_sh.which(t, path="/usr/bin:/bin") for t in ("tcsh", "gawk", "perl", "R"))
+if have_tools:
+    d = wait_job(c.post("/api/pipeline/run", json=ii).get_json()["id"])
+    assert d["state"] == "done", d
+    assert [x["name"] for x in d["stages"]] == ["netmhciipan", "mixmhc2pred", "cd4episcore", "merge"], d["stages"]
+    rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+    g = rows[("PKYVKQNTLKLATGM", "HLA-DRB1*01:01")]
+    assert g["NII_Score_EL"] == 0.86 and g["NII_%Rank_EL"] == 0.68 and g["NII_IC50_nM"] == 6.34 and g["MIX2_%Rank"] == 0.5, g
+    assert g["CD4_Episcore"] == 96.32 and g["Pass_NII"] and g["Pass_Mix2"] and g["Pass_CD4"] and g["Pass_All"], g
+    assert rows[("PKYVKQNTLKLATGM", "H2-IAb")]["NII_%Rank_EL"] == 60.0          # mouse allele scored and labelled
+    other = rows[("QPKYVKQNTLKLATG", "HLA-DRB1*01:01")]
+    assert other["CD4_Episcore"] is None and not other["Pass_All"], other        # chain: CD4episcore only ran for the peptide that passed
+    w = d["summary"]["warnings"]
+    assert any("NetMHCIIpan does not support: HLA-DRB1*99:99" in x for x in w) and any("MixMHC2pred does not support" in x for x in w), w
+    assert d["summary"]["pairs_passed"] == 1 and d["summary"]["peptides_passed"] == 1 and d["summary"]["chained"], d["summary"]
+    srow = c.get(f"/api/jobs/{d['id']}/result?table=summary").get_json()["rows"][0]
+    assert srow["Peptide"] == "PKYVKQNTLKLATGM" and srow["Alleles_passed_list"] == "HLA-DRB1*01:01" and srow["CD4_Episcore"] == 96.32, srow
+    # versions are passed through: 4.3 / 4.2 / IEDB default give different numbers
+    for ver, want in (("4.2", 0.77), ("default", 0.615)):
+        d = wait_job(c.post("/api/pipeline/run", json={**ii, "nii": {"version": ver}, "alleles": ["HLA-DRB1*01:01"],
+                                                      "models": {"netmhciipan_el": True}, "filters": {}}).get_json()["id"])
+        row = [r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"] if r["Peptide"] == "PKYVKQNTLKLATGM"][0]
+        assert row["NII_Score_EL"] == want, (ver, row)
+    # loose peptides: the bundle refuses peptide_list, so they go in as one-window sequences, mixed lengths included
+    d = wait_job(c.post("/api/pipeline/run", json={**ii, "mode": "peptides", "text": "PKYVKQNTLKLATGM\nGMIDGWYGFRHQNSE\nPKYVKQNTLKLAT",
+                                                  "alleles": ["HLA-DRB1*01:01"], "chain": False, "filters": {}}).get_json()["id"])
+    assert d["state"] == "done" and d["summary"]["pairs"] == 3, d
+    rows = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+    assert rows["PKYVKQNTLKLATGM"]["NII_%Rank_EL"] == 0.68 and rows["GMIDGWYGFRHQNSE"]["NII_%Rank_EL"] == 60.0 and rows["PKYVKQNTLKLAT"]["Length"] == 13, rows
+    assert rows["PKYVKQNTLKLATGM"]["MIX2_%Rank"] == 0.5
+    # CD4episcore alone: needs no allele scores, no binding filters
+    d = wait_job(c.post("/api/pipeline/run", json={**ii, "models": {"cd4episcore": True}, "filters": {"cd4_max": 97}, "chain": False}).get_json()["id"])
+    assert d["state"] == "done" and d["summary"]["pairs_passed"] > 0, d["summary"]
+    for name in ("mixmhc2pred", "iedb_bundle_ii"):
+        h = c.post(f"/api/health/{name}?deep=1").get_json(); assert h["ok"], h
+else:
+    print("skipped class II bundle tests: tcsh, gawk, perl and R are not all installed")
+
+# MixMHC2pred alone, and its missing-definitions state is explained, not crashed on
+d = wait_job(c.post("/api/pipeline/run", json={**ii, "models": {"mixmhc2pred": True}, "filters": {"mix2_rank_max": 2}}).get_json()["id"])
+rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+assert rows[("PKYVKQNTLKLATGM", "HLA-DRB1*01:01")]["Pass_All"] and d["summary"]["pairs_passed"] == 4, d["summary"]   # 4 supported alleles at rank 0.5
+_sh.move(f"{MIX2}/PWMdef", f"{MIX2}/PWMdef_off")
+h = c.post("/api/health/mixmhc2pred").get_json()
+assert not h["ok"] and "mixmhc2pred.unil.ch/PWMdef" in h["checks"][1]["detail"], h
+r = c.post("/api/pipeline/run", json={**ii, "models": {"mixmhc2pred": True}}); assert r.status_code == 400 and "PWMdef" in r.get_json()["error"], r.get_json()
+_sh.move(f"{MIX2}/PWMdef_off", f"{MIX2}/PWMdef")
+# class I and class II requests do not interfere
+assert c.post("/api/pipeline/preview", json={**params, "mhc_class": 1}).status_code == 200
 
 os.environ.pop("PYTHONPATH", None)
 

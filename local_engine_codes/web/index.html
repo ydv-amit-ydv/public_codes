@@ -14,6 +14,9 @@ nav button.on{background:var(--acc)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#888;margin-right:6px}
 .dot.ok{background:#3c3}.dot.bad{background:#e44}
 .fdot{margin-right:7px}
+#form[data-cls="1"] .c2{display:none}
+#form[data-cls="2"] .c1{display:none}
+.clsrow{display:flex;gap:18px;margin:0 0 10px}
 .pane{flex:1;display:none;min-height:0}.pane.on{display:flex}
 iframe{flex:1;border:0;width:100%}
 #form{width:430px;max-width:100%;padding:14px;overflow:auto;background:var(--card);border-right:1px solid var(--line)}
@@ -62,14 +65,18 @@ tr.pass{background:var(--pass)}
 
 <!-- ============================ PIPELINE ============================ -->
 <div class="pane" id="pipeline">
- <div id="form">
+ <div id="form" data-cls="1">
+  <div class="clsrow">
+    <label><input type="radio" name="cls" value="1" checked> <b>MHC class I</b> <span class="muted">CD8 T cells</span></label>
+    <label><input type="radio" name="cls" value="2"> <b>MHC class II</b> <span class="muted">CD4 T cells</span></label>
+  </div>
   <h3>1. Sequence or peptides</h3>
   <label class="i"><input type="radio" name="mode" value="scan" checked> Cut a protein / FASTA into fragments</label>
   <label class="i"><input type="radio" name="mode" value="peptides"> Use the peptides exactly as given (one per line)</label>
   <textarea id="text" rows="7" spellcheck="false">&gt;demo
 MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <div style="margin-top:4px"><input type="file" id="file" accept=".txt,.fa,.fasta,.pep"> <span class="muted">or load a file</span></div>
-  <div id="lenrow" style="margin-top:6px">Fragment sizes: <span id="lens"></span></div>
+  <div id="lenrow" style="margin-top:6px">Fragment sizes: <span id="lens" class="c1"></span><span id="lens2" class="c2"></span></div>
 
   <h3>2. Alleles</h3>
   <div class="presets" id="presets"></div>
@@ -79,6 +86,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <button class="b" id="clearA">clear all</button>
 
   <h3>3. Models</h3>
+<div class="c1">
   <label class="i"><span class="dot fdot" data-m="netmhcpan"></span><input type="checkbox" id="m_nmp" checked> NetMHCpan 4.2: binding (EL + BA)</label>
   <label class="i"><span class="dot fdot" data-m="mixmhcpred"></span><input type="checkbox" id="m_mix" checked> MixMHCpred 3.0: presentation</label>
   <label class="i"><span class="dot fdot" data-m="mhcflurry"></span><input type="checkbox" id="m_mhcf" checked> MHCflurry 2: affinity, processing, presentation</label>
@@ -92,13 +100,30 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <div id="procnote" class="muted" style="font-size:12px;margin:0 0 4px 30px;display:none">NetCTLpan and NetChop need the protein: choose "Cut a protein" in step 1.</div>
   <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_el" checked> BigMHC EL: presentation</label>
   <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_im" checked> BigMHC IM: immunogenicity</label>
+</div>
+<div class="c2">
+  <label class="i"><span class="dot fdot" data-m="iedb_bundle_ii"></span><input type="checkbox" id="m2_el" checked> NetMHCIIpan: eluted ligand (EL)</label>
+  <label class="i"><span class="dot fdot" data-m="iedb_bundle_ii"></span><input type="checkbox" id="m2_ba" checked> NetMHCIIpan: binding affinity (BA)</label>
+  <div style="margin:0 0 6px 30px">Version
+    <select id="nii_version"><option value="4.3">4.3 (newest)</option><option value="4.2">4.2</option><option value="default">IEDB default (matches IEDB web exports)</option></select></div>
+  <label class="i"><span class="dot fdot" data-m="mixmhc2pred"></span><input type="checkbox" id="m2_mix" checked> MixMHC2pred 2.1: ligand prediction</label>
+  <label class="i"><span class="dot fdot" data-m="iedb_bundle_ii"></span><input type="checkbox" id="m2_cd4" checked> CD4episcore: CD4 immunogenicity <span class="muted">(peptide only, lower = better)</span></label>
+  </div>
   <div id="notready" class="bad" style="font-size:12px;margin:2px 0 4px"></div>
-  <label class="i muted"><input type="checkbox" disabled> MHC class II models (planned)</label>
-  <label class="i" style="margin-top:6px"><input type="checkbox" id="chain" checked>
+  <label class="i c1" style="margin-top:6px"><input type="checkbox" id="chain" checked>
     <b>Chain:</b> run BigMHC only on pairs that pass the NetMHCpan / MixMHCpred / MHCflurry filters <span class="muted">(much faster)</span></label>
+  <label class="i c2" style="margin-top:6px"><input type="checkbox" id="chain2" checked>
+    <b>Chain:</b> run CD4episcore only on peptides that pass the binding filters for at least one allele</label>
 
   <h3>4. Keep a peptide-allele pair when</h3>
-  <div class="grid2">
+  <div class="grid2 c2">
+    <span>NetMHCIIpan %Rank EL &le;</span><input type="number" id="f2_nii_el_rank_max" value="2" step="0.1" min="0">
+    <span>NetMHCIIpan %Rank BA &le;</span><input type="number" id="f2_nii_ba_rank_max" step="0.1" min="0" placeholder="off">
+    <span>NetMHCIIpan IC50 &le; (nM)</span><input type="number" id="f2_nii_ic50_max" step="50" min="0" placeholder="off">
+    <span>MixMHC2pred %Rank &le;</span><input type="number" id="f2_mix2_rank_max" step="0.5" min="0" placeholder="off">
+    <span>CD4episcore percentile &le;</span><input type="number" id="f2_cd4_max" step="1" min="0" max="100" placeholder="off">
+  </div>
+  <div class="grid2 c1">
     <span>NetMHCpan %Rank EL &le;</span><input type="number" id="f_rank_el_max" value="2" step="0.1" min="0">
     <span>NetMHCpan %Rank BA &le;</span><input type="number" id="f_rank_ba_max" step="0.1" min="0" placeholder="off">
     <span>NetMHCpan affinity &le; (nM)</span><input type="number" id="f_aff_max" step="50" min="0" placeholder="off">
@@ -112,7 +137,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
     <span>BigMHC EL &ge;</span><input type="number" id="f_bm_el_min" step="0.05" min="0" max="1" placeholder="off">
     <span>BigMHC IM &ge;</span><input type="number" id="f_bm_im_min" step="0.05" min="0" max="1" placeholder="off">
   </div>
-  <div class="muted" style="margin-top:4px">Blank = no limit. %Rank &le; 0.5 is a strong binder, &le; 2 weak or better.</div>
+  <div class="muted" style="margin-top:4px">Blank = no limit. %Rank &le; 0.5 is a strong binder, &le; 2 weak or better (class II: &le; 2 is the usual cut-off).</div>
 
   <div id="preview" style="margin:14px 0 8px"></div>
   <button class="primary" id="run">Run</button>
@@ -177,8 +202,10 @@ function show(t){
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.t));
 
 /* ---------- form state ---------- */
-let SEL = [], ALL = [], PRESETS = {}, JOB = null, TABLE = "summary", DATA = null, sortKey = null, sortDir = 1, previewTimer = null;
+const CLS = () => +document.querySelector("input[name=cls]:checked").value;
+let SELS = {1: [], 2: []}, ALL = [], PRESETS = {}, PRESETS_II = {}, JOB = null, TABLE = "summary", DATA = null, sortKey = null, sortDir = 1, previewTimer = null;
 $("lens").innerHTML = [8,9,10,11,12,13,14].map(n => `<label><input type="checkbox" class="len" value="${n}" ${n==9?"checked":""}> ${n}</label> `).join("");
+$("lens2").innerHTML = [11,12,13,14,15,16,17,18,19,20,21,22,23,24,25].map(n => `<label><input type="checkbox" class="len2" value="${n}" ${n==15?"checked":""}> ${n}</label> `).join("");
 function applyModeRules(){
   const pep = mode() == "peptides";
   $("lenrow").style.display = pep ? "none" : "";
@@ -191,41 +218,71 @@ function applyModeRules(){
   queuePreview();
 }
 document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = applyModeRules);
+function applyClass(){
+  $("form").dataset.cls = CLS(); store.set("cls", CLS());
+  $("asearch").placeholder = CLS() == 1 ? "search alleles, e.g. A*24 or H-2-K" : "search class II alleles, e.g. DRB1*15 or DQA1*05:01/DQB1*02";
+  $("hits").style.display = "none"; $("asearch").value = "";
+  renderPresets(); drawChips(); refreshNotReady(); queuePreview();
+}
+document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = applyClass);
 const mode = () => document.querySelector("input[name=mode]:checked").value;
 
+const SEL = () => SELS[CLS()];
+for (const c of [1, 2]) { const saved = store.get("alleles" + c); if (saved) { try { SELS[c] = JSON.parse(saved) } catch(e){} } }
+function renderPresets(){
+  const P = CLS() == 1 ? PRESETS : PRESETS_II;
+  $("presets").innerHTML = Object.keys(P).map(k => `<button class="b" data-p="${esc(k)}">${esc(k)} (${P[k].alleles.length})</button>`).join("");
+  document.querySelectorAll("#presets button").forEach(b => b.onclick = () => { SELS[CLS()] = P[b.dataset.p].alleles.slice(); drawChips(); });
+}
 fetch("api/alleles").then(r => r.json()).then(d => {
-  ALL = d.all; PRESETS = d.presets;
-  $("presets").innerHTML = Object.keys(PRESETS).map(k =>
-    `<button class="b" data-p="${esc(k)}">${esc(k)} (${PRESETS[k].alleles.length})</button>`).join("");
-  document.querySelectorAll("#presets button").forEach(b => b.onclick = () => { SEL = PRESETS[b.dataset.p].alleles.slice(); drawChips(); });
-  const saved = store.get("alleles"); if (saved) { try { SEL = JSON.parse(saved) } catch(e){} drawChips(); }
+  ALL = d.all; PRESETS = d.presets; PRESETS_II = d.presets_ii || {};
+  renderPresets(); drawChips();
 });
 function drawChips(){
-  $("chips").innerHTML = `<div class="muted">${SEL.length} selected</div>` +
-    SEL.map((a,i) => `<span class="chip">${esc(a)}<b data-i="${i}">&times;</b></span>`).join("");
-  document.querySelectorAll("#chips b").forEach(b => b.onclick = () => { SEL.splice(+b.dataset.i, 1); drawChips(); });
-  store.set("alleles", JSON.stringify(SEL)); queuePreview();
+  const A = SEL();
+  $("chips").innerHTML = `<div class="muted">${A.length} selected</div>` +
+    A.map((a,i) => `<span class="chip">${esc(a)}<b data-i="${i}">&times;</b></span>`).join("");
+  document.querySelectorAll("#chips b").forEach(b => b.onclick = () => { A.splice(+b.dataset.i, 1); drawChips(); });
+  store.set("alleles" + CLS(), JSON.stringify(A)); queuePreview();
 }
-$("clearA").onclick = () => { SEL = []; drawChips(); };
+$("clearA").onclick = () => { SELS[CLS()] = []; drawChips(); };
 const canonAllele = a => { const m = a.trim().match(/^(?:HLA-)?([ABCEFG])\*?(\d{2,3}):(\d{2,3})/i); return m ? `HLA-${m[1].toUpperCase()}*${m[2]}:${m[3]}` : a.trim(); };
+const canonII = a => { a = a.trim(); return /^(DR|DQ|DP)/i.test(a) ? "HLA-" + a.toUpperCase().replace("_", "*") : a; };
+let searchTimer = null;
+function showHits(list, typed){
+  const A = SEL();
+  const m = list.filter(a => !A.includes(a)).slice(0, 80);
+  $("hits").innerHTML = m.map(a => `<div data-a="${esc(a)}">${esc(a)}</div>`).join("") +
+    (m.includes(typed) || A.includes(typed) ? "" : `<div data-a="${esc(typed)}" class="muted">add "${esc(typed)}" as typed</div>`);
+  $("hits").style.display = "block";
+  document.querySelectorAll("#hits div").forEach(d => d.onclick = () => { if (!A.includes(d.dataset.a)) A.push(d.dataset.a); drawChips(); $("asearch").value = ""; $("hits").style.display = "none"; });
+}
 $("asearch").oninput = () => {
   const raw = $("asearch").value.trim(), q = raw.toLowerCase().replace("*","");
   if (q.length < 2) { $("hits").style.display = "none"; return; }
-  const m = ALL.filter(a => a.toLowerCase().replace("*","").includes(q) && !SEL.includes(a)).slice(0, 80);
-  const typed = canonAllele(raw);
-  $("hits").innerHTML = m.map(a => `<div data-a="${esc(a)}">${esc(a)}</div>`).join("") +
-    (m.includes(typed) || SEL.includes(typed) ? "" : `<div data-a="${esc(typed)}" class="muted">add "${esc(typed)}" as typed</div>`);
-  $("hits").style.display = "block";
-  document.querySelectorAll("#hits div").forEach(d => d.onclick = () => { if (!SEL.includes(d.dataset.a)) SEL.push(d.dataset.a); drawChips(); $("asearch").value = ""; $("hits").style.display = "none"; });
+  if (CLS() == 1) { showHits(ALL.filter(a => a.toLowerCase().replace("*","").includes(q)), canonAllele(raw)); return; }
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {                       // class II: searched on the server (hundreds of thousands of names)
+    const d = await (await fetch("api/alleles/search?q=" + encodeURIComponent(raw))).json();
+    showHits(d.hits || [], canonII(raw));
+  }, 200);
 };
 $("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { $("text").value = t; queuePreview(); }); };
 
 function params(){
   const n = id => { const v = $(id).value; return v === "" ? null : +v; };
+  if (CLS() == 2) return {
+    mhc_class: 2, text: $("text").value, mode: mode(),
+    lengths: [...document.querySelectorAll(".len2:checked")].map(x => +x.value), alleles: SEL(),
+    models: {netmhciipan_el: $("m2_el").checked, netmhciipan_ba: $("m2_ba").checked, mixmhc2pred: $("m2_mix").checked, cd4episcore: $("m2_cd4").checked},
+    nii: {version: $("nii_version").value}, chain: $("chain2").checked,
+    filters: {nii_el_rank_max: n("f2_nii_el_rank_max"), nii_ba_rank_max: n("f2_nii_ba_rank_max"), nii_ic50_max: n("f2_nii_ic50_max"),
+              mix2_rank_max: n("f2_mix2_rank_max"), cd4_max: n("f2_cd4_max")}
+  };
   return {
-    text: $("text").value, mode: mode(),
+    mhc_class: 1, text: $("text").value, mode: mode(),
     lengths: [...document.querySelectorAll(".len:checked")].map(x => +x.value),
-    alleles: SEL,
+    alleles: SEL(),
     iedb: {mask_choice: $("iedb_mask").value, positions: $("iedb_pos").value},
     models: {netmhcpan: $("m_nmp").checked, mixmhcpred: $("m_mix").checked, prime: $("m_prime").checked, iedb_imm: $("m_iedb").checked,
              mhcflurry: $("m_mhcf").checked, netctlpan: $("m_ctl").checked, netchop: $("m_chop").checked,
@@ -245,15 +302,16 @@ async function doPreview(){
   if (d.hint) { el.innerHTML = `<span class="muted">${esc(d.hint)}</span>`; return; }
   const f = n => n.toLocaleString();
   let h = `<b>${f(d.n_peptides)}</b> peptides &times; <b>${d.n_alleles}</b> alleles`;
-  if (d.n_pairs_netmhcpan) h += ` &rarr; ${f(d.n_pairs_netmhcpan)} NetMHCpan predictions`;
-  if (d.n_pairs_fast) h += `; ${f(d.n_pairs_fast)} MixMHCpred / PRIME predictions`;
+  if (d.n_pairs_netmhcpan) h += ` &rarr; ${f(d.n_pairs_netmhcpan)} ${CLS() == 2 ? "NetMHCIIpan" : "NetMHCpan"} predictions`;
+  if (d.n_pairs_fast) h += CLS() == 2 ? `; ${f(d.n_pairs_fast)} MixMHC2pred predictions` : `; ${f(d.n_pairs_fast)} MixMHCpred / PRIME predictions`;
   if (d.n_pairs_bigmhc) h += d.chained ? `; BigMHC on the pairs that pass (up to ${f(d.n_pairs_bigmhc)})` : `; ${f(d.n_pairs_bigmhc)} BigMHC predictions`;
   if (d.too_big) h += `<div class="bad">Too many predictions for one run: use fewer alleles or sizes.</div>`;
   (d.warnings || []).forEach(w => h += `<div class="warn">${esc(w)}</div>`);
   el.innerHTML = h;
 }
 ["text","chain","m_nmp","m_mix","m_prime","m_iedb","m_mhcf","m_ctl","m_chop","iedb_mask","iedb_pos","f_iedb_imm_min","f_mhcf_pres_rank_max","f_mhcf_aff_max","f_ctlpan_rank_max","f_netchop_min","m_el","m_im","f_rank_el_max","f_rank_ba_max","f_aff_max","f_mix_rank_max","f_prime_rank_max","f_bm_el_min","f_bm_im_min"].forEach(id => $(id).addEventListener("input", queuePreview));
-document.querySelectorAll(".len").forEach(c => c.onchange = queuePreview);
+document.querySelectorAll(".len, .len2").forEach(c => c.onchange = queuePreview);
+["chain2","m2_el","m2_ba","m2_mix","m2_cd4","nii_version","f2_nii_el_rank_max","f2_nii_ba_rank_max","f2_nii_ic50_max","f2_mix2_rank_max","f2_cd4_max"].forEach(id => $(id).addEventListener("input", queuePreview));
 $("iedb_mask").onchange = () => { $("iedb_pos").style.display = $("iedb_mask").value == "custom" ? "" : "none"; $("iedbopts").style.opacity = ""; };
 
 /* ---------- run + progress ---------- */
@@ -348,7 +406,7 @@ function renderTable(){
 })();
 
 /* ---------- settings ---------- */
-const MODELS = ["netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_bundle", "bigmhc"];
+const MODELS = ["netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_bundle", "bigmhc", "mixmhc2pred", "iedb_bundle_ii"];
 async function loadCfg(){
   const d = await (await fetch("api/config")).json();
   $("path").textContent = d.path; $("cfg").value = d.text;
@@ -361,7 +419,7 @@ async function saveCfg(){
   $("msg").innerHTML = r.ok ? '<span class="ok">saved</span>' : `<span class="bad">${esc(d.error)}</span>`;
   if (r.ok) { loadCfg(); checkAll(false); }
 }
-const BOXES = {netmhcpan: ["m_nmp"], mixmhcpred: ["m_mix"], mhcflurry: ["m_mhcf"], prime: ["m_prime"], iedb_bundle: ["m_ctl", "m_chop"], bigmhc: ["m_el", "m_im"]};
+const BOXES = {mixmhc2pred: ["m2_mix"], iedb_bundle_ii: ["m2_el", "m2_ba", "m2_cd4"], netmhcpan: ["m_nmp"], mixmhcpred: ["m_mix"], mhcflurry: ["m_mhcf"], prime: ["m_prime"], iedb_bundle: ["m_ctl", "m_chop"], bigmhc: ["m_el", "m_im"]};
 const NEEDS_PROTEIN = ["m_ctl", "m_chop"];
 const blockedByMode = id => NEEDS_PROTEIN.includes(id) && mode() == "peptides";
 const NOTREADY = {}, AUTOOFF = {};
@@ -374,9 +432,12 @@ function showReadiness(m, d){
     if (!d.ok) { if (box.checked) AUTOOFF[id] = true; box.checked = false; box.disabled = true; lab.title = "Not ready: " + why + " (see Settings)"; }
     else { box.disabled = blockedByMode(id); lab.title = ""; if (AUTOOFF[id] && !blockedByMode(id)) { box.checked = true; AUTOOFF[id] = false; } }
   });
-  const bad = Object.keys(NOTREADY).filter(k => NOTREADY[k]);
+  refreshNotReady(); queuePreview();
+}
+const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2};
+function refreshNotReady(){
+  const bad = Object.keys(NOTREADY).filter(k => NOTREADY[k] && CLASS_OF[k] == CLS());
   $("notready").innerHTML = bad.length ? "Not ready: " + bad.map(k => `${k} (${esc(NOTREADY[k])})`).join(", ") + ". See Settings." : "";
-  queuePreview();
 }
 async function check(m, deep){
   const d = await (await fetch(`api/health/${m}` + (deep ? "?deep=1" : ""), {method:"POST"})).json();
@@ -399,6 +460,7 @@ async function deepTest(m){
   alert(m + (d.ok ? " test run OK" : " test run FAILED") + "\n" + d.checks.map(c => (c.ok ? "ok   " : "FAIL ") + c.name + " " + c.detail).join("\n"));
 }
 
+(() => { if (store.get("cls") == "2") document.querySelector('input[name=cls][value="2"]').checked = true; applyClass(); })();
 loadCfg(); checkAll(false); queuePreview();
 show(store.get("tab") || "pipeline");
 </script></body></html>

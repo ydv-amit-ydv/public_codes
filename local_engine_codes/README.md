@@ -14,7 +14,7 @@ Local, offline prediction tools that produce IEDB-style tables for epitope filte
 | IEDB Class I immunogenicity (Calis 2013, "Positions to mask") baseline | working, built in |
 | BigMHC EL + IM (`MHC1/Immunogenicity_scripts/`) | working |
 | NetCTLpan 1.1 + NetChop 3.1 antigen processing, via IEDB's bundle (`MHC1/Processing_scripts/`) | working (real tools checked) |
-| MHC class II BA/EL and CD4 immunogenicity | planned, see below |
+| MHC class II: NetMHCIIpan EL + BA (4.3 / 4.2 / IEDB default), MixMHC2pred 2.1, CD4episcore (`MHC2/`) | working (real tools checked) |
 
 Third-party predictors are licensed separately and are not stored here.
 
@@ -200,14 +200,50 @@ IEDB's full standalone bundle (<https://downloads.iedb.org/nextgen-tools/tcell_m
 `uv` + Python 3.11) also contains NetMHCpan 4.1/4.2, MHCflurry, NetChop and NetCTL for antigen
 processing. It is not needed for anything above; it is the place to look if you later want those.
 
-## MHC class II: official sources found
+## MHC class II
 
-Not built yet; these are the current official tools, from their own pages:
+Switch **MHC class II** at the top of the Pipeline form. Everything is the same idea as class I (one form, progress,
+chaining, filters, per-peptide summary), with its own alleles, models and filters:
 
-| Purpose | Tool | Where | Notes |
-|---|---|---|---|
-| BA + EL | **NetMHCIIpan 4.3** (package 4.3k) | <https://services.healthtech.dtu.dk/services/NetMHCIIpan-4.3/> | DTU, same kind of download as NetMHCpan; free for academic use. HLA-DR/DQ/DP plus mouse H-2 and bovine BoLA-II. |
-| EL (second opinion) | **MixMHC2pred 2.0** | <https://github.com/GfellerLab/MixMHC2pred> (releases page, `MixMHC2pred-2.0.zip`) | Open GitHub release; web version at <https://mixmhc2pred.gfellerlab.org>. |
-| CD4 immunogenicity | **CD4episcore** | <http://tools.iedb.org/CD4episcore> | IEDB; no HLA typing needed. IEDB release 3.0 (March 2025) lists a class II T-cell standalone; whether it contains CD4episcore is unconfirmed. |
+| Model | Source | What it gives |
+|---|---|---|
+| **NetMHCIIpan EL + BA** | DTU's program, run through IEDB's T Cell Class II standalone | EL score and %Rank; BA IC50 (nM) and %Rank. Versions 4.3 (default, newest), 4.2, or *IEDB default* (what IEDB's website returns: it reproduces the scores in IEDB web exports) |
+| **MixMHC2pred 2.1** | Gfeller lab, GitHub | %Rank per allele (lower = better). Uses the 12-residue context around peptides cut from a protein |
+| **CD4episcore** | IEDB (Dhanda et al. 2018), same standalone | CD4 T-cell immunogenicity percentile of the peptide alone, no HLA needed. **Lower = more immunogenic** |
 
-IEDB's own class II bundle also wraps NetMHCIIpan 4.2/4.3.
+- **Alleles:** DR (DRB1/3/4/5), DQ and DP as alpha/beta pairs (`HLA-DQA1*05:01/DQB1*02:01`), and mouse I-A / I-E. Presets: the
+  IEDB class II reference panel (27 alleles: 15 DR, 6 DQ, 6 DP), DR only, the 7-allele DR set CD4episcore is built on, and mouse. The
+  search box looks through MixMHC2pred's full allele table on the server.
+- **Lengths:** 11-25 (default 15). Loose peptides may be 9-30 residues.
+- **Chain:** CD4episcore only runs for peptides that pass the binding filters for at least one allele.
+- A pair passes when every ticked model scored it and met its filter; an allele a tool does not know cannot pass, and the page
+  names it. Class I and class II selections are remembered separately.
+
+### Installing the class II tools
+
+```bash
+# MixMHC2pred (open source; free for academic use, for-profit use needs a licence, see its README)
+cd ~/local_engines/gfeller
+git clone --depth 1 https://github.com/GfellerLab/MixMHC2pred.git && cd MixMHC2pred
+mkdir -p PWMdef && for sp in Human Mouse; do
+  curl -LO https://mixmhc2pred.unil.ch/data/PWMdef/PWMdef_$sp.zip && unzip -oj PWMdef_$sp.zip -d PWMdef
+done                                           # the git repository has the program but not the allele definitions
+
+# IEDB T Cell Class II standalone: NetMHCIIpan and CD4episcore (1.6 GB; free for academic and non-profit use)
+sudo apt install -y tcsh gawk perl r-base-core    # R and perl are needed by CD4episcore's NN-align
+pip install uv
+mkdir -p ~/local_engines/iedb && cd ~/local_engines/iedb
+wget https://downloads.iedb.org/nextgen-tools/tcell_mhcii/LATEST/IEDB_NG_TC2-v0.2.3-beta.tar.gz   # the folder's README names the current file
+tar -xzf IEDB_NG_TC2-v0.2.3-beta.tar.gz && cd ng_tc2-v0.2.3-beta && uv sync
+```
+
+Then Settings -> **Test run** on `mixmhc2pred` and `iedb_bundle_ii`. Notes from testing the real tools:
+
+- **`peptide_list` input fails** in the class II standalone (v0.2.3-beta), even in its own README example, and CD4episcore only
+  accepts a protein. The engine sends every loose peptide as its own one-window sequence, grouped by length, which gives
+  identical numbers (checked: 120 peptides reproduce IEDB's website CD4episcore scores exactly).
+- **An unknown allele returns an empty table and no error** from NetMHCIIpan, and MixMHC2pred stops with a message and no output
+  file; the engine checks alleles first and reports the ones it skipped.
+- IEDB's "combined" immunogenicity method fails in this standalone and is not used.
+- Speed (HA protein, 205 peptides, 8 alleles, three models): about 14 seconds.
+
