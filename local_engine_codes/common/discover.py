@@ -12,7 +12,8 @@ always win over discovery.
 """
 import glob, hashlib, os, re, subprocess, sys
 
-_SKIP = {".git", "data", "models", "nb", "test", "node_modules", "__pycache__", ".venv"}
+_SKIP = {".git", "data", "models", "nb", "test", "node_modules", "__pycache__", ".venv",
+         "lib", "code", "proteome", "pwm", "temp", "input", "output"}      # inside the tools, never a tool root
 _MAX_DEPTH = 6
 
 
@@ -45,26 +46,36 @@ def find_bigmhc(root):
     return min(hits, key=lambda p: p.count(os.sep)) if hits else None
 
 
+def find_mixmhcpred(root):
+    """MixMHCpred 3.x clone: a `MixMHCpred` script beside lib/ and code/main.py."""
+    hits = [dp for dp, dns, fns in _walk(root)
+            if "MixMHCpred" in fns and os.path.isfile(os.path.join(dp, "code", "main.py"))
+            and os.path.isdir(os.path.join(dp, "lib"))]
+    return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
+def find_prime(root):
+    """PRIME 2.x clone: a `PRIME` script beside lib/PRIME.cc."""
+    hits = [dp for dp, dns, fns in _walk(root)
+            if "PRIME" in fns and os.path.isfile(os.path.join(dp, "lib", "PRIME.cc"))]
+    return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
 _py_cache = {}
 
 
-def _has_torch(py):
-    if py not in _py_cache:
+def _can_import(py, mods):
+    key = (py, tuple(mods))
+    if key not in _py_cache:
         try:
-            r = subprocess.run([py, "-c", "import torch, numpy, pandas, psutil"],
-                               capture_output=True, timeout=90)
-            _py_cache[py] = r.returncode == 0
+            r = subprocess.run([py, "-c", "import " + ", ".join(mods)], capture_output=True, timeout=90)
+            _py_cache[key] = r.returncode == 0
         except (OSError, subprocess.TimeoutExpired):
-            _py_cache[py] = False
-    return _py_cache[py]
+            _py_cache[key] = False
+    return _py_cache[key]
 
 
-def find_bigmhc_python():
-    """An interpreter that can import torch. BIGMHC_PYTHON wins, then conda envs
-    (an env named like 'bigmhc' first), then the interpreter running the server."""
-    forced = os.environ.get("BIGMHC_PYTHON")
-    if forced:
-        return os.path.expanduser(forced)
+def _conda_pythons():
     bases = [os.environ.get("CONDA_PREFIX_1"), os.environ.get("CONDA_PREFIX")]
     exe = os.environ.get("CONDA_EXE")
     if exe:
@@ -75,10 +86,27 @@ def find_bigmhc_python():
     for b in filter(None, bases):
         b = b.split(os.sep + "envs" + os.sep)[0]
         envs += glob.glob(os.path.join(b, "envs", "*", "bin", "python"))
-    envs = list(dict.fromkeys(envs))
+    return list(dict.fromkeys(envs))
+
+
+def find_python(mods=("numpy", "pandas")):
+    """An interpreter that can import `mods`: the server's own first, then conda envs."""
+    for py in [sys.executable] + _conda_pythons():
+        if os.path.isfile(py) and _can_import(py, mods):
+            return py
+    return None
+
+
+def find_bigmhc_python():
+    """An interpreter that can import torch. BIGMHC_PYTHON wins, then conda envs
+    (an env named like 'bigmhc' first), then the interpreter running the server."""
+    forced = os.environ.get("BIGMHC_PYTHON")
+    if forced:
+        return os.path.expanduser(forced)
+    envs = _conda_pythons()
     envs.sort(key=lambda p: ("bigmhc" not in p.lower(), p))
     for py in envs + [sys.executable]:
-        if os.path.isfile(py) and _has_torch(py):
+        if os.path.isfile(py) and _can_import(py, ("torch", "numpy", "pandas", "psutil")):
             return py
     return None
 

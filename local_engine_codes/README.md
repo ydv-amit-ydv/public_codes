@@ -6,10 +6,12 @@ Local, offline prediction tools that produce IEDB-style tables for epitope filte
 
 | What | Status |
 |---|---|
-| **Pipeline** tab: one form, NetMHCpan -> BigMHC chained, filters, per-peptide summary | working |
-| `MHC1/BA_EL_scripts/` NetMHCpan 4.2 (EL + BA) | working, runs in parallel |
-| `MHC1/Immunogenicity_scripts/` BigMHC EL + IM | working |
-| IEDB Class I immunogenicity ("Positions to mask") | needs your download, see below |
+| **Pipeline** tab: one form, five models, chained, filters, per-peptide summary | working |
+| NetMHCpan 4.2: binding affinity + eluted ligand (`MHC1/BA_EL_scripts/`) | working, runs in parallel |
+| MixMHCpred 3.0: presentation (`MHC1/BA_EL_scripts/`) | working (reproduces the authors' test output) |
+| PRIME 2.1: immunogenicity (`MHC1/Immunogenicity_scripts/`) | working (reproduces the authors' test output) |
+| BigMHC EL + IM (`MHC1/Immunogenicity_scripts/`) | working |
+| IEDB Class I immunogenicity ("Positions to mask") as a baseline | needs your download, see below |
 | MHC class II BA/EL and CD4 immunogenicity | planned, see below |
 
 Third-party predictors are licensed separately and are not stored here.
@@ -24,8 +26,12 @@ set the filters, press **Run**.
   it is doing ("loading network 3/7", "scoring batch 1/2"), and a live log. **Cancel** stops
   the running programs. Reloading the page picks the job back up. One job runs at a time;
   others wait ("Waiting for the previous job...").
-- **Chain:** with it on, BigMHC scores only the pairs that pass the NetMHCpan filters.
-  BigMHC reloads its seven networks on every call, so this is what keeps runs short.
+- **Chain:** NetMHCpan, MixMHCpred and PRIME are fast and score every pair. BigMHC is slow
+  (it reloads its seven networks on every call), so with Chain on it scores only the pairs that
+  pass the NetMHCpan / MixMHCpred filters. That is what keeps runs short.
+- **A pair passes** when every model you ticked scored it and met its filter. A model that
+  does not know an allele (MixMHCpred and PRIME have their own allele lists; BigMHC is human
+  only) cannot pass it, and the page names the skipped alleles.
 - **Output:** *By peptide* (for each peptide: how many of your alleles it passes and which,
   best NetMHCpan rank, best BigMHC scores) and *Every peptide-allele pair*. Rows that pass
   every filter are green. Both download as CSV (the page shows the best 5,000 rows; the CSV
@@ -69,6 +75,23 @@ needed for the server. With no config file the server **discovers everything**:
 - To search somewhere else: `ENGINE_MODELS_DIR=/path bash start.sh`.
 - The Settings tab shows "In use right now" (what was discovered) and the readiness
   checklist for each model.
+
+## Installing MixMHCpred 3.0 and PRIME 2.1
+
+Both are open GitHub repositories (free for academic use; for-profit use needs a licence from
+the Ludwig Institute, see their READMEs). Put them beside the other tools and the engine finds them:
+
+```bash
+sudo apt install -y g++ perl                 # PRIME's C++ part and script
+mkdir -p ~/local_engines/gfeller && cd ~/local_engines/gfeller
+git clone --depth 1 https://github.com/GfellerLab/MixMHCpred.git
+git clone --depth 1 https://github.com/GfellerLab/PRIME.git
+```
+
+MixMHCpred needs only numpy and pandas, which the engine's own environment already has. PRIME
+ships a binary for other systems, so the engine rebuilds `lib/PRIME.x` for Linux the first time
+PRIME runs. Settings -> **Test run** checks each one with GILGFVFTL on A*02:01. PRIME calls
+MixMHCpred, so selecting PRIME needs MixMHCpred installed.
 
 ## Settings (optional override, edited live in the GUI)
 

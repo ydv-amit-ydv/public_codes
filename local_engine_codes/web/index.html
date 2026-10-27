@@ -79,18 +79,22 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
 
   <h3>3. Models</h3>
   <label class="i"><input type="checkbox" id="m_nmp" checked> NetMHCpan 4.2: binding (EL + BA)</label>
+  <label class="i"><input type="checkbox" id="m_mix" checked> MixMHCpred 3.0: presentation</label>
+  <label class="i"><input type="checkbox" id="m_prime" checked> PRIME 2.1: immunogenicity</label>
   <label class="i"><input type="checkbox" id="m_el" checked> BigMHC EL: presentation</label>
   <label class="i"><input type="checkbox" id="m_im" checked> BigMHC IM: immunogenicity</label>
-  <label class="i muted"><input type="checkbox" disabled> IEDB Class I immunogenicity (not installed yet)</label>
+  <label class="i muted"><input type="checkbox" disabled> IEDB Class I immunogenicity (baseline; not installed yet)</label>
   <label class="i muted"><input type="checkbox" disabled> MHC class II models (planned)</label>
   <label class="i" style="margin-top:6px"><input type="checkbox" id="chain" checked>
-    <b>Chain:</b> run BigMHC only on pairs that pass the NetMHCpan filters <span class="muted">(much faster)</span></label>
+    <b>Chain:</b> run BigMHC only on pairs that pass the NetMHCpan / MixMHCpred filters <span class="muted">(much faster)</span></label>
 
   <h3>4. Keep a peptide-allele pair when</h3>
   <div class="grid2">
     <span>NetMHCpan %Rank EL &le;</span><input type="number" id="f_rank_el_max" value="2" step="0.1" min="0">
     <span>NetMHCpan %Rank BA &le;</span><input type="number" id="f_rank_ba_max" step="0.1" min="0" placeholder="off">
     <span>NetMHCpan affinity &le; (nM)</span><input type="number" id="f_aff_max" step="50" min="0" placeholder="off">
+    <span>MixMHCpred %Rank &le;</span><input type="number" id="f_mix_rank_max" step="0.1" min="0" placeholder="off">
+    <span>PRIME %Rank &le;</span><input type="number" id="f_prime_rank_max" step="0.1" min="0" placeholder="off">
     <span>BigMHC EL &ge;</span><input type="number" id="f_bm_el_min" step="0.05" min="0" max="1" placeholder="off">
     <span>BigMHC IM &ge;</span><input type="number" id="f_bm_im_min" step="0.05" min="0" max="1" placeholder="off">
   </div>
@@ -194,9 +198,11 @@ function params(){
     text: $("text").value, mode: mode(),
     lengths: [...document.querySelectorAll(".len:checked")].map(x => +x.value),
     alleles: SEL,
-    models: {netmhcpan: $("m_nmp").checked, bigmhc_el: $("m_el").checked, bigmhc_im: $("m_im").checked},
+    models: {netmhcpan: $("m_nmp").checked, mixmhcpred: $("m_mix").checked, prime: $("m_prime").checked,
+             bigmhc_el: $("m_el").checked, bigmhc_im: $("m_im").checked},
     chain: $("chain").checked,
     filters: {rank_el_max: n("f_rank_el_max"), rank_ba_max: n("f_rank_ba_max"), aff_max: n("f_aff_max"),
+              mix_rank_max: n("f_mix_rank_max"), prime_rank_max: n("f_prime_rank_max"),
               bm_el_min: n("f_bm_el_min"), bm_im_min: n("f_bm_im_min")}
   };
 }
@@ -208,12 +214,13 @@ async function doPreview(){
   const f = n => n.toLocaleString();
   let h = `<b>${f(d.n_peptides)}</b> peptides &times; <b>${d.n_alleles}</b> alleles`;
   if (d.n_pairs_netmhcpan) h += ` &rarr; ${f(d.n_pairs_netmhcpan)} NetMHCpan predictions`;
+  if (d.n_pairs_fast) h += `; ${f(d.n_pairs_fast)} MixMHCpred / PRIME predictions`;
   if (d.n_pairs_bigmhc) h += d.chained ? `; BigMHC on the pairs that pass (up to ${f(d.n_pairs_bigmhc)})` : `; ${f(d.n_pairs_bigmhc)} BigMHC predictions`;
   if (d.too_big) h += `<div class="bad">Too many predictions for one run: use fewer alleles or sizes.</div>`;
   (d.warnings || []).forEach(w => h += `<div class="warn">${esc(w)}</div>`);
   el.innerHTML = h;
 }
-["text","chain","m_nmp","m_el","m_im","f_rank_el_max","f_rank_ba_max","f_aff_max","f_bm_el_min","f_bm_im_min"].forEach(id => $(id).addEventListener("input", queuePreview));
+["text","chain","m_nmp","m_mix","m_prime","m_el","m_im","f_rank_el_max","f_rank_ba_max","f_aff_max","f_mix_rank_max","f_prime_rank_max","f_bm_el_min","f_bm_im_min"].forEach(id => $(id).addEventListener("input", queuePreview));
 document.querySelectorAll(".len").forEach(c => c.onchange = queuePreview);
 
 /* ---------- run + progress ---------- */
@@ -308,7 +315,7 @@ function renderTable(){
 })();
 
 /* ---------- settings ---------- */
-const MODELS = ["netmhcpan", "bigmhc"];
+const MODELS = ["netmhcpan", "mixmhcpred", "prime", "bigmhc"];
 async function loadCfg(){
   const d = await (await fetch("api/config")).json();
   $("path").textContent = d.path; $("cfg").value = d.text;
@@ -323,7 +330,7 @@ async function saveCfg(){
 }
 async function check(m, deep){
   const d = await (await fetch(`api/health/${m}` + (deep ? "?deep=1" : ""), {method:"POST"})).json();
-  $("d_" + m).className = "dot " + (d.ok ? "ok" : "bad"); return d;
+  const dot = $("d_" + m); if (dot) dot.className = "dot " + (d.ok ? "ok" : "bad"); return d;
 }
 async function checkAll(deep){
   let html = "";

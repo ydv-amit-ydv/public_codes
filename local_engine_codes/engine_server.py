@@ -21,6 +21,7 @@ sys.path.insert(0, HERE)
 from common import alleles as allele_lib, config            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
+import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import pipeline                                              # noqa: E402
 import pandas as pd                                          # noqa: E402
 
@@ -79,7 +80,63 @@ def health_bigmhc(deep):
     return checks
 
 
-HEALTH = {"netmhcpan": health_netmhcpan, "bigmhc": health_bigmhc}
+def _py_imports(py, mods):
+    r = subprocess.run([py, "-c", "import " + ", ".join(mods)], capture_output=True, text=True)
+    return r.returncode == 0, (r.stderr.strip().splitlines() or ["ok"])[-1]
+
+
+def health_mixmhcpred(deep):
+    m = config.model("mixmhcpred")
+    home, py = m.get("home") or "", m.get("python") or ""
+    checks = [_check("install dir", os.path.isfile(os.path.join(home, "MixMHCpred")),
+                     (home or f"not found under {config.search_root()} (clone GfellerLab/MixMHCpred there)") + _auto(m, "home")),
+              _check("python (numpy, pandas)", bool(py), (py or "none found") + _auto(m, "python"))]
+    if not all(c["ok"] for c in checks):
+        return checks
+    ok, detail = _py_imports(py, ("numpy", "pandas"))
+    checks.append(_check("imports (numpy, pandas)", ok, detail if not ok else "ok"))
+    if deep and ok:
+        try:
+            df, _ = mx.predict(["GILGFVFTL"], ["HLA-A*02:01"])
+            good = len(df) == 1 and float(df["MixMHC_%Rank"].iloc[0]) < 1.0
+            checks.append(_check("GILGFVFTL / A*02:01 prediction", good,
+                                 f"%Rank {float(df['MixMHC_%Rank'].iloc[0]):.3f}" if len(df) else "no result"))
+        except Exception as e:
+            checks.append(_check("GILGFVFTL / A*02:01 prediction", False, e))
+    return checks
+
+
+def health_prime(deep):
+    m, mix = config.model("prime"), config.model("mixmhcpred")
+    home, py = m.get("home") or "", m.get("python") or ""
+    checks = [_check("install dir", os.path.isfile(os.path.join(home, "lib", "PRIME.cc")),
+                     (home or f"not found under {config.search_root()} (clone GfellerLab/PRIME there)") + _auto(m, "home")),
+              _check("MixMHCpred 3.0 (required by PRIME)", bool(mix.get("home")),
+                     mix.get("home") or "not found (clone GfellerLab/MixMHCpred beside PRIME)")]
+    if not all(c["ok"] for c in checks):
+        return checks
+    try:
+        elf = open(os.path.join(home, "lib", "PRIME.x"), "rb").read(4) == b"\x7fELF"
+    except OSError:
+        elf = False
+    import shutil
+    checks.append(_check("C++ program", elf or bool(shutil.which("g++")),
+                         "built for Linux" if elf else ("will be compiled on first use" if shutil.which("g++")
+                                                         else "needs compiling and g++ is missing: sudo apt install g++")))
+    if not py:
+        return checks + [_check("python (numpy, pandas)", False, "none found")]
+    if deep and checks[-1]["ok"]:
+        try:
+            df, _ = pr.predict(["GILGFVFTL"], ["HLA-A*02:01"])
+            good = len(df) == 1 and float(df["PRIME_%Rank"].iloc[0]) < 5.0
+            checks.append(_check("GILGFVFTL / A*02:01 prediction", good,
+                                 f"PRIME %Rank {float(df['PRIME_%Rank'].iloc[0]):.3f}" if len(df) else "no result"))
+        except Exception as e:
+            checks.append(_check("GILGFVFTL / A*02:01 prediction", False, e))
+    return checks
+
+
+HEALTH = {"netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "prime": health_prime, "bigmhc": health_bigmhc}
 
 
 @main.get("/api/config")
@@ -140,6 +197,8 @@ def _needed_models(params):
     m = params.get("models") or {}
     need = []
     if m.get("netmhcpan"): need.append("netmhcpan")
+    if m.get("mixmhcpred") or m.get("prime"): need.append("mixmhcpred")      # PRIME calls MixMHCpred
+    if m.get("prime"): need.append("prime")
     if m.get("bigmhc_el") or m.get("bigmhc_im"): need.append("bigmhc")
     return need
 

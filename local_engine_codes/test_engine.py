@@ -64,8 +64,35 @@ open(f"{BM}/src/predict.py", "w").write(textwrap.dedent('''\
     df.to_csv(a["o"], index=False)
     '''))
 
+
+# stand-ins for MixMHCpred 3.0 and PRIME 2.1 that write the real file formats
+# (GILGFVFTL is a strong hit for everything, any other peptide is rank 50)
+MIX = os.path.join(TMP, "mix"); os.makedirs(f"{MIX}/code"); os.makedirs(f"{MIX}/lib")
+open(f"{MIX}/code/main.py", "w").write(""); open(f"{MIX}/lib/alleles_list.txt", "w").write("Allele\t8\t9\nA0201\t1\t1\nB0702\t1\t1\n")
+STUBPY = textwrap.dedent('''\
+    import sys
+    a = sys.argv[1:]; g = lambda k: a[a.index(k) + 1]
+    peps = [l.strip() for l in open(g("-i")) if l.strip()]; als = g("-a").split(",")
+    prime = "PRIME" in sys.argv[0]
+    rank = lambda p, k: (0.1 if k == 0 else 0.2) if p == "GILGFVFTL" else 50.0
+    with open(g("-o"), "w") as f:
+        f.write("####################\\n# Output (stub)\\n####################\\n")
+        if prime:
+            f.write("Peptide\\t%Rank_bestAllele\\t" + "\\t".join(f"%Rank_{x}\\tScore_{x}\\t%RankBinding_{x}" for x in als) + "\\n")
+            for p in peps: f.write(p + "\\t1\\t" + "\\t".join(f"{rank(p, 1)}\\t0.5\\t{rank(p, 0)}" for x in als) + "\\n")
+        else:
+            f.write("Peptide\\tScore_bestAllele\\t" + "\\t".join(f"Score_{x}\\t%Rank_{x}" for x in als) + "\\n")
+            for p in peps: f.write(p + "\\t1\\t" + "\\t".join(f"0.3\\t{rank(p, 0)}" for x in als) + "\\n")
+    ''')
+open(f"{MIX}/MixMHCpred", "w").write("#!/bin/bash\nexec python3 - \"$@\" <<'EOF'\n" + STUBPY.replace("sys.argv[0]", "'MixMHCpred'") + "EOF\n")
+PRM = os.path.join(TMP, "prm"); os.makedirs(f"{PRM}/lib")
+open(f"{PRM}/lib/PRIME.cc", "w").write(""); open(f"{PRM}/lib/PRIME.x", "wb").write(b"\x7fELF stub")
+open(f"{PRM}/lib/alleles.txt", "w").write("A0201\nB0702\nA0101\n")
+open(f"{PRM}/PRIME", "w").write("#!/bin/bash\nexec python3 - \"$@\" <<'EOF'\n" + STUBPY.replace("sys.argv[0]", "'PRIME'") + "EOF\n")
+
 settings = {"tmp_dir": os.path.join(TMP, "work"),
-            "models": {"netmhcpan": {"home": NMP}, "bigmhc": {"python": sys.executable, "home": BM}}}
+            "models": {"netmhcpan": {"home": NMP}, "bigmhc": {"python": sys.executable, "home": BM},
+                       "mixmhcpred": {"home": MIX, "python": sys.executable}, "prime": {"home": PRM, "python": sys.executable}}}
 
 # ---- discovery: copy-and-run layout (no explicit paths anywhere) ----------------------
 import shutil                                  # noqa: E402
@@ -76,12 +103,15 @@ shutil.copy(f"{NMP}/netMHCpan", f"{inner}/netMHCpan"); os.chmod(f"{inner}/netMHC
 bm_home = os.path.join(LE, "bigmhc", "bigmhc"); os.makedirs(f"{bm_home}/models"); os.makedirs(f"{bm_home}/src")
 shutil.copy(f"{BM}/src/predict.py", f"{bm_home}/src/predict.py")
 os.makedirs(os.path.join(LE, "netmhc", "decoy", "netMHCpan"))                     # a *directory* named netMHCpan is not a script
+shutil.copytree(MIX, os.path.join(LE, "mixmhcpred", "MixMHCpred")); shutil.copytree(PRM, os.path.join(LE, "PRIME"))
 os.environ["ENGINE_MODELS_DIR"] = LE
 os.environ["BIGMHC_PYTHON"] = sys.executable
 os.environ["EXPECTED_NMHOME"] = inner
 from common import discover                    # noqa: E402
 assert discover.find_netmhcpan(LE) == inner and discover.find_bigmhc(LE) == bm_home
 assert discover.find_netmhcpan(os.path.join(TMP, "empty-nowhere")) is None
+assert discover.find_mixmhcpred(LE) == os.path.join(LE, "mixmhcpred", "MixMHCpred") and discover.find_prime(LE) == os.path.join(LE, "PRIME")
+assert config.model("mixmhcpred")["python"] and config.model("prime")["home"].endswith("PRIME")
 m = config.model("netmhcpan"); assert m["home"] == inner and "home" in m["auto"], m
 run = discover.runnable_netmhcpan(inner, TMP)
 assert run != f"{inner}/netMHCpan" and f"setenv NMHOME {inner}" in open(run).read()   # patched copy, original untouched
@@ -266,6 +296,51 @@ page = c.get("/").get_data(as_text=True)
 assert "Epitope Filter Engine" in page and 'fetch("api/alleles")' in page
 al = c.get("/api/alleles").get_json()
 assert "HLA-A*02:01" in al["all"] and al["presets"]["Mouse H-2 (all)"]["human"] is False
+
+
+# ---- MixMHCpred + PRIME in the pipeline -----------------------------------------------------
+full = {"text": ">p\nGILGFVFTLN", "mode": "scan", "lengths": [9], "alleles": ["HLA-A*02:01", "H-2-Kb"],
+        "models": {"netmhcpan": True, "mixmhcpred": True, "prime": True, "bigmhc_el": True, "bigmhc_im": True},
+        "chain": True, "filters": {"rank_el_max": 2, "mix_rank_max": 1, "prime_rank_max": 1}}
+pv = c.post("/api/pipeline/preview", json=full).get_json()
+assert any("MixMHCpred does not support: H-2-Kb" in w for w in pv["warnings"]) and pv["n_pairs_fast"] == 4, pv
+r = c.post("/api/pipeline/run", json=full); assert r.status_code == 200, r.get_json()
+d = wait_job(r.get_json()["id"])
+assert d["state"] == "done", d
+assert [x["name"] for x in d["stages"]] == ["netmhcpan", "mixmhcpred", "prime", "bigmhc_el", "bigmhc_im", "merge"], d["stages"]
+row = c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"][0]
+assert row["MixMHC_%Rank"] == 0.1 and row["PRIME_%Rank"] == 0.2 and row["PRIME_%RankBinding"] == 0.1, row
+assert row["Pass_NMP"] and row["Pass_Mix"] and row["Pass_PRIME"] and row["Pass_BigMHC"] and row["Pass_All"], row
+assert d["summary"]["pairs_passed"] == 1 and d["summary"]["chained"], d["summary"]
+srow = c.get(f"/api/jobs/{d['id']}/result?table=summary").get_json()["rows"][0]
+assert srow["Best_MixMHC_%Rank"] == 0.1 and srow["Best_PRIME_%Rank"] == 0.2, srow
+
+# the mix filter gates BigMHC: a peptide failing it is never sent to BigMHC
+strict = {**full, "text": "GILGFVFTL\nILGFVFTLN", "mode": "peptides", "alleles": ["HLA-A*02:01"], "filters": {"mix_rank_max": 1}}
+d = wait_job(c.post("/api/pipeline/run", json={**strict, "models": {"mixmhcpred": True, "bigmhc_el": True}}).get_json()["id"])
+rows = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+assert rows["GILGFVFTL"]["BigMHC_EL"] is not None and rows["ILGFVFTLN"]["BigMHC_EL"] is None, rows
+assert rows["GILGFVFTL"]["Pass_All"] and not rows["ILGFVFTLN"]["Pass_All"] and d["summary"]["chained"]
+
+# PRIME alone: all selected alleles it knows get scored; one it does not know cannot pass
+d = wait_job(c.post("/api/pipeline/run", json={**full, "models": {"prime": True}, "alleles": ["HLA-A*02:01", "HLA-B*07:02"],
+                                              "filters": {"prime_rank_max": 1}}).get_json()["id"])
+assert d["state"] == "done" and d["summary"]["pairs"] == 4 and d["summary"]["pairs_passed"] == 2, d["summary"]
+# every selected allele unsupported by the tool: nothing scored, nothing passes, and it says why
+d = wait_job(c.post("/api/pipeline/run", json={**full, "models": {"mixmhcpred": True}, "alleles": ["H-2-Kb"]}).get_json()["id"])
+assert d["state"] == "done" and d["summary"]["pairs_passed"] == 0 and any("does not support" in w for w in d["summary"]["warnings"]), d
+# a filter for a model that was not run is reported, not silently dropped
+d = wait_job(c.post("/api/pipeline/run", json={**full, "models": {"prime": True}, "filters": {"mix_rank_max": 1}}).get_json()["id"])
+assert any("Filters ignored" in w and "mix_rank_max" in w for w in d["summary"]["warnings"]), d["summary"]
+# PRIME without MixMHCpred installed is refused up front
+nomix = json.loads(json.dumps(settings)); nomix["models"]["mixmhcpred"]["home"] = "/nonexistent"
+c.put("/api/config", json={"text": json.dumps(nomix)})
+r = c.post("/api/pipeline/run", json={**full, "models": {"prime": True}})
+assert r.status_code == 400 and "mixmhcpred is not ready" in r.get_json()["error"], r.get_json()
+c.put("/api/config", json={"text": json.dumps(settings)})
+for name in ("mixmhcpred", "prime"):
+    h = c.post(f"/api/health/{name}?deep=1").get_json(); assert h["ok"], h
+
 os.environ.pop("PYTHONPATH", None)
 
 # ---- optional: real BigMHC ----------------------------------------------------------

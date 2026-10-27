@@ -18,13 +18,19 @@ DEFAULT = {
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
         "bigmhc": {"enabled": True, "python": "auto", "home": "auto", "device": "cpu", "jobs": 0},
+        "mixmhcpred": {"enabled": True, "python": "auto", "home": "auto"},
+        "prime": {"enabled": True, "python": "auto", "home": "auto"},
         "iedb_immunogenicity": {"enabled": False, "python": "", "home": ""},
     },
 }
 
 _FINDERS = {("netmhcpan", "home"): lambda root: discover.find_netmhcpan(root),
             ("bigmhc", "home"): lambda root: discover.find_bigmhc(root),
-            ("bigmhc", "python"): lambda root: discover.find_bigmhc_python()}
+            ("bigmhc", "python"): lambda root: discover.find_bigmhc_python(),
+            ("mixmhcpred", "home"): lambda root: discover.find_mixmhcpred(root),
+            ("mixmhcpred", "python"): lambda root: discover.find_python(("numpy", "pandas")),
+            ("prime", "home"): lambda root: discover.find_prime(root),
+            ("prime", "python"): lambda root: discover.find_python(("numpy", "pandas"))}
 
 # key -> accepted type, per known model key
 _TYPES = {"enabled": bool, "home": str, "python": str, "device": str, "jobs": int,

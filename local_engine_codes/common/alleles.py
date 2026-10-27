@@ -34,3 +34,9 @@ def canonical(a):
 def netmhcpan_name(a):
     c = canonical(a)
     return c.replace("*", "") if c.startswith("HLA-") else c
+
+
+def gfeller_name(a):
+    """HLA-A*02:01 -> A0201 (MixMHCpred / PRIME naming). None for non-HLA alleles."""
+    m = _HLA.match(canonical(a))
+    return f"{m.group(1).upper()}{m.group(2)}{m.group(3)}" if m else None

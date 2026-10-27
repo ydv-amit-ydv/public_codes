@@ -14,6 +14,16 @@
       "device": "cpu",
       "jobs": 0
     },
+    "mixmhcpred": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto"
+    },
+    "prime": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto"
+    },
     "iedb_immunogenicity": {
       "enabled": false,
       "python": "",
