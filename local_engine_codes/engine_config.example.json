@@ -1,0 +1,21 @@
+{
+  "tmp_dir": "auto",
+  "models": {
+    "netmhcpan": {
+      "enabled": true,
+      "home": "auto"
+    },
+    "bigmhc": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto",
+      "device": "cpu",
+      "jobs": 0
+    },
+    "iedb_immunogenicity": {
+      "enabled": false,
+      "python": "",
+      "home": ""
+    }
+  }
+}
