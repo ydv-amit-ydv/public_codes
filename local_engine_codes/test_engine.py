@@ -41,6 +41,7 @@ open(f"{NMP}/netMHCpan", "w").write(textwrap.dedent('''\
     setenv() { NMHOME_SEEN="$2"; }
     setenv NMHOME /wrong/placeholder
     if [ -n "$EXPECTED_NMHOME" ] && [ "$NMHOME_SEEN" != "$EXPECTED_NMHOME" ]; then echo "bad NMHOME $NMHOME_SEEN" >&2; exit 3; fi
+    [ -n "$STUB_SLEEP" ] && [ "$1" != "-listMHC" ] && sleep "$STUB_SLEEP"
     if [ "$1" = "-listMHC" ]; then printf 'HLA-A01:01\\nHLA-A02:01\\nHLA-B07:02\\nH-2-Kb\\n'; exit 0; fi
     cat <<'EOT'
      Pos            MHC           Peptide      Core Of Gp Gl Ip Il             Icore        Identity Score_EL %Rank_EL Score_BA %Rank_BA  Aff(nM) BindLevel
@@ -57,6 +58,9 @@ open(f"{BM}/src/predict.py", "w").write(textwrap.dedent('''\
     df = pd.read_csv(a["i"], header=None, names=["mhc", "pep"])
     df["len"] = df["pep"].str.len()
     df["BigMHC_" + a["m"].upper()] = df["pep"].str.len() / 20.0
+    for k in range(7): print(f"loading model /x/bat{k}...done")
+    print("starting prediction devices: []")
+    for i in (1, 2): print(f"batch {i}/2")
     df.to_csv(a["o"], index=False)
     '''))
 
@@ -175,6 +179,94 @@ c.put("/api/config", json={"text": json.dumps(settings)})
 open(CFG, "w").write("{oops")
 g = c.get("/api/config").get_json(); assert g["error"] and "oops" in g["text"]
 open(CFG, "w").write(json.dumps(settings))
+
+
+# ---- jobs / pipeline ---------------------------------------------------------------------
+import time                                      # noqa: E402
+from common.jobs import Job                      # noqa: E402
+import bigmhc_runner                             # noqa: E402
+import pandas as pd                              # noqa: E402
+
+# BigMHC progress lines drive the stage (loading 7 networks = 0-40%, batches = 40-100%)
+j = Job(); j.stage("bigmhc_el", "BigMHC EL")
+seen = []
+orig = j.update
+j.update = lambda *a, **k: (seen.append((k.get("done"), k.get("total"))), orig(*a, **k))[1]
+bigmhc_runner.predict_pairs(pd.DataFrame({"peptide": ["GILGFVFTL"], "allele": ["HLA-A02:01"]}), ["el"], job=j)
+dones = [d_ for d_, _ in seen if d_ is not None]
+assert dones == sorted(dones) and 100 in [t for _, t in seen], seen          # one 0-100 scale, never backwards
+assert j.stages[0]["state"] == "done" and j.stages[0]["total"] == 100, j.stages
+assert 40 in dones, dones                                                    # 7 networks loaded = 40%
+
+
+# the pipeline preflights BigMHC's imports, so give the stub env fake torch/psutil modules
+FAKE = os.path.join(TMP, "fake"); os.makedirs(FAKE)
+open(f"{FAKE}/torch.py", "w").write("__version__ = 'stub'\n"); open(f"{FAKE}/psutil.py", "w").write("")
+os.environ["PYTHONPATH"] = FAKE
+
+
+def wait_job(jid, timeout=60):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        d = c.get(f"/api/jobs/{jid}").get_json()
+        if d["state"] in ("done", "failed", "cancelled"):
+            return d
+        time.sleep(0.2)
+    raise SystemExit("job timed out")
+
+
+params = {"text": ">p\nGILGFVFTLN", "mode": "scan", "lengths": [9], "alleles": ["HLA-A*02:01", "H-2-Kb"],
+          "models": {"netmhcpan": True, "bigmhc_el": True, "bigmhc_im": True}, "chain": True,
+          "filters": {"rank_el_max": 2, "bm_im_min": None}}
+pv = c.post("/api/pipeline/preview", json=params).get_json()
+assert pv["n_peptides"] == 2 and pv["chained"] and any("BigMHC is human" in w for w in pv["warnings"]), pv
+assert c.post("/api/pipeline/run", json={**params, "models": {}}).status_code == 400          # nothing selected
+assert c.post("/api/pipeline/run", json={**params, "alleles": []}).status_code == 400
+
+r = c.post("/api/pipeline/run", json=params); assert r.status_code == 200, r.get_json()
+d = wait_job(r.get_json()["id"])
+assert d["state"] == "done" and d["progress"] == 1.0, d
+assert [x["name"] for x in d["stages"]] == ["netmhcpan", "bigmhc_el", "bigmhc_im", "merge"]
+assert all(x["state"] == "done" for x in d["stages"]), d["stages"]
+sm = d["summary"]
+assert sm["chained"] and sm["pairs"] == 1 and sm["pairs_passed"] == 1 and sm["peptides_passed"] == 1, sm
+res = c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()
+row = res["rows"][0]
+assert row["Peptide"] == "GILGFVFTL" and row["Allele"] == "HLA-A*02:01" and row["Pass_All"] is True
+assert row["NMP_%Rank_EL"] == 0.197 and row["BigMHC_EL"] == 0.45 and row["BigMHC_IM"] == 0.45, row
+summ = c.get(f"/api/jobs/{d['id']}/result?table=summary").get_json()["rows"][0]
+assert summ["Alleles_passed"] == 1 and summ["Alleles_passed_list"] == "HLA-A*02:01", summ
+assert c.get(f"/api/jobs/{d['id']}/csv?table=pairs").data.startswith(b"Protein,Start,Peptide")
+
+# a filter nothing passes: BigMHC is told there is nothing to score, the run still succeeds
+r = c.post("/api/pipeline/run", json={**params, "filters": {"rank_el_max": 0.01}})
+d = wait_job(r.get_json()["id"]); assert d["state"] == "done" and d["summary"]["pairs_passed"] == 0, d
+assert any("nothing to score" in x["msg"] for x in d["stages"]), d["stages"]
+
+# unchained: BigMHC scores every human pair
+r = c.post("/api/pipeline/run", json={**params, "chain": False, "alleles": ["HLA-A*02:01", "HLA-B*07:02"]})
+d = wait_job(r.get_json()["id"]); assert d["state"] == "done" and not d["summary"]["chained"], d
+
+# cancel kills the running NetMHCpan process promptly
+os.environ["STUB_SLEEP"] = "40"
+r = c.post("/api/pipeline/run", json={**params, "models": {"netmhcpan": True}})
+jid = r.get_json()["id"]; time.sleep(1.5)
+t0 = time.time(); c.post(f"/api/jobs/{jid}/cancel")
+d = wait_job(jid, 15); assert d["state"] == "cancelled" and time.time() - t0 < 10, d
+del os.environ["STUB_SLEEP"]
+
+# an unready model is refused up front with the reason, not after a long wait
+broken = json.loads(json.dumps(settings)); broken["models"]["bigmhc"]["home"] = "/nonexistent"
+c.put("/api/config", json={"text": json.dumps(broken)})
+r = c.post("/api/pipeline/run", json=params)
+assert r.status_code == 400 and "bigmhc is not ready" in r.get_json()["error"], r.get_json()
+c.put("/api/config", json={"text": json.dumps(settings)})
+assert c.get("/api/jobs/doesnotexist").status_code == 404
+page = c.get("/").get_data(as_text=True)
+assert "Epitope Filter Engine" in page and 'fetch("api/alleles")' in page
+al = c.get("/api/alleles").get_json()
+assert "HLA-A*02:01" in al["all"] and al["presets"]["Mouse H-2 (all)"]["human"] is False
+os.environ.pop("PYTHONPATH", None)
 
 # ---- optional: real BigMHC ----------------------------------------------------------
 if REAL_PY and REAL_HOME:

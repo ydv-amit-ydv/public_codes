@@ -16,7 +16,7 @@ CONFIG_PATH = os.path.expanduser(
 DEFAULT = {
     "tmp_dir": "auto",
     "models": {
-        "netmhcpan": {"enabled": True, "home": "auto"},
+        "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
         "bigmhc": {"enabled": True, "python": "auto", "home": "auto", "device": "cpu", "jobs": 0},
         "iedb_immunogenicity": {"enabled": False, "python": "", "home": ""},
     },
@@ -27,7 +27,8 @@ _FINDERS = {("netmhcpan", "home"): lambda root: discover.find_netmhcpan(root),
             ("bigmhc", "python"): lambda root: discover.find_bigmhc_python()}
 
 # key -> accepted type, per known model key
-_TYPES = {"enabled": bool, "home": str, "python": str, "device": str, "jobs": int}
+_TYPES = {"enabled": bool, "home": str, "python": str, "device": str, "jobs": int,
+          "workers": int, "alleles_per_call": int}
 
 
 class ConfigError(ValueError):

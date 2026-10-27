@@ -9,7 +9,7 @@ the GUI takes effect immediately.
 """
 import os, subprocess, sys
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.serving import run_simple
 
@@ -18,8 +18,11 @@ for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts"):
     sys.path.insert(0, os.path.join(HERE, sub))
 sys.path.insert(0, HERE)
 
-from common import config                                   # noqa: E402
+from common import alleles as allele_lib, config            # noqa: E402
+from common.jobs import MANAGER                              # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
+import pipeline                                              # noqa: E402
+import pandas as pd                                          # noqa: E402
 
 main = Flask(__name__)
 
@@ -118,60 +121,100 @@ def health(name):
     return jsonify(ok=all(c["ok"] for c in checks), checks=checks)
 
 
-PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>Epitope Filter Engine</title>
-<style>
-body{font:14px system-ui,sans-serif;margin:0;height:100vh;display:flex;flex-direction:column}
-nav{background:#223;color:#fff;padding:6px 10px;display:flex;gap:6px;align-items:center}
-nav b{margin-right:12px} nav button{background:#445;color:#fff;border:0;padding:6px 14px;border-radius:4px;cursor:pointer}
-nav button.on{background:#69f} .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#888;margin-right:5px}
-.dot.ok{background:#3c3}.dot.bad{background:#e44}
-iframe{flex:1;border:0;width:100%} .pane{flex:1;display:none;min-height:0} .pane.on{display:flex}
-#settings{padding:14px;flex-direction:column;gap:8px;overflow:auto}
-#cfg{width:100%;height:300px;font-family:monospace;font-size:13px}
-.card{border:1px solid #ccd;border-radius:6px;padding:8px;margin:6px 0;background:#f8f9fb}
-.card .c{margin-left:14px} .ok{color:#287} .bad{color:#b00}
-</style></head><body>
-<nav><b>Epitope Filter Engine</b>
-<button data-t="netmhcpan"><span class="dot" id="d_netmhcpan"></span>NetMHCpan BA/EL</button>
-<button data-t="bigmhc"><span class="dot" id="d_bigmhc"></span>BigMHC EL/IM</button>
-<button data-t="settings">Settings</button></nav>
-<div class="pane" id="p_netmhcpan"><iframe src="netmhcpan/"></iframe></div>
-<div class="pane" id="p_bigmhc"><iframe src="bigmhc/"></iframe></div>
-<div class="pane" id="settings">
- <div>Config file: <code id="path"></code> (optional; <code>"auto"</code> = find it beside this folder). Saved changes apply immediately, no restart.</div>
- <textarea id="cfg" spellcheck="false"></textarea>
- <div><button onclick="save()">Save</button> <button onclick="loadCfg()">Revert</button> <span id="msg"></span></div>
- <h3>In use right now</h3>
- <pre id="eff" style="background:#f4f6f8;padding:8px;margin:0"></pre>
- <h3>Model checks</h3>
- <div id="cards"></div>
-</div>
-<script>
-const $=id=>document.getElementById(id), MODELS=["netmhcpan","bigmhc"];
-function show(t){document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==t));
- document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("on",p.id=="p_"+t||p.id==t));}
-document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>show(b.dataset.t));
-async function loadCfg(){const d=await (await fetch("api/config")).json();
- $("path").textContent=d.path;$("cfg").value=d.text;
- $("eff").textContent=d.effective?JSON.stringify(d.effective,null,2):"(fix the config to see this)";$("msg").innerHTML=d.error?`<span class="bad">${d.error}</span>`:"";}
-async function save(){const r=await fetch("api/config",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("cfg").value})});
- const d=await r.json();$("msg").innerHTML=r.ok?'<span class="ok">saved</span>':`<span class="bad">${d.error}</span>`;
- if(r.ok){loadCfg();checkAll(false);}}
-async function check(m,deep){const d=await (await fetch(`api/health/${m}`+(deep?"?deep=1":""),{method:"POST"})).json();
- $("d_"+m).className="dot "+(d.ok?"ok":"bad");return d;}
-async function checkAll(deep){$("cards").innerHTML="";
- for(const m of MODELS){const d=await check(m,deep);
-  $("cards").innerHTML+=`<div class="card"><b>${m}</b> <span class="${d.ok?"ok":"bad"}">${d.ok?"ready":"not ready"}</span>
-   <button onclick="deepTest('${m}')">Test run</button>`+d.checks.map(c=>`<div class="c ${c.ok?"ok":"bad"}">${c.ok?"&#10003;":"&#10007;"} ${c.name}${c.detail?" - "+c.detail.replace(/</g,"&lt;"):""}</div>`).join("")+"</div>";}}
-async function deepTest(m){$("msg").textContent="testing "+m+"...";const d=await check(m,true);
- $("msg").textContent="";await checkAll(false);alert(m+(d.ok?" test run OK":" test run FAILED")+"\n"+d.checks.map(c=>(c.ok?"ok  ":"FAIL ")+c.name+" "+c.detail).join("\n"));}
-loadCfg();checkAll(false);show("settings");
-</script></body></html>"""
+# ---- pipeline API ----------------------------------------------------------------------
+_all_cache = {}
+
+
+@main.get("/api/alleles")
+def api_alleles():
+    """Presets (canonical names) and every allele NetMHCpan knows, for the pipeline form."""
+    key = netmhcpan_app.netmhc_path()
+    if key not in _all_cache:
+        seen = {allele_lib.canonical(a) for a in netmhcpan_app.list_alleles()}
+        _all_cache.clear()
+        _all_cache[key] = sorted(seen)
+    return jsonify(presets=allele_lib.PRESETS, all=_all_cache[key])
+
+
+def _needed_models(params):
+    m = params.get("models") or {}
+    need = []
+    if m.get("netmhcpan"): need.append("netmhcpan")
+    if m.get("bigmhc_el") or m.get("bigmhc_im"): need.append("bigmhc")
+    return need
+
+
+@main.post("/api/pipeline/preview")
+def pipeline_preview():
+    try:
+        return jsonify(pipeline.preview(request.get_json(force=True)))
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(hint=str(e))            # normal while the form is half filled: not an HTTP error
+
+
+@main.post("/api/pipeline/run")
+def pipeline_run():
+    params = request.get_json(force=True)
+    try:
+        pipeline.normalise(params)
+        for name in _needed_models(params):
+            if not config.model(name).get("enabled", True):
+                return jsonify(error=f"{name} is disabled in Settings."), 400
+            bad = [c for c in HEALTH[name](False) if not c["ok"]]
+            if bad:
+                return jsonify(error=f"{name} is not ready: " + "; ".join(f"{c['name']} ({c['detail']})" for c in bad)), 400
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(error=str(e)), 400
+    job = MANAGER.submit(lambda j: pipeline.run(params, j))
+    return jsonify(id=job.id)
+
+
+@main.get("/api/jobs/<job_id>")
+def job_status(job_id):
+    job = MANAGER.get(job_id)
+    return (jsonify(job.snapshot()) if job else (jsonify(error="unknown job (server restarted?)"), 404))
+
+
+@main.post("/api/jobs/<job_id>/cancel")
+def job_cancel(job_id):
+    job = MANAGER.get(job_id)
+    if not job:
+        return jsonify(error="unknown job"), 404
+    job.cancel()
+    return jsonify(ok=True)
+
+
+def _table_path(job, table):
+    if not job or not job.result:
+        return None
+    return job.result["summary_csv" if table == "summary" else "pairs_csv"]
+
+
+@main.get("/api/jobs/<job_id>/result")
+def job_result(job_id):
+    path = _table_path(MANAGER.get(job_id), request.args.get("table", "summary"))
+    if not path:
+        return jsonify(error="no result"), 404
+    limit = min(int(request.args.get("limit", 5000)), 20000)
+    df = pd.read_csv(path, nrows=limit)
+    total = sum(1 for _ in open(path)) - 1
+    df = df.astype(object).where(df.notna(), None)
+    return jsonify(columns=list(df.columns), rows=df.to_dict("records"), total=total, shown=len(df))
+
+
+@main.get("/api/jobs/<job_id>/csv")
+def job_csv(job_id):
+    table = request.args.get("table", "summary")
+    path = _table_path(MANAGER.get(job_id), table)
+    if not path:
+        return jsonify(error="no result"), 404
+    return send_file(path, mimetype="text/csv", as_attachment=True, download_name=f"epitopes_{table}.csv")
 
 
 @main.get("/")
 def index():
-    return PAGE
+    with open(os.path.join(HERE, "web", "index.html")) as f:        # re-read so UI edits show on refresh
+        return f.read()
 
 
 application = DispatcherMiddleware(main, {"/netmhcpan": netmhcpan_app.app, "/bigmhc": bigmhc_app.app})

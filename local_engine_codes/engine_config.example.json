@@ -3,7 +3,9 @@
   "models": {
     "netmhcpan": {
       "enabled": true,
-      "home": "auto"
+      "home": "auto",
+      "workers": 0,
+      "alleles_per_call": 3
     },
     "bigmhc": {
       "enabled": true,

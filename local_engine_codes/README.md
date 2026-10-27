@@ -4,14 +4,38 @@ Local, offline prediction tools that produce IEDB-style tables for epitope filte
 (an Epitope Workbench ingests them). Each model is its own tool;
 `engine_server.py` hosts them side by side and will become the combined pipeline.
 
-| Directory | Tool | Status |
-|---|---|---|
-| `MHC1/BA_EL_scripts/` | NetMHCpan 4.2 binding affinity / eluted ligand | working (tested against real NetMHCpan output) |
-| `MHC1/Immunogenicity_scripts/` | BigMHC EL + IM | working (tested against real BigMHC) |
-| `MHC1/Immunogenicity_scripts/` | IEDB Class I immunogenicity (with "Positions to mask") | not installed yet |
-| `MHC2/...` | MHC-II BA/EL and CD4 immunogenicity | planned |
+| What | Status |
+|---|---|
+| **Pipeline** tab: one form, NetMHCpan -> BigMHC chained, filters, per-peptide summary | working |
+| `MHC1/BA_EL_scripts/` NetMHCpan 4.2 (EL + BA) | working, runs in parallel |
+| `MHC1/Immunogenicity_scripts/` BigMHC EL + IM | working |
+| IEDB Class I immunogenicity ("Positions to mask") | needs your download, see below |
+| MHC class II BA/EL and CD4 immunogenicity | planned, see below |
 
 Third-party predictors are licensed separately and are not stored here.
+
+## The Pipeline tab
+
+One form: paste a protein/FASTA (cut into fragments of the sizes you tick) or a list of
+peptides, choose alleles (presets, search, or any allele NetMHCpan knows), tick the models,
+set the filters, press **Run**.
+
+- **Progress:** an overall bar with elapsed time and time left, a bar per model with what
+  it is doing ("loading network 3/7", "scoring batch 1/2"), and a live log. **Cancel** stops
+  the running programs. Reloading the page picks the job back up. One job runs at a time;
+  others wait ("Waiting for the previous job...").
+- **Chain:** with it on, BigMHC scores only the pairs that pass the NetMHCpan filters.
+  BigMHC reloads its seven networks on every call, so this is what keeps runs short.
+- **Output:** *By peptide* (for each peptide: how many of your alleles it passes and which,
+  best NetMHCpan rank, best BigMHC scores) and *Every peptide-allele pair*. Rows that pass
+  every filter are green. Both download as CSV (the page shows the best 5,000 rows; the CSV
+  has all of them).
+- **Before you run:** the form shows "4,901 peptides x 3 alleles -> 14,703 predictions", and
+  a model that is not ready is refused immediately with the reason.
+- BigMHC covers human HLA-I only; mouse alleles are skipped for it with a note. Runs over
+  3,000,000 predictions are refused (use fewer alleles or sizes).
+- Stray characters in a FASTA (for example a `"` left by GenBank formatting) make the
+  windows containing them skip, and the page says so.
 
 ## Copy, paste, run
 
@@ -83,7 +107,27 @@ Run the tests: `python3 test_engine.py`. With real BigMHC:
 
 ## Known limits
 
-- Requests are synchronous. A large BigMHC scan on CPU can run for minutes; async
-  jobs with progress polling are the next step before full-protein scans.
-- The IEDB immunogenicity tool and MHC-II models are not wired in yet; the config
-  already has an `iedb_immunogenicity` slot.
+- Jobs live in server memory: restarting the server forgets them (finished CSVs stay in
+  `/tmp/epitope_engine/jobs`). Only one job runs at a time.
+
+## Adding the IEDB immunogenicity tool
+
+The "Class I pMHC Immunogenicity" tool with *Positions to mask* (default `1,2,C Terminal`)
+is IEDB's. It is not wired in yet because it has to be downloaded under IEDB's licence:
+<https://tools.iedb.org/immunogenicity/download/> (v3.0 README:
+<https://downloads.iedb.org/tools/immunogenicity/LATEST/README>) or the newer bundle
+<https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/README>. Send me its README, its
+`--help`, and the list of options in the *Positions to mask* dropdown; the wrapper then becomes
+one more stage in the Pipeline (`config.py` already has an `iedb_immunogenicity` slot).
+
+## MHC class II: official sources found
+
+Not built yet; these are the current official tools, from their own pages:
+
+| Purpose | Tool | Where | Notes |
+|---|---|---|---|
+| BA + EL | **NetMHCIIpan 4.3** (package 4.3k) | <https://services.healthtech.dtu.dk/services/NetMHCIIpan-4.3/> | DTU, same kind of download as NetMHCpan; free for academic use. HLA-DR/DQ/DP plus mouse H-2 and bovine BoLA-II. |
+| EL (second opinion) | **MixMHC2pred 2.0** | <https://github.com/GfellerLab/MixMHC2pred> (releases page, `MixMHC2pred-2.0.zip`) | Open GitHub release; web version at <https://mixmhc2pred.gfellerlab.org>. |
+| CD4 immunogenicity | **CD4episcore** | <http://tools.iedb.org/CD4episcore> | IEDB; no HLA typing needed. IEDB release 3.0 (March 2025) lists a class II T-cell standalone; whether it contains CD4episcore is unconfirmed. |
+
+IEDB's own class II bundle also wraps NetMHCIIpan 4.2/4.3.

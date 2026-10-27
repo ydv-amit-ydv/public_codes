@@ -7,8 +7,9 @@ table of EL / BA scores and binder calls.
 NetMHCpan itself is DTU-licensed and is NOT in this repository. Point
 models.netmhcpan.home in engine_config.json at your own install (see README.md).
 """
-import os, re, shlex, shutil, subprocess, sys, tempfile
+import os, re, shlex, shutil, subprocess, sys, tempfile, threading
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
 import pandas as pd
@@ -16,6 +17,7 @@ from flask import Flask, jsonify, request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 from common import config, discover, alleles as allele_lib   # noqa: E402
+from common.jobs import run_cmd                              # noqa: E402
 
 AA = set("ACDEFGHIKLMNPQRSTVWY")
 ALLELE_RE = re.compile(r"^[A-Za-z0-9:\-_]+$")
@@ -120,34 +122,63 @@ def build_peptides(text, mode, lengths):
     return pd.DataFrame(rows, columns=["Protein", "Start", "Peptide"]), warns
 
 
-def run_netmhcpan(peptides, alleles, p):
-    """Run NetMHCpan -p once per peptide length. Returns (DataFrame, [log])."""
-    frames, logs = [], []
+def run_netmhcpan(peptides, alleles, p, job=None, stage="netmhcpan"):
+    """Run NetMHCpan -p. Work is split into tasks of (one peptide length, a few alleles)
+    that run in parallel; `job` (optional) gets progress and can cancel. Returns (DataFrame, [log])."""
+    cfg = config.model("netmhcpan")
+    workers = cfg.get("workers") or min(4, os.cpu_count() or 1)
+    per_call = max(1, cfg.get("alleles_per_call") or 3)
     by_len = defaultdict(list)
     for pep in sorted(set(peptides)):
         by_len[len(pep)].append(pep)          # -p needs one length per run
     env = nm_env()
     workdir = tempfile.mkdtemp(dir=env["TMPDIR"])
+    tasks = []
+    for L, peps in sorted(by_len.items()):
+        fp = os.path.join(workdir, f"len{L}.pep")
+        with open(fp, "w") as f:
+            f.write("\n".join(peps) + "\n")
+        for i in range(0, len(alleles), per_call):
+            tasks.append((L, fp, alleles[i:i + per_call]))
+    script = netmhc_path()
+    done = [0]
+    lock = threading.Lock()
+    if job:
+        job.update(stage, done=0, total=len(tasks), msg=f"{len(tasks)} runs, {workers} in parallel")
+
+    def one(t):
+        L, fp, als = t
+        if job:
+            job.check()
+        cmd = [script, "-p", "-f", fp, "-a", ",".join(als),
+               "-rankS", str(p["rankS"]), "-rankW", str(p["rankW"])]
+        if p["ba"]:
+            cmd.append("-BA")
+        if p.get("t") not in (None, ""):
+            cmd += ["-t", str(p["t"])]
+        if p.get("raw", "").strip():
+            cmd += shlex.split(p["raw"])
+        r = run_cmd(cmd, env=env, job=job)
+        with lock:
+            done[0] += 1
+            if job:
+                job.update(stage, done=done[0], msg=f"{L}-mers: {done[0]}/{len(tasks)} runs finished")
+        return t, cmd, r
+
+    frames, logs, failed = [], [], []
     try:
-        for L, peps in by_len.items():
-            fp = os.path.join(workdir, f"len{L}.pep")
-            with open(fp, "w") as f:
-                f.write("\n".join(peps) + "\n")
-            cmd = [netmhc_path(), "-p", "-f", fp, "-a", ",".join(alleles),
-                   "-rankS", str(p["rankS"]), "-rankW", str(p["rankW"])]
-            if p["ba"]:
-                cmd.append("-BA")
-            if p.get("t") not in (None, ""):
-                cmd += ["-t", str(p["t"])]
-            if p.get("raw", "").strip():
-                cmd += shlex.split(p["raw"])
-            r = subprocess.run(cmd, capture_output=True, text=True, env=env)
-            logs.append("$ " + " ".join(cmd) + "\n" + r.stdout + r.stderr)
-            df = parse_netmhcpan(r.stdout)
-            if not df.empty:
-                frames.append(df)
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for t, cmd, r in ex.map(one, tasks):
+                logs.append("$ " + " ".join(cmd) + "\n" + r.stdout[-3000:] + r.stderr[-1500:])
+                df = parse_netmhcpan(r.stdout)
+                if df.empty:
+                    failed.append(f"{t[0]}-mers {','.join(t[2])}")
+                else:
+                    frames.append(df)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+    if job and failed:
+        job.log(f"NetMHCpan returned nothing for: {'; '.join(failed[:5])}" + (" ..." if len(failed) > 5 else ""))
     if not frames:
         return pd.DataFrame(), logs
     df = pd.concat(frames, ignore_index=True).rename(columns={"MHC": "Allele"})
