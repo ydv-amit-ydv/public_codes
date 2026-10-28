@@ -109,7 +109,7 @@ def predict(peptides, alleles, job=None, stage="prime"):
                 if job:
                     job.update(stage, done=done[0], msg=f"{done[0]}/{len(tasks)} allele runs")
             return df
-        workers = max(1, min(4, os.cpu_count() or 1, len(tasks)))
+        workers = max(1, min(config.performance()["workers"], len(tasks)))
         with ThreadPoolExecutor(max_workers=workers) as ex:
             frames = [f for f in ex.map(one, tasks) if f is not None]
     if skipped:

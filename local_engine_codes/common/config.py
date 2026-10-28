@@ -16,7 +16,7 @@ CONFIG_PATH = os.path.expanduser(
 DEFAULT = {
     "tmp_dir": "auto",
     "workspace_dir": "auto",
-    "performance": {"threads": 0, "nice": 5, "stall_seconds": 900, "timeout_minutes": 0, "parallel_models": 2, "cache": 1},
+    "performance": {"profile": "auto", "threads": 0, "nice": 5, "stall_seconds": 900, "timeout_minutes": 0, "parallel_models": 2, "cache": 1},
     "population": {"label": "India", "weights_csv": "auto"},
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
@@ -71,7 +71,8 @@ def validate(obj):
         if k in obj and not isinstance(obj[k], str):
             errs.append(f"{k} must be a string")
     perf = obj.get("performance", {})
-    if not isinstance(perf, dict) or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in perf.values()):
+    if not isinstance(perf, dict) or any(k != "profile" and (isinstance(v, bool) or not isinstance(v, (int, float))) for k, v in perf.items()) \
+            or perf.get("profile", "auto") not in ("auto", "gentle", "balanced", "max"):
         errs.append("performance must be an object of numbers (threads, nice, stall_seconds, timeout_minutes, parallel_models)")
     models = obj.get("models", {})
     if not isinstance(models, dict):
@@ -131,15 +132,64 @@ def tmp_dir():
     return d
 
 
+PROFILES = {"gentle": 0.25, "balanced": 0.5, "max": 1.0}
+_ACTIVE = {"profile": None}
+
+
+def set_profile(name):
+    """The profile of the job that is running now (one job runs at a time); None = the one in Settings."""
+    _ACTIVE["profile"] = name if name in PROFILES else None
+
+
+def machine():
+    """CPU threads this process may use and the memory that is free (cgroup limits respected)."""
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except AttributeError:
+        cpus = os.cpu_count() or 1
+    mem = 0.0
+    try:
+        with open("/proc/meminfo") as f:
+            info = {l.split(":")[0]: int(l.split()[1]) for l in f if ":" in l}
+        mem = info.get("MemAvailable", info.get("MemFree", 0)) / 1048576
+        for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+            try:
+                v = open(path).read().strip()
+                if v.isdigit() and int(v) < 1 << 50:
+                    mem = min(mem, int(v) / 2 ** 30)
+            except OSError:
+                pass
+    except (OSError, ValueError):
+        pass
+    return cpus, round(mem, 1)
+
+
 def performance():
-    """Resource limits applied to every program the engine starts. threads 0 = let each tool use all cores; nice 0-19 lowers
-    the priority so the machine stays responsive; stall_seconds 0 = never kill a quiet program; timeout_minutes 0 = no limit;
-    parallel_models = how many models of one funnel stage run at the same time (they share the thread budget)."""
+    """Resource budget applied to every program the engine starts, from the profile (gentle 1/4 of the cores, balanced 1/2,
+    max all but one on a big machine) and the limits in Settings:
+      workers          single-threaded programs run side by side (NetMHCpan, PRIME, ...)
+      threads          threads each multi-threaded program may use (BigMHC, MHCflurry); Settings.threads > 0 overrides
+      shards           BigMHC / MHCflurry processes run side by side on slices of the work (memory permitting)
+      parallel_models  models of one funnel stage that run at the same time
+      nice             operating-system priority; stall_seconds / timeout_seconds: watchdog limits (0 = off)."""
     perf = {**DEFAULT["performance"], **(load().get("performance") or {})}
-    cpus = os.cpu_count() or 1
-    return {"threads": max(0, int(perf["threads"])), "nice": min(19, max(0, int(perf["nice"]))), "cpus": cpus,
+    cpus, mem = machine()
+    profile = _ACTIVE["profile"] or perf.get("profile", "auto")
+    if profile not in PROFILES:                     # "auto": a big, idle machine runs flat out; a small one leaves room for the user
+        profile = "max" if (cpus >= 16 and mem >= 16) else "balanced"
+    cores = max(1, cpus - 1 if (profile == "max" and cpus > 8) else round(cpus * PROFILES[profile]))
+    mem_cap = max(1, int(mem // 3)) if mem else cores
+    pm = max(1, min(8, int(perf["parallel_models"])))
+    if profile == "gentle":
+        pm = 1
+    elif profile == "max":
+        pm = max(pm, min(4, cores // 6))
+    shards = {"gentle": 1, "balanced": max(1, min(4, cores // 8)), "max": max(1, min(8, cores // 4))}[profile]
+    return {"profile": profile, "cpus": cpus, "mem_gb": mem, "cores": cores, "workers": max(1, min(cores, mem_cap * 4)),
+            "threads": max(0, int(perf["threads"])) or cores, "shards": max(1, min(shards, mem_cap)),
+            "nice": {"gentle": 10, "max": 0}.get(profile, min(19, max(0, int(perf["nice"])))),
             "stall_seconds": max(0, int(perf["stall_seconds"])), "timeout_seconds": max(0, int(perf["timeout_minutes"])) * 60,
-            "parallel_models": max(1, min(8, int(perf["parallel_models"]))), "cache": 1 if perf.get("cache", 1) else 0}
+            "parallel_models": pm, "cache": 1 if perf.get("cache", 1) else 0}
 
 
 def workspace():

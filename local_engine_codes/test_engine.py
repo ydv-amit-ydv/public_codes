@@ -822,6 +822,53 @@ wait_job(c.post("/api/single/run", json=one).get_json()["id"]); n2 = len(open(CA
 wait_job(c.post("/api/single/run", json=one).get_json()["id"]); assert len(open(CALLS).read().split()) > n2, "cache off: it runs again"
 c.put("/api/performance", json={"cache": 1}); os.environ.pop("STUB_CALLS")
 
+# performance profiles scale with the machine: a 32-core box is not left idle when asked for maximum
+_real = config.machine
+config.machine = lambda: (32, 64.0)
+try:
+    config.set_profile("max"); e = config.performance()
+    assert (e["workers"], e["shards"], e["threads"], e["nice"], e["parallel_models"]) == (31, 7, 31, 0, 4), e
+    config.set_profile("balanced"); e = config.performance(); assert e["workers"] == 16 and e["shards"] == 2, e
+    config.set_profile("gentle"); e = config.performance(); assert e["workers"] == 8 and e["shards"] == 1 and e["nice"] == 10 and e["parallel_models"] == 1, e
+    config.set_profile(None); assert config.performance()["profile"] == "max"                      # automatic: big machine -> maximum
+    config.machine = lambda: (32, 6.0); config.set_profile("max"); e = config.performance()
+    assert e["shards"] <= 2 and e["workers"] <= 8, e                                               # memory limits the processes
+    config.machine = lambda: (4, 8.0); config.set_profile(None); assert config.performance()["profile"] == "balanced"
+finally:
+    config.machine = _real; config.set_profile(None)
+d = wait_job(c.post("/api/single/run", json={**one, "profile": "gentle"}).get_json()["id"])
+assert any("performance profile gentle" in l for l in d["log"]), d["log"][:3]
+
+# the parallel paths give exactly the same numbers: BigMHC in slices, MixMHCpred with alleles split over workers
+import mixmhcpred_runner as _mx                                                  # noqa: E402
+config.machine = lambda: (32, 64.0); config.set_profile("max")
+try:
+    predcache.clear()
+    peps_ = [("ACDEFGHIK" + "LMNPQRSTVWY"[i % 11] * (i % 4))[:9 + i % 4] + "A" * (i // 400) + "C" * (i % 7) for i in range(4500)]
+    big = pd.DataFrame({"peptide": peps_, "allele": ["HLA-A02:01"] * 4500})
+    out = bigmhc_runner.predict_pairs(big, ["el"])
+    assert len(out) == 4500 and (out["BigMHC_EL"].values == [len(p_) / 20.0 for p_ in peps_]).all(), out.head()
+    r_, n_ = _mx.predict(["GILGFVFTL", "AAAAAAAAA"], ["HLA-A*02:01", "HLA-B*07:02"])
+    assert len(r_) == 4 and set(r_["Allele"]) == {"HLA-A*02:01", "HLA-B*07:02"}, r_
+    assert r_[(r_["Peptide"] == "GILGFVFTL") & (r_["Allele"] == "HLA-A*02:01")]["MixMHC_%Rank"].iloc[0] == 0.1
+finally:
+    config.machine = _real; config.set_profile(None); predcache.clear()
+
+# the parallel paths give exactly the same numbers: BigMHC in slices, MixMHCpred with alleles split over workers
+import mixmhcpred_runner as _mx                                                  # noqa: E402
+config.machine = lambda: (32, 64.0); config.set_profile("max")
+try:
+    predcache.clear()
+    peps_ = [("ACDEFGHIK" + "LMNPQRSTVWY"[i % 11] * (i % 4))[:9 + i % 4] + "A" * (i // 400) + "C" * (i % 7) for i in range(4500)]
+    big = pd.DataFrame({"peptide": peps_, "allele": ["HLA-A02:01"] * 4500})
+    out = bigmhc_runner.predict_pairs(big, ["el"])
+    assert len(out) == 4500 and (out["BigMHC_EL"].values == [len(p_) / 20.0 for p_ in peps_]).all(), out.head()
+    r_, n_ = _mx.predict(["GILGFVFTL", "AAAAAAAAA"], ["HLA-A*02:01", "HLA-B*07:02"])
+    assert len(r_) == 4 and set(r_["Allele"]) == {"HLA-A*02:01", "HLA-B*07:02"}, r_
+    assert r_[(r_["Peptide"] == "GILGFVFTL") & (r_["Allele"] == "HLA-A*02:01")]["MixMHC_%Rank"].iloc[0] == 0.1
+finally:
+    config.machine = _real; config.set_profile(None); predcache.clear()
+
 # performance settings are validated and take effect
 assert c.get("/api/performance").get_json()["effective"]["parallel_models"] >= 1
 r = c.put("/api/performance", json={"threads": 2, "nice": 0, "stall_seconds": 600, "parallel_models": 2}); assert r.status_code == 200, r.get_json()

@@ -127,6 +127,9 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <details style="margin-top:14px"><summary class="muted sm">Optional per-tool filters (advanced) <span class="q" data-h="filters">?</span></summary>
    <div id="filters" style="margin-top:6px"></div></details>
 
+  <h3>Performance <span class="q" data-h="profile">?</span></h3>
+  <select id="profile" style="width:100%"></select>
+  <div id="profinfo" class="muted sm" style="margin:4px 0"></div>
   <h3>Report title</h3>
   <input type="text" id="title" value="Epitope prediction report" style="width:100%">
 
@@ -233,7 +236,8 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
  <div class="card" id="perfcard">
   <b>Performance</b> <span class="muted sm" id="perfinfo"></span>
   <div class="grid2" style="margin-top:8px;max-width:620px;grid-template-columns:1fr 110px">
-   <span>Threads per tool <span class="q" data-h="p_threads">?</span></span><input type="number" id="pf_threads" min="0" step="1">
+   <span>Default profile <span class="q" data-h="profile">?</span></span><select id="pf_profile" style="width:110px"></select>
+   <span>Threads per tool (0 = by profile) <span class="q" data-h="p_threads">?</span></span><input type="number" id="pf_threads" min="0" step="1">
    <span>Models running side by side in a stage <span class="q" data-h="p_parallel">?</span></span><input type="number" id="pf_parallel_models" min="1" max="8" step="1">
    <span>Priority: nice level (0-19) <span class="q" data-h="p_nice">?</span></span><input type="number" id="pf_nice" min="0" max="19" step="1">
    <span>Stop a tool after this many silent seconds <span class="q" data-h="p_stall">?</span></span><input type="number" id="pf_stall_seconds" min="0" step="60">
@@ -288,6 +292,7 @@ const HELP = {
  population: "Allele frequencies for coverage and for weighting the ranking. Hardy-Weinberg per region, loci treated as independent. Without the file, coverage is the share of your chosen alleles.",
  filters: "Hard cut-offs on single tools, applied on top of the strategy. Leave blank unless you need one: the strategy already combines the tools by agreement.",
  automate: "Save settings writes everything on this form to a json file. The same file runs without the page: <b>python3 run_engine.py settings.json</b>, or POST it to /api/pipeline/run.",
+ profile: "How much of this computer a run may use. <b>Maximum</b> uses nearly every core and gives each tool as many parallel workers as memory allows; <b>Balanced</b> uses half; <b>Gentle</b> a quarter and a low priority. <b>Automatic</b> picks Maximum on a big machine (16+ cores and 16+ GB free) and Balanced otherwise. Applies to this run only.",
  p_threads: "How many CPU threads each tool may use (0 = as many as the tool wants). Lower it to keep the computer responsive; every tool gets this limit, and tools that run side by side share it.",
  p_parallel: "In a funnel stage with several models, how many run at the same time. 1 = one after the other. Each gets an equal share of the threads.",
  p_nice: "Operating-system priority of the tools (0 = normal, 19 = lowest). 5 keeps the browser and other programs smooth while predictions run.",
@@ -549,7 +554,7 @@ function armParams(c){
   return a;
 }
 function params(){
-  return {text: $("text").value, mode: mode(), preset: $("strat").value || "balanced", rules: advRules(), title: $("title").value,
+  return {profile: $("profile").value || undefined, text: $("text").value, mode: mode(), preset: $("strat").value || "balanced", rules: advRules(), title: $("title").value,
           c1: armParams(1), c2: armParams(2)};
 }
 function applyParams(p){
@@ -866,7 +871,7 @@ function singleModelChanged(){
 }
 function singleParams(){
   const m = $("s_model").value, cls = SM[m][1];
-  return {model: m, text: $("s_text").value, mode: smode(), lengths: [...document.querySelectorAll(".ssz:checked")].map(x => +x.value),
+  return {profile: $("profile").value || undefined, model: m, text: $("s_text").value, mode: smode(), lengths: [...document.querySelectorAll(".ssz:checked")].map(x => +x.value),
           alleles: SM[m][2] ? SELS["s" + cls].slice() : [], iedb: {mask_choice: $("s_iedb_mask").value, positions: $("s_iedb_pos").value}, nii: {version: $("s_nii").value}};
 }
 let stimer = null;
@@ -1016,17 +1021,29 @@ async function saveCfg(){
   $("msg").innerHTML = r.ok ? '<span class="ok">saved</span>' : `<span class="bad">${esc(d.error)}</span>`;
   if (r.ok) { async function loadPerf(){
   const d = await (await fetch("api/performance")).json(), p = d.performance;
+  PROFILES = d.profiles; const cur = $("profile").value || store.get("profile") || "";
+  const names = {auto: `Automatic (here: ${d.effective.profile == "max" ? "Maximum" : "Balanced"})`, max: "Maximum", balanced: "Balanced", gentle: "Gentle"};
+  $("profile").innerHTML = Object.entries(names).map(([k, v]) => `<option value="${k == "auto" ? "" : k}">${v}</option>`).join("");
+  $("profile").value = cur; profInfo();
+  $("pf_profile").innerHTML = Object.entries(names).map(([k, v]) => `<option value="${k}">${v}</option>`).join(""); $("pf_profile").value = p.profile || "auto";
   for (const k of ["threads", "parallel_models", "nice", "stall_seconds", "timeout_minutes", "cache"]) $("pf_" + k).value = p[k];
-  $("perfinfo").textContent = `this machine has ${d.effective.cpus} CPU threads`;
+  $("perfinfo").textContent = `this machine: ${d.effective.cpus} CPU threads, ${d.effective.mem_gb} GB free; now using ${d.effective.cores} cores (${d.effective.profile})`;
 }
+let PROFILES = {};
+function profInfo(){
+  store.set("profile", $("profile").value);
+  const e = $("profile").value ? PROFILES[$("profile").value] : null;
+  $("profinfo").textContent = e ? `${e.workers} programs side by side, ${e.threads} threads per tool, ${e.shards} BigMHC/MHCflurry processes, priority ${e.nice} (this machine: ${e.cpus} threads, ${e.mem_gb} GB free)` : "";
+}
+$("profile").onchange = profInfo;
 async function savePerf(vals){
-  const body = vals || Object.fromEntries(["threads", "parallel_models", "nice", "stall_seconds", "timeout_minutes", "cache"].map(k => [k, $("pf_" + k).value === "" ? 0 : +$("pf_" + k).value]));
+  const body = vals || {...Object.fromEntries(["threads", "parallel_models", "nice", "stall_seconds", "timeout_minutes", "cache"].map(k => [k, $("pf_" + k).value === "" ? 0 : +$("pf_" + k).value])), profile: $("pf_profile").value};
   const r = await fetch("api/performance", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   const d = await r.json(); $("pf_msg").innerHTML = r.ok ? '<span class="ok">saved, used by the next run</span>' : `<span class="bad">${esc(d.error)}</span>`; loadPerf(); loadCfg();
 }
 $("pf_save").onclick = () => savePerf();
-$("pf_fast").onclick = () => savePerf({threads: 0, parallel_models: 2, nice: 0, stall_seconds: 900, timeout_minutes: 0});
-$("pf_gentle").onclick = () => savePerf({threads: Math.max(1, Math.floor(+$("perfinfo").textContent.match(/\d+/)[0] / 2)), parallel_models: 1, nice: 10, stall_seconds: 900, timeout_minutes: 0});
+$("pf_fast").onclick = () => savePerf({profile: "max", threads: 0, parallel_models: 2, nice: 0, stall_seconds: 900, timeout_minutes: 0});
+$("pf_gentle").onclick = () => savePerf({profile: "gentle", threads: 0, parallel_models: 1, nice: 10, stall_seconds: 900, timeout_minutes: 0});
 loadPerf(); loadCfg(); checkAll(false); }
 }
 const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2};

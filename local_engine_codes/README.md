@@ -86,6 +86,11 @@ Switch it off with `performance.cache = 0`; clear it under Projects.
 **Known tool faults handled:** PRIME 2.1's C++ program never returns for HLA-C*07:06 (it spins at 100 % CPU), so that allele is skipped for PRIME with a note;
 PRIME runs one allele per call with a time limit, so any other allele that hangs is given up on instead of stalling the run.
 
+**Using the whole machine.** Settings > Performance and the *Performance* box of the run form choose a profile: **Maximum** (all cores but one on a big
+machine; NetMHCpan, PRIME, MixMHCpred, NetMHCIIpan and CD4episcore run that many programs side by side; BigMHC and MHCflurry split the work over several processes,
+each with its share of the threads, as memory allows), **Balanced** (half), **Gentle** (a quarter, low priority) or **Automatic** (Maximum with 16+ cores and 16+ GB free,
+else Balanced). Thread counts are derived from the machine and the profile; `threads` in Settings is only an override (0 = automatic). The log of every run states what it used.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's

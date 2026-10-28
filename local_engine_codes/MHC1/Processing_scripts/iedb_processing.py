@@ -81,7 +81,7 @@ def netctlpan(sequences, lengths, alleles, job=None, stage="netctlpan"):
         return pd.DataFrame(columns=cols), notes
     names = [n for n, _ in sequences]
     fasta = _fasta(sequences)
-    workers = min(4, os.cpu_count() or 1)
+    workers = config.performance()["workers"]
     lock, done, unsupported, errors = threading.Lock(), [0], [], []
     if job:
         job.update(stage, done=0, total=len(alleles), msg=f"{len(alleles)} alleles on {len(sequences)} proteins")

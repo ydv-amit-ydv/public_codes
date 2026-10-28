@@ -4,7 +4,8 @@ Output per peptide x allele: MixMHC_Score (higher = better) and MixMHC_%Rank (lo
 Runs `bash MixMHCpred` from the clone found by common/discover.py (or models.mixmhcpred in
 Settings); it only needs numpy and pandas, so the server's own environment is enough.
 """
-import os, sys, tempfile
+import os, sys, tempfile, threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
@@ -41,20 +42,30 @@ def predict(peptides, alleles, job=None, stage="mixmhcpred"):
         return pd.DataFrame(columns=["Peptide", "Allele", "MixMHC_Score", "MixMHC_%Rank"]), notes
     peps = sorted(set(peptides))
     parts = list(gfeller.chunks(peps, CHUNK))
-    frames, env = [], gfeller.tool_env(s["python"])
+    env = gfeller.tool_env(s["python"])
+    workers = config.performance()["workers"]
+    groups = list(gfeller.chunks(list(names), max(1, -(-len(names) // workers))))       # alleles split so the workers all have work
+    tasks = [(i, part, k, grp) for i, part in enumerate(parts, 1) for k, grp in enumerate(groups)]
     if job:
-        job.update(stage, done=0, total=len(parts), msg=f"{len(peps):,} peptides x {len(names)} alleles")
+        job.update(stage, done=0, total=len(tasks), msg=f"{len(peps):,} peptides x {len(names)} alleles")
+    done, lock = [0], threading.Lock()
     with tempfile.TemporaryDirectory(dir=config.tmp_dir()) as wd:
-        for i, part in enumerate(parts, 1):
-            inp, out = os.path.join(wd, f"in{i}.txt"), os.path.join(wd, f"out{i}.txt")
-            with open(inp, "w") as f:
-                f.write("\n".join(part) + "\n")
-            r = run_cmd(["bash", s["script"], "-i", inp, "-o", out, "-a", ",".join(names)], env=env, job=job)
+        def one(task):
+            i, part, k, grp = task
+            inp, out = os.path.join(wd, f"in{i}.txt"), os.path.join(wd, f"out{i}_{k}.txt")
+            with lock:
+                if not os.path.exists(inp):
+                    with open(inp, "w") as f:
+                        f.write("\n".join(part) + "\n")
+            r = run_cmd(["bash", s["script"], "-i", inp, "-o", out, "-a", ",".join(grp)], env=env, job=job)
             gfeller.require_output(out, r, "MixMHCpred")
             t = gfeller.read_table(out)
-            for g, canon in names.items():
-                frames.append(pd.DataFrame({"Peptide": t["Peptide"], "Allele": canon,
-                                            "MixMHC_Score": t[f"Score_{g}"], "MixMHC_%Rank": t[f"%Rank_{g}"]}))
-            if job:
-                job.update(stage, done=i, msg=f"chunk {i}/{len(parts)}")
+            res = [pd.DataFrame({"Peptide": t["Peptide"], "Allele": names[g], "MixMHC_Score": t[f"Score_{g}"], "MixMHC_%Rank": t[f"%Rank_{g}"]}) for g in grp]
+            with lock:
+                done[0] += 1
+                if job:
+                    job.update(stage, done=done[0], msg=f"{done[0]}/{len(tasks)} runs")
+            return res
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, len(tasks)))) as ex:
+            frames = [df for res in ex.map(one, tasks) for df in res]
     return pd.concat(frames, ignore_index=True), notes

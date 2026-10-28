@@ -11,13 +11,15 @@ MHCflurry needs torch (and Python 3.10+), so it runs in its own environment like
 starts its `mhcflurry-predict` command as a subprocess.
 """
 import os, sys, tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 from common import config, gfeller                       # noqa: E402
-from common.jobs import run_cmd                           # noqa: E402
+from common.jobs import run_cmd, THREADS                 # noqa: E402
 
+MIN_SLICE = 20000                      # fewer pairs than this per process is not worth a second MHCflurry start
 CHUNK = 400_000
 FLANK = 15
 ToolError = gfeller.ToolError
@@ -60,14 +62,19 @@ def predict(rows, alleles, sequences=None, job=None, stage="mhcflurry"):
     if sequences:
         rows["n_flank"], rows["c_flank"] = flanks(sequences, rows)
     grid = rows.merge(pd.DataFrame({"allele": list(alleles)}), how="cross")
-    parts = list(gfeller.chunks(list(range(len(grid))), CHUNK))
-    frames = []
-    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
+    perf = config.performance()
+    k = max(1, min(perf["shards"], len(grid) // MIN_SLICE))          # processes side by side, each with its share of the threads
+    parts = list(gfeller.chunks(list(range(len(grid))), min(CHUNK, -(-len(grid) // k))))
+    share = max(1, perf["threads"] // max(1, min(k, len(parts))))
+    env = {k_: v for k_, v in os.environ.items() if k_ not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
     env["PATH"] = os.path.dirname(s["python"]) + ":/usr/bin:/bin"
     if job:
-        job.update(stage, done=0, total=len(parts), msg=f"{len(grid):,} peptide-allele pairs")
+        job.update(stage, done=0, total=len(parts), msg=f"{len(grid):,} peptide-allele pairs" + (f" in {len(parts)} processes" if len(parts) > 1 else ""))
+    done = [0]
     with tempfile.TemporaryDirectory(dir=config.tmp_dir()) as wd:
-        for i, idx in enumerate(parts, 1):
+        def one(task):
+            i, idx = task
+            THREADS.set(share)
             part = grid.iloc[idx]
             inp, out = os.path.join(wd, f"in{i}.csv"), os.path.join(wd, f"out{i}.csv")
             cols = ["allele", "Peptide"] + (["n_flank", "c_flank"] if sequences else [])
@@ -78,9 +85,12 @@ def predict(rows, alleles, sequences=None, job=None, stage="mhcflurry"):
             res = part[["Protein", "Start", "Peptide", "allele"]].reset_index(drop=True)
             for src, dst in COLS.items():
                 res[dst] = t[src].values
-            frames.append(res.rename(columns={"allele": "Allele"}))
+            done[0] += 1
             if job:
-                job.update(stage, done=i, msg=f"chunk {i}/{len(parts)}")
+                job.update(stage, done=done[0], msg=f"chunk {done[0]}/{len(parts)}")
+            return res.rename(columns={"allele": "Allele"})
+        with ThreadPoolExecutor(max_workers=max(1, min(k, len(parts)))) as ex:
+            frames = list(ex.map(one, enumerate(parts, 1)))
     out = pd.concat(frames, ignore_index=True)
     notes = []
     dead = [a for a, g in out.groupby("Allele") if g["MHCF_Presentation"].isna().all()]

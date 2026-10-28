@@ -52,6 +52,6 @@ def predict(peptides, job=None, stage="cd4episcore"):
             raise ToolError(f"CD4episcore returned nothing for {len(part)} {L}-mers:\n{(r.stderr or r.stdout)[-800:]}")
         return pd.DataFrame({"Peptide": [part[int(i) - 1] for i in t["seq_num"]], "CD4_Episcore": t["score"].astype(float).values})
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=max(1, min(len(tasks), config.performance()["workers"]))) as ex:
         frames = list(ex.map(one, tasks))
     return pd.concat(frames, ignore_index=True).drop_duplicates("Peptide") if frames else pd.DataFrame(columns=["Peptide", "CD4_Episcore"])

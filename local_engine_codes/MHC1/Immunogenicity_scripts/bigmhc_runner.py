@@ -17,7 +17,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 from common import alleles as allele_lib, config, predcache   # noqa: E402
-from common.jobs import run_cmd                    # noqa: E402
+from common.jobs import run_cmd, THREADS          # noqa: E402
 
 AA = set("ACDEFGHIKLMNPQRSTVWY")
 COLS = ["seq #", "Protein", "start", "end", "peptide length", "peptide"]
@@ -139,6 +139,38 @@ def run_bigmhc(s, model, pairs, workdir, job=None, stage=None):
     return prd[score_cols[0]].values
 
 
+MIN_SHARD = 2000            # a BigMHC start costs ~25 s (7 networks), so a slice must be big enough to be worth it
+
+
+def run_bigmhc_sharded(s, model, pairs, workdir, job=None, stage=None):
+    """run_bigmhc on slices of the pairs in several processes at once (each with its share of the threads), when the machine
+    has the cores and memory for it (Settings > Performance profile) and there are enough pairs. Same scores, same order."""
+    from concurrent.futures import ThreadPoolExecutor
+    perf = config.performance()
+    k = max(1, min(perf["shards"], len(pairs) // MIN_SHARD))
+    if k == 1:
+        return run_bigmhc(s, model, pairs, workdir, job=job, stage=stage)
+    bounds = [round(i * len(pairs) / k) for i in range(k + 1)]
+    share = max(1, perf["threads"] // k)
+    done = [0]
+    if job and stage:
+        job.update(stage, done=0, total=k, msg=f"{len(pairs):,} pairs in {k} processes of {share} threads")
+
+    def one(i):
+        THREADS.set(share)
+        part = pairs.iloc[bounds[i]:bounds[i + 1]]
+        wd = os.path.join(workdir, f"shard{i}")
+        os.makedirs(wd, exist_ok=True)
+        sc = run_bigmhc(s, model, part, wd, job=job, stage=None)
+        done[0] += 1
+        if job and stage:
+            job.update(stage, done=done[0], msg=f"{done[0]}/{k} slices scored")
+        return sc
+    with ThreadPoolExecutor(max_workers=k) as ex:
+        import numpy as np
+        return np.concatenate(list(ex.map(one, range(k))))
+
+
 def predict_pairs(pairs, models=("el", "im"), job=None, **overrides):
     """pairs: DataFrame[peptide, allele] (any combination). Adds BigMHC_EL / BigMHC_IM columns."""
     s = settings(**overrides)
@@ -147,7 +179,7 @@ def predict_pairs(pairs, models=("el", "im"), job=None, **overrides):
     with tempfile.TemporaryDirectory(dir=config.tmp_dir()) as wd:
         for m in models:
             def compute(sub, m=m):
-                return run_bigmhc(s, m, sub, wd, job=job, stage=f"bigmhc_{m}")
+                return run_bigmhc_sharded(s, m, sub, wd, job=job, stage=f"bigmhc_{m}")
             grid[f"BigMHC_{m.upper()}"] = predcache.fetch_scores(f"bigmhc_{m}", ("bigmhc", m, s["home"]), grid, compute, allele_lib.canonical, job)
             if job:
                 job.finish_stage(f"bigmhc_{m}", f"{len(grid):,} pairs")

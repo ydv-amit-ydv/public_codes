@@ -41,8 +41,8 @@ def predict(rows, alleles, lengths, sequences=None, kinds=("el", "ba"), version=
         raise ValueError(f"NetMHCIIpan version must be one of {VERSIONS}")
     alleles = [allele_lib.canonical_ii(a) for a in alleles]
     cfg = config.model("iedb_bundle_ii")
-    workers = min(4, os.cpu_count() or 1)
-    per_call = max(1, config.model("netmhcpan").get("alleles_per_call") or 3) + 1
+    workers = config.performance()["workers"]
+    per_call = max(1, min(config.model("netmhcpan").get("alleles_per_call") or 3, -(-len(alleles) // workers)) or 1)
     chunks = list(gfeller.chunks(alleles, per_call))
     lengths = sorted(set(int(x) for x in lengths))
     names = [n for n, _ in sequences] if sequences else None

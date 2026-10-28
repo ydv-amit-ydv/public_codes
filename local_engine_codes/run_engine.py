@@ -47,6 +47,7 @@ def main():
             time.sleep(0.5)
     import threading
     threading.Thread(target=watch, daemon=True).start()
+    config.set_profile(params.get("profile"))
     try:
         pipeline_dual.run(params, job)
         job.state = "done"

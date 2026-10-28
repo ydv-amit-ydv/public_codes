@@ -401,7 +401,18 @@ def pipeline_run():
 
 def _submit(kind, params, fn):
     """Queue a job and keep a record of it in the workspace (input, settings, dates, outputs)."""
-    return MANAGER.submit(fn, kind, on_create=lambda j: runs.create(j, kind, params), on_finish=runs.finish)
+    prof = params.get("profile")
+
+    def with_profile(j):
+        config.set_profile(prof)                  # "max" / "balanced" / "gentle" for this run, else the one in Settings
+        e = config.performance()
+        j.log(f"performance profile {e['profile']}: {e['workers']} programs side by side, {e['threads']} threads per tool, "
+              f"{e['shards']} BigMHC/MHCflurry processes ({e['cpus']} CPU threads, {e['mem_gb']} GB free)")
+        try:
+            return fn(j)
+        finally:
+            config.set_profile(None)
+    return MANAGER.submit(with_profile, kind, on_create=lambda j: runs.create(j, kind, params), on_finish=runs.finish)
 
 
 def _job(job_id):
@@ -589,9 +600,18 @@ def api_cache_clear():
     return jsonify(ok=True)
 
 
+def _profiles():
+    out = {}
+    for name in ("gentle", "balanced", "max"):
+        config.set_profile(name)
+        out[name] = config.performance()
+    config.set_profile(None)
+    return out
+
+
 @main.get("/api/performance")
 def api_performance_get():
-    return jsonify(performance=config.load()["performance"], effective=config.performance())
+    return jsonify(performance=config.load()["performance"], effective=config.performance(), profiles=_profiles())
 
 
 @main.put("/api/performance")
@@ -602,7 +622,7 @@ def api_performance_put():
         perf = {**config.DEFAULT["performance"], **cur.get("performance", {})}
         for k in perf:
             if k in body:
-                perf[k] = float(body[k]) if k == "timeout_minutes" else int(body[k])
+                perf[k] = str(body[k]) if k == "profile" else float(body[k]) if k == "timeout_minutes" else int(body[k])
         cur["performance"] = perf
         config.save_text(json.dumps(cur))
     except (ValueError, config.ConfigError) as e:

@@ -140,11 +140,13 @@ def run_netmhcpan_raw(peptides, alleles, p, job=None, stage="netmhcpan"):
     """Run NetMHCpan -p. Work is split into tasks of (one peptide length, a few alleles)
     that run in parallel; `job` (optional) gets progress and can cancel. Returns (DataFrame, [log])."""
     cfg = config.model("netmhcpan")
-    workers = cfg.get("workers") or min(4, os.cpu_count() or 1)
-    per_call = max(1, cfg.get("alleles_per_call") or 3)
+    perf = config.performance()
+    workers = cfg.get("workers") or perf["workers"]
     by_len = defaultdict(list)
     for pep in sorted(set(peptides)):
         by_len[len(pep)].append(pep)          # -p needs one length per run
+    # enough tasks to keep every worker busy: fewer alleles per call when there are many cores and few (length, allele) combinations
+    per_call = max(1, min(cfg.get("alleles_per_call") or 3, -(-len(by_len) * len(alleles) // (2 * workers)) or 1))
     env = nm_env()
     workdir = tempfile.mkdtemp(dir=env["TMPDIR"])
     tasks = []
