@@ -92,6 +92,28 @@ def _binding_pass(df, f):
     return ok
 
 
+def n_unique(p):
+    peps, _ = nm.build_peptides(p["text"], p["mode"], p["lengths"], PEPTIDE_BOUNDS)
+    return int(peps["Peptide"].nunique()) if not peps.empty else 0
+
+
+def stage_plan(p, n_pep):
+    from common import timing
+    m, pairs = p["models"], n_pep * len(p["alleles"])
+    kinds = [k for k, on in (("EL", m["netmhciipan_el"]), ("BA", m["netmhciipan_ba"])) if on]
+    gate = timing.GATE * 3 if p["chain"] else 1.0
+    plan = []
+    if kinds:
+        plan.append({"name": "netmhciipan", "label": f"NetMHCIIpan {p['version']} ({' + '.join(kinds)})", "work": pairs * len(kinds),
+                     "weight": timing.expected_seconds("netmhciipan", pairs * len(kinds))})
+    if m["mixmhc2pred"]:
+        plan.append({"name": "mixmhc2pred", "label": "MixMHC2pred 2.1", "work": pairs, "weight": timing.expected_seconds("mixmhc2pred", pairs)})
+    if m["cd4episcore"]:
+        plan.append({"name": "cd4episcore", "label": "CD4episcore (CD4 immunogenicity)", "work": int(n_pep * gate), "weight": timing.expected_seconds("cd4episcore", n_pep * gate)})
+    plan.append({"name": "merge", "label": "Merging and filtering", "work": pairs, "weight": timing.expected_seconds("merge", pairs)})
+    return plan
+
+
 def run(params, job):
     t0 = time.time()
     p = normalise(params)
@@ -108,13 +130,8 @@ def run(params, job):
         raise ValueError(f"{n_pep:,} peptides x {len(p['alleles'])} alleles is over the {MAX_PAIRS:,} limit; "
                          "use fewer alleles or lengths, or split the sequence.")
     job.log(f"{n_pep:,} unique peptides, {len(p['alleles'])} alleles (MHC class II)")
-    if kinds:
-        job.stage("netmhciipan", f"NetMHCIIpan {p['version']} ({' + '.join(k.upper() for k in kinds)})", weight=1.0)
-    if m["mixmhc2pred"]:
-        job.stage("mixmhc2pred", "MixMHC2pred 2.1", weight=0.7)
-    if m["cd4episcore"]:
-        job.stage("cd4episcore", "CD4episcore (CD4 immunogenicity)", weight=0.5)
-    job.stage("merge", "Merging and filtering", weight=0.3)
+    for st in stage_plan(p, n_pep):
+        job.stage(st["name"], st["label"], st["weight"], work=st["work"])
     scan_keys = ["Protein", "Start", "Peptide", "Allele"]
 
     manual = p["funnel"]["mode"] == "manual"

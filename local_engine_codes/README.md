@@ -97,6 +97,15 @@ how long they have been quiet (green: working, yellow: over a minute, red: over 
 ends (`▶ NetMHCpan · 9-mers · A*02:01, B*07:02 — 2,453 peptides (e.g. ...)`, `✓ ... done in 41 s`, `✗ ... stalled`). Stopped, failed or timed-out batches are listed
 under *Problems* with the reason, and the record is kept with the run in Projects.
 
+**Progress that covers both classes.** All stages of MHC I and MHC II (and the final regions and report) are on the bar from the start, each weighted by the
+seconds it should take (predictions x the tool's speed). The speeds are learned: after every run the measured rate of each tool is stored in
+`<workspace>/timings.json`, so the bar and the time left follow the real work from the second run on.
+
+**Resume.** When a class finishes it is saved under a fingerprint of everything that decides it (protein, sizes, alleles, models, funnel, filters, strategy,
+population file, engine version). Any later run with the same class settings takes the saved result instead of running that class again: if class II fails or you
+cancel, press Run again (or *Resume* in Projects) and MHC I is reused in a second; change only the class II alleles and MHC I is still reused. The files are
+hard-linked into the new run, so deleting the old run does not break it. Untick *Reuse finished results* to recompute everything.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's

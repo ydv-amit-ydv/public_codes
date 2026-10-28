@@ -75,6 +75,11 @@ def finish(job):
         return
     d = config.run_dir(job.id)
     snap = job.snapshot(with_log=False)
+    try:
+        from . import timing
+        timing.learn(snap["stages"])                       # the next run's progress bar uses what this one measured
+    except Exception:                                      # noqa: BLE001 - never let bookkeeping hide a result
+        pass
     meta.update({"state": job.state, "started": job.started, "finished": job.finished, "error": job.error,
                  "summary": (job.result or {}).get("summary"), "stages": snap["stages"], "log": list(job.logs[-120:]),
                  "result": _swap(job.result, d, RUN) if job.result else None, "tasks": job.tasks_snapshot() if job._tasks else None,

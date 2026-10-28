@@ -130,6 +130,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <h3>Performance <span class="q" data-h="profile">?</span></h3>
   <select id="profile" style="width:100%"></select>
   <div id="profinfo" class="muted sm" style="margin:4px 0"></div>
+  <label class="i" style="margin-top:8px"><input type="checkbox" id="reuse" checked> Reuse finished results <span class="q" data-h="reuse">?</span></label>
   <h3>Report title</h3>
   <input type="text" id="title" value="Epitope prediction report" style="width:100%">
 
@@ -293,6 +294,7 @@ const HELP = {
  population: "Allele frequencies for coverage and for weighting the ranking. Hardy-Weinberg per region, loci treated as independent. Without the file, coverage is the share of your chosen alleles.",
  filters: "Hard cut-offs on single tools, applied on top of the strategy. Leave blank unless you need one: the strategy already combines the tools by agreement.",
  automate: "Save settings writes everything on this form to a json file. The same file runs without the page: <b>python3 run_engine.py settings.json</b>, or POST it to /api/pipeline/run.",
+ reuse: "When a class (MHC I or II) has already finished with exactly the same protein, alleles, models, funnel, filters and strategy, its result is taken instead of running it again. So a run that failed or was cancelled part-way resumes where it stopped: press Run again, or Resume in Projects. Untick to recompute everything.",
  profile: "How much of this computer a run may use. <b>Maximum</b> uses nearly every core and gives each tool as many parallel workers as memory allows; <b>Balanced</b> uses half; <b>Gentle</b> a quarter and a low priority. <b>Automatic</b> picks Maximum on a big machine (16+ cores and 16+ GB free) and Balanced otherwise. Applies to this run only.",
  p_threads: "How many CPU threads each tool may use (0 = as many as the tool wants). Lower it to keep the computer responsive; every tool gets this limit, and tools that run side by side share it.",
  p_parallel: "In a funnel stage with several models, how many run at the same time. 1 = one after the other. Each gets an equal share of the threads.",
@@ -555,7 +557,7 @@ function armParams(c){
   return a;
 }
 function params(){
-  return {profile: $("profile").value || undefined, text: $("text").value, mode: mode(), preset: $("strat").value || "balanced", rules: advRules(), title: $("title").value,
+  return {reuse: $("reuse").checked, profile: $("profile").value || undefined, text: $("text").value, mode: mode(), preset: $("strat").value || "balanced", rules: advRules(), title: $("title").value,
           c1: armParams(1), c2: armParams(2)};
 }
 function applyParams(p){
@@ -971,7 +973,7 @@ function renderRuns(){
       <td style="white-space:normal;min-width:180px"><b>${esc(r.name)}</b>${r.notes ? `<div class="muted sm">${esc(r.notes)}</div>` : ""}<div class="muted sm">${esc(r.id)}</div></td>
       <td>${type}</td><td>${when(r.created)}</td><td>${esc((inp.proteins || [])[0] || (inp.mode == "peptides" ? "peptides" : ""))}${inp.residues ? `<div class="muted sm">${f0(inp.residues)} aa${inp.n_proteins > 1 ? `, ${inp.n_proteins} proteins` : ""}</div>` : ""}</td>
       <td>${res}</td><td><span class="st ${r.state}">${r.state}${r.progress != null ? " " + Math.round(r.progress * 100) + "%" : ""}</span></td><td>${s.seconds != null ? fmtT(s.seconds) : ""}</td><td>${mb(r.size)}</td>
-      <td class="act"><button class="b" data-a="open">Open</button><button class="b" data-a="tpl" title="Load this run's settings into the form">Use settings</button><button class="b" data-a="dl">Download</button><button class="b" data-a="ren">Rename</button><button class="b" data-a="note">Note</button><button class="b" data-a="del">Delete</button></td></tr>`;
+      <td class="act"><button class="b" data-a="open">Open</button>${["failed", "cancelled", "interrupted"].includes(r.state) ? '<button class="b" data-a="resume" title="Run again; finished classes are reused">Resume</button>' : ""}<button class="b" data-a="tpl" title="Load this run's settings into the form">Use settings</button><button class="b" data-a="dl">Download</button><button class="b" data-a="ren">Rename</button><button class="b" data-a="note">Note</button><button class="b" data-a="del">Delete</button></td></tr>`;
   }).join("") || '<tr><td colspan="10" class="muted">No runs yet. Run the pipeline or a single model and it appears here.</td></tr>';
   document.querySelectorAll("#pj_tbl [data-a]").forEach(b => b.onclick = e => { e.stopPropagation(); runAction(b.closest("tr").dataset.id, b.dataset.a); });
 }
@@ -986,6 +988,12 @@ async function runAction(id, a){
   if (a == "tpl") {
     const m = await (await fetch(`api/runs/${id}`)).json();
     if (r.kind == "single") { applySingle(m.params); show("single"); } else { applyParams(m.params); show("pipeline"); }
+    return;
+  }
+  if (a == "resume") {
+    const d = await fetch(`api/runs/${id}/resume`, {method: "POST"}); const j = await d.json();
+    if (!d.ok) { alert(j.error); return; }
+    show(r.kind == "single" ? "single" : "pipeline"); if (r.kind == "single") startSingle(j.id); else startPolling(j.id);
     return;
   }
   if (a == "open") {

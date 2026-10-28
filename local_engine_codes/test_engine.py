@@ -885,6 +885,34 @@ assert _rc(["bash", "-c", "exit 3"], job=_j, task={"model": "Demo tool", "what":
 _MGR._jobs.pop(d["id"], None)
 assert c.get(f"/api/jobs/{d['id']}").get_json()["tasks"]["by_model"]["NetMHCpan"]["done"] >= 1
 
+# a failure in class II keeps class I: the next run reuses it (resume), and the bar counts both classes from the start
+if have_tools:
+    import pipeline_ii as _pii
+    _real_ii = _pii.run
+    def _boom(params, job):
+        raise RuntimeError("class II fell over")
+    _pii.run = _boom
+    both2 = {**both, "text": both_text + "GG", "title": "resume test", "c1": {**both["c1"], "alleles": ["HLA-A*02:01"]}}
+    d = wait_job(c.post("/api/pipeline/run", json=both2).get_json()["id"], timeout=120)
+    _pii.run = _real_ii
+    assert d["state"] == "failed" and "class II fell over" in d["error"], d
+    names = [x["name"] for x in d["stages"]]
+    assert "c2_netmhciipan" in names and d["progress"] < 1.0, (names, d["progress"])          # class II was on the bar before it ran
+    assert any("finished and saved" in l for l in d["log"]), d["log"]
+    d2 = wait_job(c.post(f"/api/runs/{d['id']}/resume").get_json()["id"], timeout=120)
+    assert d2["state"] == "done" and d2["id"] != d["id"], d2
+    assert any("reused the finished result" in l and "MHC class I:" in l for l in d2["log"]), d2["log"]
+    assert not any("--- MHC class I ---" in l for l in d2["log"]), "class I must not run again"
+    assert c.get(f"/api/jobs/{d2['id']}/result?table=regions").status_code == 200 and c.get(f"/api/jobs/{d2['id']}/csv?table=bundle").data[:2] == b"PK"
+    # the reused files belong to the new run: deleting the old one does not break it
+    c.delete(f"/api/runs/{d['id']}")
+    assert c.get(f"/api/jobs/{d2['id']}/result?table=peptides&cls=1").status_code == 200
+    # another strategy is another fingerprint: nothing is reused
+    d3 = wait_job(c.post("/api/pipeline/run", json={**both2, "preset": "strict"}).get_json()["id"], timeout=120)
+    assert any("--- MHC class I ---" in l for l in d3["log"]), d3["log"]
+    d4 = wait_job(c.post("/api/pipeline/run", json={**both2, "reuse": False}).get_json()["id"], timeout=120)
+    assert any("--- MHC class I ---" in l for l in d4["log"]), "reuse switched off"
+
 # performance settings are validated and take effect
 assert c.get("/api/performance").get_json()["effective"]["parallel_models"] >= 1
 r = c.put("/api/performance", json={"threads": 2, "nice": 0, "stall_seconds": 600, "parallel_models": 2}); assert r.status_code == 200, r.get_json()

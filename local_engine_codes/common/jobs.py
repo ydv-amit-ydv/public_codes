@@ -31,11 +31,16 @@ class Job:
         self._tasks, self._tid = {}, 0          # every program started for this job: what it is working on, since when, how it ended
 
     # --- progress ---------------------------------------------------------------
-    def stage(self, name, label, weight=1.0, total=None):
+    def stage(self, name, label, weight=1.0, total=None, work=None):
+        """`work` = how many predictions the stage will make (kept to learn each tool's speed for the next run's progress bar)."""
         with self._lock:
-            self.stages = [s for s in self.stages if s["name"] != name]
-            self.stages.append({"name": name, "label": label, "weight": weight, "done": 0,
-                                "total": total, "state": "pending", "msg": ""})
+            entry = {"name": name, "label": label, "weight": weight, "done": 0,
+                     "total": total, "state": "pending", "msg": "", "work": work, "t0": None, "t1": None}
+            for i, s in enumerate(self.stages):
+                if s["name"] == name:
+                    self.stages[i] = entry                    # registered again later (by the pipeline itself): keep its place
+                    return
+            self.stages.append(entry)
 
     def update(self, name, done=None, total=None, msg=None, state=None):
         with self._lock:
@@ -46,12 +51,16 @@ class Job:
                     if msg is not None: s["msg"] = msg
                     if state: s["state"] = state
                     elif s["state"] == "pending": s["state"] = "running"
+                    if s["state"] == "running" and not s.get("t0"):
+                        s["t0"] = time.time()
 
     def finish_stage(self, name, msg=None):
         with self._lock:
             for s in self.stages:
                 if s["name"] == name:
                     s["state"] = "done"
+                    s["t1"] = time.time()
+                    s["t0"] = s.get("t0") or s["t1"]
                     if s["total"]: s["done"] = s["total"]
                     if msg is not None: s["msg"] = msg
 

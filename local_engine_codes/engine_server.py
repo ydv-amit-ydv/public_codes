@@ -477,6 +477,28 @@ def runs_rerank(run_id):
     return jsonify(id=job.id)
 
 
+@main.post("/api/runs/<run_id>/resume")
+def runs_resume(run_id):
+    """Run a stopped, failed or cancelled run again: the same settings; classes that already finished are reused, not recomputed."""
+    meta = runs.read(run_id) if run_id.isalnum() else None
+    if not meta:
+        return jsonify(error="unknown run"), 404
+    params = {**meta["params"], "reuse": True, "resumed_from": run_id}
+    if meta["kind"] == "single":
+        job = _submit("single", params, lambda j: pipeline_single.run(params, j))
+        return jsonify(id=job.id)
+    try:
+        pipeline_dual.normalise(params)
+        for name in _needed_models(params):
+            bad = [c for c in HEALTH[name](False) if not c["ok"]]
+            if bad:
+                return jsonify(error=f"{name} is not ready: " + "; ".join(f"{c['name']} ({c['detail']})" for c in bad)), 400
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(error=str(e)), 400
+    job = _submit("pipeline", params, lambda j: pipeline_dual.run(params, j))
+    return jsonify(id=job.id)
+
+
 @main.get("/api/runs/<run_id>")
 def runs_get(run_id):
     m = runs.read(run_id) if run_id.isalnum() else None

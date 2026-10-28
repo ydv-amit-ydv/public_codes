@@ -137,6 +137,26 @@ def _binding_pass(df, f):
     return ok
 
 
+def n_unique(p):
+    peps, _ = nm.build_peptides(p["text"], p["mode"], p["lengths"])
+    return int(peps["Peptide"].nunique()) if not peps.empty else 0
+
+
+def stage_plan(p, n_pep):
+    """The progress-bar stages of a run, with weights proportional to the expected seconds (see common/timing.py)."""
+    from common import timing
+    m, pairs = p["models"], n_pep * len(p["alleles"])
+    gate = timing.GATE if p["chain"] else 1.0
+    spec = [("netmhcpan", "NetMHCpan 4.2 (EL / BA)", pairs), ("mixmhcpred", "MixMHCpred 3.0 (presentation)", pairs),
+            ("prime", "PRIME 2.1 (immunogenicity)", pairs), ("iedb_imm", "IEDB immunogenicity (Calis 2013)", pairs),
+            ("mhcflurry", "MHCflurry 2 (affinity, processing, presentation)", pairs), ("netctlpan", "NetCTLpan 1.1 (processing)", pairs),
+            ("netchop", "NetChop 3.1 (proteasome cleavage)", n_pep), ("bigmhc_el", "BigMHC EL", pairs * gate),
+            ("bigmhc_im", "BigMHC IM", pairs * gate * 0.5)]
+    plan = [{"name": k, "label": label, "work": int(work), "weight": timing.expected_seconds(k, work)} for k, label, work in spec if m[k]]
+    plan.append({"name": "merge", "label": "Merging and filtering", "work": pairs, "weight": timing.expected_seconds("merge", pairs)})
+    return plan
+
+
 def run(params, job):
     t0 = time.time()
     p = normalise(params)
@@ -157,23 +177,8 @@ def run(params, job):
                          "use fewer alleles or lengths, or split the sequence.")
     job.log(f"{n_pep:,} unique peptides, {len(p['alleles'])} alleles")
 
-    if m["netmhcpan"]:
-        job.stage("netmhcpan", "NetMHCpan 4.2 (EL / BA)", weight=1.0)
-    if m["mixmhcpred"]:
-        job.stage("mixmhcpred", "MixMHCpred 3.0 (presentation)", weight=0.5)
-    if m["prime"]:
-        job.stage("prime", "PRIME 2.1 (immunogenicity)", weight=0.5)
-    if m["iedb_imm"]:
-        job.stage("iedb_imm", "IEDB immunogenicity (Calis 2013)", weight=0.2)
-    if m["mhcflurry"]:
-        job.stage("mhcflurry", "MHCflurry 2 (affinity, processing, presentation)", weight=1.0)
-    if m["netctlpan"]:
-        job.stage("netctlpan", "NetCTLpan 1.1 (processing)", weight=0.5)
-    if m["netchop"]:
-        job.stage("netchop", "NetChop 3.1 (proteasome cleavage)", weight=0.2)
-    for x in bm_models:
-        job.stage(f"bigmhc_{x}", f"BigMHC {x.upper()}", weight=2.0)
-    job.stage("merge", "Merging and filtering", weight=0.3)
+    for st in stage_plan(p, n_pep):
+        job.stage(st["name"], st["label"], st["weight"], work=st["work"])
 
     manual = p["funnel"]["mode"] == "manual"
     seqs = nm.read_sequences(p["text"]) if p["mode"] == "scan" else None

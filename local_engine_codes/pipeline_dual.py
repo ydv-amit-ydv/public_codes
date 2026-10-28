@@ -14,6 +14,7 @@ import pandas as pd
 
 import consensus
 import report
+from common import checkpoints, runs, timing
 import html_report
 import pipeline
 import pipeline_ii
@@ -73,19 +74,37 @@ def run(params, job):
     t0 = time.time()
     norm, parts = normalise(params)
     classes = [c for c in (1, 2) if norm[c]]
-    share = 1.0 / len(classes)
-    views = {c: JobView(job, f"c{c}", "MHC I (CTL)" if c == 1 else "MHC II (HTL)", share) for c in classes}
+    views = {c: JobView(job, f"c{c}", "MHC I (CTL)" if c == 1 else "MHC II (HTL)") for c in classes}
     seqs = _seqs(parts[classes[0]].get("text", ""), parts[classes[0]].get("mode", "scan"))
 
+    # every stage of both classes is on the bar from the start, weighted by the seconds it should take, so the bar and the time left are honest
+    plans = {}
     for c in classes:
-        job.log(f"--- MHC class {'I' if c == 1 else 'II'} ---")
+        plans[c] = MODULE[c].stage_plan(norm[c], MODULE[c].n_unique(norm[c]))
+        for st in plans[c]:
+            views[c].stage(st["name"], st["label"], st["weight"], work=st["work"])
+    job.stage("regions", "Regions and report", weight=timing.expected_seconds("regions", 0))
+    popfile = getattr(population.load(config.load().get("population"), config.search_root())[0], "path", None)
+
+    for c in classes:
+        fp = checkpoints.fingerprint({**norm[c], "preset": norm[c].get("preset"), "rules": norm[c].get("rules")}, c, runs.ENGINE_VERSION, popfile)
+        hit = checkpoints.load(fp, job.id) if params.get("reuse", True) else None
+        tag = "I" if c == 1 else "II"
+        if hit:
+            views[c].result, src, age = hit
+            job.log(f"MHC class {tag}: reused the finished result of run {src} ({age / 60:.0f} min ago): same protein, alleles, models and strategy")
+            for st in plans[c]:
+                views[c].finish_stage(st["name"], f"reused from run {src}")
+            continue
+        job.log(f"--- MHC class {tag} ---")
         MODULE[c].run(parts[c], views[c])
+        checkpoints.save(fp, job.id, c, views[c].result)           # kept now, so a later failure or Cancel does not lose this class
+        job.log(f"MHC class {tag} finished and saved; it will be reused if you run this again")
     _finalize(job, params, classes, {c: views[c].result for c in classes}, seqs, t0, parts[classes[0]].get("preset", "balanced"))
 
 
 def _finalize(job, params, classes, class_results, seqs, t0, strategy):
     """Regions, report, per-model files and the zip, from the per-class results (fresh or re-ranked)."""
-    job.stage("regions", "Regions and report", weight=0.3)
     job.update("regions", msg="grouping candidates into regions", state="running")
 
     results = {}
@@ -99,7 +118,9 @@ def _finalize(job, params, classes, class_results, seqs, t0, strategy):
     for c in classes:
         lab = regions_mod.label_peptides(results[c]["peptides"], reg, c)
         results[c]["peptides"] = lab
-        lab.round(6).to_csv(results[c]["result"]["peptides_csv"], index=False)
+        newp = os.path.join(config.run_dir(job.id), f"{job.id}_c{c}_peptides_labelled.csv")
+        lab.round(6).to_csv(newp, index=False)
+        results[c]["result"] = {**results[c]["result"], "peptides_csv": newp}
 
     jobdir = config.run_dir(job.id)
     paths = {"regions_csv": os.path.join(jobdir, f"{job.id}_regions.csv"), "report_html": os.path.join(jobdir, f"{job.id}_report.html"),
@@ -174,6 +195,7 @@ def rerank(src_job, params, job):
     pop_job_text = params.get("text", "")
     seqs = _seqs(pop_job_text, params.get("mode", "scan"))
     job.stage("rank", "Re-ranking the saved predictions", weight=1.0, total=len(classes))
+    job.stage("regions", "Regions and report", weight=timing.expected_seconds("regions", 0))
     out, warns = {}, []
     for c in classes:
         r0 = src["classes"][str(c)]

@@ -18,8 +18,8 @@ class JobView:
     def cancelled(self):
         return self._job.cancelled
 
-    def stage(self, name, label, weight=1.0, total=None):
-        self._job.stage(f"{self._p}_{name}", f"{self._tag}: {label}", weight * self._share, total)
+    def stage(self, name, label, weight=1.0, total=None, work=None):
+        self._job.stage(f"{self._p}_{name}", f"{self._tag}: {label}", weight * self._share, total, work)
 
     def update(self, name, *a, **k):
         self._job.update(f"{self._p}_{name}", *a, **k)
