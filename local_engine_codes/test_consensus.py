@@ -73,6 +73,42 @@ res = C.analyse(pairs(rows), 1, dict(C.resolve_rules(1, "iedb"), panel_target=0.
 assert [x["peptide"] for x in res["panel"]][:2] and len(res["panel"]) == 2, res["panel"]
 assert abs(res["panel"][-1]["cumulative_coverage"] - pop.coverage(["HLA-A*02:01", "HLA-B*07:02"])) < 1e-9
 
+
+# the gate in front of BigMHC is lossless: no pair that is a binder with BigMHC-EL scored is dropped without it
+rng = np.random.default_rng(7)
+n = 4000
+full = pd.DataFrame({"Protein": "P", "Start": np.arange(n), "Peptide": [f"PEP{i:06d}" for i in range(n)], "Allele": "HLA-A*02:01",
+                     "NMP_%Rank_EL": rng.exponential(12, n), "NMP_%Rank_BA": rng.exponential(12, n), "MixMHC_%Rank": rng.exponential(12, n),
+                     "MHCF_Presentation_%Rank": rng.exponential(12, n), "BigMHC_EL": rng.beta(1, 3, n)})
+full.loc[rng.random(n) < 0.1, "MixMHC_%Rank"] = np.nan                       # an allele a tool does not know
+for rule in ("any", "majority", "all", 2, 3):
+    Rr = dict(C.resolve_rules(1, "balanced"), bind_min_agree=rule)
+    quick = full.drop(columns="BigMHC_EL")
+    keep = C.gate_mask(quick, 1, Rr, pending=1)
+    truth = C.binder_mask(full, 1, Rr)
+    lost = truth & ~keep
+    if rule == "any":
+        lost &= False            # documented: with "any" a pending tool alone is not allowed to create a binder
+    assert not lost.any(), (rule, int(lost.sum()))
+    assert keep.mean() < 0.6 or rule == "any", (rule, keep.mean())
+
+# regions: a class I 9-mer inside a class II 15-mer is one CTL+HTL region; lone peptides keep their class; dual ranks first
+import regions as RG
+def peps(rows):
+    return pd.DataFrame([dict(Protein="P", Start=a, End=b, Peptide="A" * (b - a + 1), Candidate=True, Priority_Score=sc, Coverage_Candidate=cv,
+                              Best_Allele="HLA-A*02:01", In_Panel=False) for a, b, sc, cv in rows])
+seq = "".join("ACDEFGHIKLMNPQRSTVWY"[i % 20] for i in range(300))
+reg = RG.build(peps([(10, 18, 90, .5), (100, 108, 99, .6), (50, 58, 80, .3)]), peps([(6, 20, 70, .4), (200, 214, 60, .2), (54, 68, 50, .1)]), {"P": seq})
+t = dict(zip(zip(reg.Start, reg.End), reg.Type))
+assert t[(6, 20)] == "CTL+HTL" and t[(100, 108)] == "CTL only" and t[(200, 214)] == "HTL only", t
+assert t[(50, 58)] == "CTL only" and t[(54, 68)] == "HTL only"           # 5 of 9 overlap < 0.7: separate regions
+assert reg.iloc[0].Type == "CTL+HTL" and list(reg.Region_Rank) == list(range(1, len(reg) + 1))
+top = reg.iloc[0]
+assert top.Sequence == seq[5:20] and top.CTL_Best_Peptide and top.HTL_Best_Peptide and abs(top.Region_Score - (80 + RG.DUAL_BONUS)) < 1e-9, top
+assert RG.build(None, None, {}).empty
+lab = RG.label_peptides(peps([(10, 18, 90, .5), (250, 258, 1, .1)]), reg, 1)
+assert lab.Region_Type.tolist() == ["CTL+HTL", ""], lab[["Region_ID", "Region_Type"]]
+
 # every preset runs and states every rule field
 for cls in (1, 2):
     for name, r in C.preset_rules(cls).items():

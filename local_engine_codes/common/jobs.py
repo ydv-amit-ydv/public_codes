@@ -173,6 +173,9 @@ class JobManager:
                 job.state = "cancelled"
             except Exception as e:                       # surfaced to the page, never lost
                 job.state, job.error = "failed", f"{type(e).__name__}: {e}"
+                if os.environ.get("ENGINE_DEBUG"):
+                    import traceback
+                    job.log(traceback.format_exc()[-1500:])
                 job.log("ERROR " + job.error)
             finally:
                 job.finished = time.time()

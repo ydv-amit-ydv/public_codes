@@ -204,3 +204,19 @@ def load(cfg, root):
         return PopulationModel.from_csv(path, cfg.get("label", "India")), ""
     except Exception as e:                                   # noqa: BLE001 - shown to the user, run continues
         return None, f"Population file not used: {e}"
+
+
+def presets(pop):
+    """Allele sets built from the population file: the most common alleles per locus up to 80 % of haplotypes.
+    -> (class I preset or None, class II preset or None), each {"alleles": [...], "note": str}."""
+    if pop is None:
+        return None, None
+    one, loci = [], []
+    for loc in ("A", "B", "C"):
+        got = pop.alleles_for_coverage(loc, 0.8)
+        one += ["HLA-" + a for a in got]
+        loci.append(f"{loc} {len(got)}")
+    two = ["HLA-" + a for a in pop.alleles_for_coverage("DRB1", 0.8)]
+    c1 = {"alleles": one, "note": f"{pop.label}: the most common alleles covering 80 % of each locus ({', '.join(loci)})"}
+    c2 = {"alleles": two, "note": f"{pop.label}: DRB1 alleles covering 80 % of the locus (DQ and DP are not typed in the file)"}
+    return c1, c2

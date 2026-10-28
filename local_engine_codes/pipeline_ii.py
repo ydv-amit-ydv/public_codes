@@ -62,6 +62,7 @@ def preview(params):
     m = p["models"]
     peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"], PEPTIDE_BOUNDS)
     n_pep = int(peps["Peptide"].nunique()) if not peps.empty else 0
+    n_win = int(len(peps))
     notes = []
     if m["mixmhc2pred"]:
         try:
@@ -69,7 +70,7 @@ def preview(params):
         except OSError:
             pass
     nii = m["netmhciipan_el"] or m["netmhciipan_ba"]
-    out = {"n_peptides": n_pep, "n_alleles": len(p["alleles"]), "warnings": warns + notes,
+    out = {"n_peptides": n_pep, "n_windows": n_win, "n_alleles": len(p["alleles"]), "warnings": warns + notes,
            "n_pairs_netmhcpan": n_pep * len(p["alleles"]) if nii else 0,
            "n_pairs_fast": n_pep * len(p["alleles"]) if m["mixmhc2pred"] else 0, "n_pairs_bigmhc": 0,
            "chained": bool(p["chain"] and m["cd4episcore"] and (nii or m["mixmhc2pred"]))}

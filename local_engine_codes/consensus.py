@@ -15,7 +15,7 @@ processed. Each tool casts one vote per peptide-allele pair:
   * BigMHC EL has no percentile; it votes at a score cut-off (default 0.2, which sits at about the top 2 % of random
     human 9-mers for A*02:01 and B*07:02 when measured).
   * Tools with no absolute scale for immunogenicity (BigMHC IM, the IEDB/Calis score, CD4episcore) vote RELATIVELY:
-    top q % among the plausible binders of this run (as the Workbench does: immunogenicity matters only for peptides
+    top q % among the binder pairs of this run (as the Workbench does: immunogenicity matters only for peptides
     that are presented). PRIME also has a relative rank for the consensus mean, besides its absolute vote.
 
 Agreement = votes / tools that scored the pair, per group and overall. A pair is a BINDER when enough binding tools
@@ -39,7 +39,7 @@ import pandas as pd
 from common import peptide_props
 
 KEYS = ["Protein", "Start", "Peptide"]
-MIN_RELATIVE = 8          # a "top q %" vote needs enough plausible binders to rank among
+MIN_RELATIVE = 8          # a "top q %" vote needs enough binder pairs to rank among
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ def _rules(cls, **over):
 # Every preset states every field (nothing is inherited from whatever was set last), and says why.
 PRESET_INFO = {
     "balanced": ("Balanced", "A sensible default: a peptide must be called a binder by a majority of the binding tools, at least one "
-                             "immunogenicity tool must rank it in the top quarter of plausible binders, and overlapping windows collapse to one."),
+                             "immunogenicity tool must rank it in the top quarter of the binders, and overlapping windows collapse to one."),
     "strict": ("Strict", "A short list for synthesis: binding by every binding tool at a tight cut-off, immunogenicity by most tools "
                          "in the top tenth, and at least two alleles."),
     "coverage": ("Max coverage", "Broadly presented peptides: a majority of binding tools, no immunogenicity requirement, at least four "
@@ -162,15 +162,41 @@ def active_tools(df, cls):
     return [t for t in TOOLS if t.cls == cls and t.col in df.columns and df[t.col].notna().any()]
 
 
-def gate_mask(df, cls, rules):
-    """Pairs worth sending to the slow tools: any quick binding tool calls them a binder at the binding cut-off."""
+def _binding_votes(d, tools, rules):
+    """(votes, scored) per row over the binding tools that have a value right now."""
+    votes = pd.Series(0, index=d.index)
+    scored = pd.Series(0, index=d.index)
+    for t in (t for t in tools if t.group == "binding"):
+        c = d[t.col]
+        yes = (c >= rules["bigmhc_el_min"]) if t.key == "BIGMHC_EL" else (c <= rules["bind_rank_max"])
+        votes += yes.fillna(False).astype(int)
+        scored += c.notna().astype(int)
+    return votes, scored
+
+
+def gate_mask(df, cls, rules, pending=0):
+    """Pairs worth sending to a slow binding tool (`pending` of them still to run, e.g. BigMHC-EL = 1).
+
+    Lossless for the agreement rule: a pair is kept when the quick tools' votes plus every pending vote could still reach
+    the number of votes the rule needs. A pair that fails this can never become a binder, so skipping it changes nothing
+    in the result. With the "any one tool" rule a pending tool alone could make a binder; it is a confirmation tool
+    there, so at least one quick vote is still asked for.
+    """
     tools = [t for t in active_tools(df, cls) if t.group == "binding" and t.kind == "abs"]
     if not tools:
         return pd.Series(True, index=df.index)
-    ok = pd.Series(False, index=df.index)
-    for t in tools:
-        ok |= (df[t.col] <= rules["bind_rank_max"]).fillna(False)
-    return ok
+    votes, scored = _binding_votes(df, tools, rules)
+    need = _need(rules["bind_min_agree"], scored + pending)
+    return votes >= np.maximum(1, need - pending)
+
+
+def binder_mask(df, cls, rules):
+    """Binder call from the binding tools present now (used to decide which pairs the immunogenicity tools must score)."""
+    tools = [t for t in active_tools(df, cls) if t.group == "binding"]
+    if not tools:
+        return pd.Series(True, index=df.index)
+    votes, scored = _binding_votes(df, tools, rules)
+    return (scored > 0) & (votes >= _need(rules["bind_min_agree"], scored))
 
 
 # ---------------------------------------------------------------------------------------------- votes
@@ -186,15 +212,14 @@ def add_votes(d, cls, rules):
             d[f"Vote_{t.key}"] = _vote(c >= rules["bigmhc_el_min"], c)
         elif t.key == "NETCHOP" and rules["netchop_min"] is not None:
             d[f"Vote_{t.key}"] = _vote(c >= float(rules["netchop_min"]), c)
-    bind_votes = [f"Vote_{t.key}" for t in tools if t.group == "binding" and f"Vote_{t.key}" in d]
-    d["Plausible"] = (d[bind_votes] == 1).any(axis=1) if bind_votes else pd.Series(True, index=d.index)
+    d["Plausible"] = binder_mask(d, cls, rules)         # immunogenicity is ranked among the pairs presented (binders)
 
-    # relative ranks among the plausible binders (lower = better, in percent)
+    # relative ranks among the binders (lower = better, in percent)
     d.attrs["notes"] = []
     for t in (t for t in tools if t.group == "immunogenicity"):
         s = d[t.col].where(d["Plausible"])
         if t.kind == "rel" and s.notna().sum() < MIN_RELATIVE:
-            d.attrs["notes"].append(f"{t.label} gives no vote: only {int(s.notna().sum())} plausible binder(s), too few to rank among "
+            d.attrs["notes"].append(f"{t.label} gives no vote: only {int(s.notna().sum())} binder pair(s), too few to rank among "
                                     f"(needs {MIN_RELATIVE}). Its raw values are still in the tables.")
             tools = [x for x in tools if x is not t]
             continue

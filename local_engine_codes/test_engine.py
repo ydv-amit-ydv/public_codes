@@ -389,7 +389,8 @@ for t in ("peptides", "candidates", "panel"):
 pep = c.get(f"/api/jobs/{d['id']}/result?table=peptides").get_json()["rows"][0]
 assert pep["Peptide"] == "GILGFVFTL" and pep["Mass_Da"] > 900 and pep["N_Alleles_Binder"] == 1, pep
 rep = c.get(f"/api/jobs/{d['id']}/report").get_json()
-assert rep["consensus"]["funnel"][0]["n"] == 1 and "HLA-A*02:01" in rep["details"]["input"]["alleles"] and rep["consensus"]["headline"]["candidates"] == 1, rep["consensus"]["headline"]
+rc = rep["classes"]["1"]
+assert rc["consensus"]["funnel"][0]["n"] == 1 and "HLA-A*02:01" in rc["details"]["input"]["alleles"] and rc["consensus"]["headline"]["candidates"] == 1, rc["consensus"]["headline"]
 assert c.get("/api/rules?mhc_class=2").get_json()["presets"]["strict"]["rules"]["bind_min_agree"] == "all"
 
 # a filter nothing passes: BigMHC is told there is nothing to score, the run still succeeds
@@ -636,6 +637,39 @@ r = c.post("/api/pipeline/run", json={**ii, "models": {"mixmhc2pred": True}}); a
 _sh.move(f"{MIX2}/PWMdef_off", f"{MIX2}/PWMdef")
 # class I and class II requests do not interfere
 assert c.post("/api/pipeline/preview", json={**params, "mhc_class": 1}).status_code == 200
+
+
+# ---- both classes in one job: one form, regions, html report, per-model files, zip ------------------------------------
+import zipfile, io                                                              # noqa: E402
+both_text = ">demo\n" + HA + "AAGILGFVFTLAA"
+both = {"text": both_text, "mode": "scan", "preset": "iedb", "title": "Stub run",
+        "c1": {"alleles": ["HLA-A*02:01"], "lengths": [9], "models": {"netmhcpan": True}, "filters": {}},
+        "c2": {**{k: ii[k] for k in ("alleles", "nii", "models", "chain")}, "lengths": [15], "filters": {}}}
+pv = c.post("/api/pipeline/preview", json=both).get_json()
+assert pv["classes"]["c1"]["n_peptides"] > 0 and pv["classes"]["c2"]["n_peptides"] > 0, pv
+d = wait_job(c.post("/api/pipeline/run", json=both).get_json()["id"], timeout=120)
+if have_tools:
+    assert d["state"] == "done", d
+    names = [x["name"] for x in d["stages"]]
+    assert "c1_netmhcpan" in names and "c2_netmhciipan" in names and names[-1] == "regions", names
+    assert d["progress"] == 1.0 and all(x["state"] == "done" for x in d["stages"]), d["stages"]
+    regs = c.get(f"/api/jobs/{d['id']}/result?table=regions").get_json()
+    assert regs["total"] >= 1 and {"Region_ID", "Type", "Sequence", "CTL_Best_Peptide", "HTL_Best_Peptide"} <= set(regs["columns"]), regs["columns"]
+    assert all(r["Type"] in ("CTL+HTL", "CTL only", "HTL only") for r in regs["rows"])
+    m1 = c.get(f"/api/jobs/{d['id']}/result?table=master&cls=1&limit=5").get_json()
+    m2 = c.get(f"/api/jobs/{d['id']}/result?table=master&cls=2&limit=5").get_json()
+    assert "BigMHC_EL" in m1["columns"] or "NMP_%Rank_EL" in m1["columns"] and "NII_%Rank_EL" in m2["columns"] and "Region_ID" in c.get(f"/api/jobs/{d['id']}/result?table=peptides&cls=1").get_json()["columns"]
+    page = c.get(f"/api/jobs/{d['id']}/csv?table=report&inline=1")
+    assert page.status_code == 200 and b"<svg" in page.data and b"Stub run" in page.data and b"Epitope regions" in page.data
+    z = zipfile.ZipFile(io.BytesIO(c.get(f"/api/jobs/{d['id']}/csv?table=bundle").data))
+    zn = z.namelist()
+    assert "report.html" in zn and "regions.csv" in zn and "classI/master.csv" in zn and "classII/master.csv" in zn and any(n.startswith("per_model/") for n in zn), zn
+    rep = c.get(f"/api/jobs/{d['id']}/report").get_json()
+    assert rep["dual"] and set(rep["classes"]) == {"1", "2"}
+    # one class switched off is a normal single-class run through the same form
+    d1 = wait_job(c.post("/api/pipeline/run", json={**both, "c2": {"enabled": False}}).get_json()["id"])
+    assert d1["state"] == "done" and [x["name"] for x in d1["stages"]][0] == "c1_netmhcpan", d1
+assert c.post("/api/pipeline/run", json={**both, "c1": {"enabled": False}, "c2": {"enabled": False}}).status_code == 400
 
 os.environ.pop("PYTHONPATH", None)
 

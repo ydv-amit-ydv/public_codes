@@ -18,32 +18,36 @@ Workbench (`IEDB/HEV/Scripts/epitope_app.py`) filters. Each model is its own too
 
 Third-party predictors are licensed separately and are not stored here.
 
-## The Pipeline tab
+## The Pipeline tab: both T-cell arms in one run
 
-One form: paste a protein/FASTA (cut into fragments of the sizes you tick) or a list of
-peptides, choose alleles (presets, search, or any allele NetMHCpan knows), tick the models,
-set the filters, press **Run**.
+One form. Paste a protein / FASTA (or a list of peptides), and the page runs **MHC class I (CTL, CD8)** and **MHC class II (HTL, CD4)**
+on it in one job. Each arm has its own fragment sizes (all the sizes the models accept are ticked: 8-14 for class I, 11-25 for class II),
+alleles (the India population preset comes first when the population file is found), models and chain switch; an arm can be switched off.
+A small **?** beside every parameter explains it and gives its default.
 
-- **Progress:** an overall bar with elapsed time and time left, a bar per model with what
-  it is doing ("loading network 3/7", "scoring batch 1/2"), and a live log. **Cancel** stops
-  the running programs. Reloading the page picks the job back up. One job runs at a time;
-  others wait ("Waiting for the previous job...").
-- **Chain:** NetMHCpan, MixMHCpred and PRIME are fast and score every pair. BigMHC is slow
-  (it reloads its seven networks on every call), so with Chain on it scores only the pairs that
-  pass the NetMHCpan / MixMHCpred filters. That is what keeps runs short.
-- **A pair passes** when every model you ticked scored it and met its filter. A model that
-  does not know an allele (MixMHCpred and PRIME have their own allele lists; BigMHC is human
-  only) cannot pass it, and the page names the skipped alleles.
-- **Output:** *By peptide* (for each peptide: how many of your alleles it passes and which,
-  best NetMHCpan rank, best BigMHC scores) and *Every peptide-allele pair*. Rows that pass
-  every filter are green. Both download as CSV (the page shows the best 5,000 rows; the CSV
-  has all of them).
-- **Before you run:** the form shows "4,901 peptides x 3 alleles -> 14,703 predictions", and
-  a model that is not ready is refused immediately with the reason.
-- BigMHC covers human HLA-I only; mouse alleles are skipped for it with a note. Runs over
-  3,000,000 predictions are refused (use fewer alleles or sizes).
-- Stray characters in a FASTA (for example a `"` left by GenBank formatting) make the
-  windows containing them skip, and the page says so.
+1. **Windows are cut once and de-duplicated.** Identical windows (the same sequence at several positions or in several proteins, or the same
+   peptide from two sizes of a loose list) are predicted once and mapped back; the preview shows how many were merged.
+2. **Each arm** runs its models, then the consensus step (see below): votes, agreement, population-weighted coverage, priority score.
+3. **Regions.** Candidates of both classes are grouped by position into labelled regions: **CTL+HTL** (a class I and a class II candidate
+   overlap), **CTL only**, **HTL only**; CTL+HTL regions rank first. Each peptide table carries its `Region_ID`.
+4. **Outputs.** The page shows the regions, the candidates and every value per class, the funnel and suggestions, and a downloads tab:
+   `report.html` (one self-contained summary page with a map of the protein), `regions.csv`, per class the master CSV (every tool value, vote,
+   agreement count and consensus for every peptide x allele), peptides, candidates, minimum panel, run details, one CSV per model, and one zip
+   of everything.
+5. **Automation.** *Save settings* writes the form as json; `python3 run_engine.py epitope_settings.json -o results/` runs the same thing
+   without the page (and `--fasta other.fa` swaps the protein); the page's API takes the same json (`POST /api/pipeline/run`).
+
+How it stays fast (measured on a 4-core machine, HEV genome 2,486 aa, class I sizes 8-14 x 27 alleles = 462,000 predictions):
+MixMHCpred 9 s, PRIME 7 s. BigMHC costs about 26 s to start plus 9 ms per pair, for each of EL and IM, so it is chained: EL scores only pairs
+that can still become binders (the gate is exact for the agreement rule, so no result changes), and IM scores only pairs already called
+binders. Class II chains CD4episcore the same way.
+
+- **Progress:** an overall bar with elapsed time and time left, a bar per model, and a live log. **Cancel** stops the running programs.
+  Reloading the page picks the job back up. One job runs at a time.
+- **A model that does not know an allele** (MixMHCpred and PRIME have their own allele lists; BigMHC is human only) casts no vote for it;
+  the page names the skipped alleles.
+- Runs over 3,000,000 predictions per class are refused (use fewer alleles or sizes). Stray characters in a FASTA make the windows containing
+  them skip, and the page says so.
 
 ## Consensus, agreement and population-weighted ranking
 

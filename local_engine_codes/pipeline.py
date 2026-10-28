@@ -103,11 +103,12 @@ def preview(params):
     peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"])
     nm_ok, bm_ok, notes = _supported(p["alleles"], m)
     n_pep = int(peps["Peptide"].nunique()) if not peps.empty else 0
+    n_win = int(len(peps))
     use_bm = m["bigmhc_el"] or m["bigmhc_im"]
     fast = (m["mixmhcpred"] or m["prime"] or m["mhcflurry"] or m["netctlpan"])
     if m["netctlpan"] and any(not (8 <= l <= 11) for l in p["lengths"]):
         notes = notes + ["NetCTLpan scores 8-11-mers only; other lengths get no NetCTLpan score"]
-    out = {"n_peptides": n_pep, "n_alleles": len(p["alleles"]), "warnings": warns + notes,
+    out = {"n_peptides": n_pep, "n_windows": n_win, "n_alleles": len(p["alleles"]), "warnings": warns + notes,
            "n_pairs_netmhcpan": n_pep * len(nm_ok) if m["netmhcpan"] else 0,
            "n_pairs_fast": n_pep * len(p["alleles"]) if fast else 0,
            "n_pairs_bigmhc": n_pep * len(bm_ok) if use_bm else 0,
@@ -232,27 +233,32 @@ def run(params, job):
     if chop is not None and not chop.empty:
         base = base.merge(chop, on=["Protein", "Start", "Peptide"], how="left")
 
-    # ---- 4. BigMHC (on the pairs that pass the binding filters when chained) -------------------------
+    # ---- 4. BigMHC. Chained: EL scores the pairs that could still become binders, IM only the pairs that did ----------
     bmres = None
     if use_bm:
         gated = p["chain"] and (nmp is not None or mix is not None or mhcf is not None)
+        rules = consensus.resolve_rules(1, p["preset"], p["rules"])
+        ok_allele = base["Allele"].isin(bm_ok)
         if gated:
-            rules = consensus.resolve_rules(1, p["preset"], p["rules"])
-            keep = _binding_pass(base, f) & consensus.gate_mask(base, 1, rules)      # a superset of every agreement rule
-            pairs = base[keep]
+            first = _binding_pass(base, f) & consensus.gate_mask(base, 1, rules, pending=int(m["bigmhc_el"]))
         else:
-            pairs = base
-        pairs = pairs[pairs["Allele"].isin(bm_ok)][["Peptide", "Allele"]].drop_duplicates()
-        if gated:
-            job.log(f"chain: {len(pairs):,} pairs pass the binding filters -> BigMHC")
-        if pairs.empty:
-            for x in bm_models:
-                job.finish_stage(f"bigmhc_{x}", "nothing to score")
-            warns.append("BigMHC had nothing to score (no pair passed the earlier filters, or no human alleles).")
-        else:
-            bmres = bm.predict_pairs(pairs.rename(columns={"Peptide": "peptide", "Allele": "allele"}),
-                                     bm_models, job=job).rename(columns={"peptide": "Peptide", "allele": "Allele"})
-            base = base.merge(bmres, on=["Peptide", "Allele"], how="left")
+            first = pd.Series(True, index=base.index)
+        steps = [("el", first & ok_allele)] if m["bigmhc_el"] else []
+        if m["bigmhc_im"]:
+            steps.append(("im", None if m["bigmhc_el"] and gated else first & ok_allele))      # None: decided after EL
+        for model, keep in steps:
+            if keep is None:
+                keep = consensus.binder_mask(base, 1, rules) & _binding_pass(base, f) & first & ok_allele
+            pairs = base.loc[keep, ["Peptide", "Allele"]].drop_duplicates()
+            if gated:
+                job.log(f"chain: {len(pairs):,} pairs -> BigMHC {model.upper()}")
+            if pairs.empty:
+                job.finish_stage(f"bigmhc_{model}", "nothing to score")
+                warns.append(f"BigMHC {model.upper()} had nothing to score (no pair passed the earlier tools, or no human alleles).")
+                continue
+            sc = bm.predict_pairs(pairs.rename(columns={"Peptide": "peptide", "Allele": "allele"}),
+                                  (model,), job=job).rename(columns={"peptide": "Peptide", "allele": "Allele"})
+            base = base.merge(sc, on=["Peptide", "Allele"], how="left")
 
     # ---- 5. flags, ordering, per-peptide summary -------------------------------------------------------
     job.update("merge", msg="merging", state="running")

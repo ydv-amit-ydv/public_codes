@@ -3,8 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Epitope Filter Engine</title>
 <style>
-:root{--bg:#fff;--fg:#1c2330;--muted:#5b6678;--card:#f5f7fa;--line:#d5dbe5;--nav:#1f2740;--acc:#3b6fe0;--ok:#1e8a4c;--bad:#c0392b;--warn:#a86a00;--pass:#e3f6e9;--bar:#e3e8f0}
-@media (prefers-color-scheme:dark){:root{--bg:#141a26;--fg:#e6eaf2;--muted:#9aa6bb;--card:#1c2433;--line:#32405a;--nav:#0d1220;--acc:#6b95ff;--ok:#4ccf86;--bad:#ff7b6b;--warn:#f0b24a;--pass:#173a28;--bar:#2a3550}}
+:root{--bg:#fff;--fg:#1c2330;--muted:#5b6678;--card:#f5f7fa;--line:#d5dbe5;--nav:#1f2740;--acc:#3b6fe0;--ok:#1e8a4c;--bad:#c0392b;--warn:#a86a00;--pass:#e3f6e9;--bar:#e3e8f0;--ctl:#2f6fdb;--htl:#d9822b;--dual:#1e8a4c}
+@media (prefers-color-scheme:dark){:root{--bg:#141a26;--fg:#e6eaf2;--muted:#9aa6bb;--card:#1c2433;--line:#32405a;--nav:#0d1220;--acc:#6b95ff;--ok:#4ccf86;--bad:#ff7b6b;--warn:#f0b24a;--pass:#173a28;--bar:#2a3550;--ctl:#6b95ff;--htl:#f0a35a;--dual:#4ccf86}}
 *{box-sizing:border-box}
 body{font:14px/1.45 system-ui,sans-serif;margin:0;height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--fg)}
 nav{background:var(--nav);color:#fff;padding:6px 12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -13,55 +13,67 @@ nav button{background:#3a4468;color:#fff;border:0;padding:7px 14px;border-radius
 nav button.on{background:var(--acc)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#888;margin-right:6px}
 .dot.ok{background:#3c3}.dot.bad{background:#e44}
-.fdot{margin-right:7px}
-#form[data-cls="1"] .c2{display:none}
-#form[data-cls="2"] .c1{display:none}
-.clsrow{display:flex;gap:18px;margin:0 0 10px}
 .pane{flex:1;display:none;min-height:0}.pane.on{display:flex}
 iframe{flex:1;border:0;width:100%}
-#form{width:430px;max-width:100%;padding:14px;overflow:auto;background:var(--card);border-right:1px solid var(--line)}
+#form{width:460px;max-width:100%;padding:14px;overflow:auto;background:var(--card);border-right:1px solid var(--line)}
 #out{flex:1;padding:14px;overflow:auto;min-width:0}
-h3{margin:16px 0 6px;font-size:14px}
+h3{margin:18px 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 h3:first-child{margin-top:0}
-textarea,input[type=text],input[type=number]{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px}
+textarea,input[type=text],input[type=number],select{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:4px 6px}
 textarea{width:100%;font-family:ui-monospace,monospace;font-size:13px}
 label.i{display:block;margin:3px 0}
 .muted{color:var(--muted)} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.sm{font-size:12px}
 button.b{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:3px 9px;cursor:pointer}
-button.primary{background:var(--acc);color:#fff;border:0;padding:9px 26px;font-size:15px;border-radius:5px;cursor:pointer}
+button.primary{background:var(--acc);color:#fff;border:0;padding:10px 30px;font-size:15px;border-radius:6px;cursor:pointer}
 button:disabled{opacity:.5;cursor:not-allowed}
-.presets button{margin:2px 2px 2px 0}
 .chip{display:inline-block;background:var(--bar);border-radius:10px;padding:1px 8px;margin:2px;font-size:12px}
 .chip b{cursor:pointer;margin-left:5px}
-#hits{max-height:130px;overflow:auto;border:1px solid var(--line);background:var(--bg);display:none}
-#hits div{padding:2px 8px;cursor:pointer} #hits div:hover{background:var(--bar)}
-.grid2{display:grid;grid-template-columns:1fr 90px;gap:4px 8px;align-items:center}
-.grid2 input{width:90px}
+.hits{max-height:130px;overflow:auto;border:1px solid var(--line);background:var(--bg);display:none}
+.hits div{padding:2px 8px;cursor:pointer}.hits div:hover{background:var(--bar)}
+.grid2{display:grid;grid-template-columns:1fr 96px;gap:5px 8px;align-items:center}
+.grid2 input,.grid2 select{width:96px}
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px;background:var(--card)}
+.arm{border:1px solid var(--line);border-left:4px solid var(--ctl);border-radius:6px;background:var(--bg);margin:8px 0;padding:8px 10px}
+.arm.c2{border-left-color:var(--htl)}
+.arm.off .armbody{display:none}
+.arm.off{opacity:.65}
+.armhead{display:flex;align-items:center;gap:8px;font-weight:600}
+.sub{margin:10px 0 3px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.q{display:inline-block;width:15px;height:15px;line-height:15px;text-align:center;border-radius:50%;background:var(--bar);color:var(--muted);font-size:11px;font-weight:700;cursor:help;margin-left:4px;vertical-align:middle;user-select:none}
+.q:hover,.q:focus{background:var(--acc);color:#fff;outline:0}
+#tip{position:fixed;z-index:50;max-width:320px;background:#101626;color:#e9edf6;padding:8px 10px;border-radius:6px;font-size:12.5px;line-height:1.4;box-shadow:0 4px 18px rgba(0,0,0,.35);display:none;pointer-events:none}
+#tip b{color:#fff}
 .bar{height:14px;background:var(--bar);border-radius:7px;overflow:hidden}
 .bar>i{display:block;height:100%;background:var(--acc);width:0;transition:width .4s}
 .bar.ind>i{width:35%;animation:slide 1.2s infinite ease-in-out}
 @keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
 .bar.thin{height:8px}
-.stage{display:grid;grid-template-columns:200px 1fr;gap:4px 10px;margin:8px 0;align-items:center}
+#progress.fin #stages,#progress.fin #pbar{display:none}#progress.fin{padding:8px 12px}
+.stage{display:grid;grid-template-columns:260px 1fr;gap:4px 10px;margin:8px 0;align-items:center}
 .stage .m{grid-column:2;font-size:12px;color:var(--muted)}
-pre{background:#0f1420;color:#d6deee;padding:8px;border-radius:5px;overflow:auto;max-height:200px;font-size:12px;margin:6px 0 0}
+pre{background:#0f1420;color:#d6deee;padding:8px;border-radius:5px;overflow:auto;max-height:240px;font-size:12px;margin:6px 0 0}
 table{border-collapse:collapse;font-size:13px}
 th,td{border:1px solid var(--line);padding:2px 7px;white-space:nowrap}
 th{background:var(--card);cursor:pointer;position:sticky;top:0;z-index:1}
 tr.pass{background:var(--pass)}
+.tabs button{margin-right:4px}.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 .kpi{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:120px}
 .kpi b{display:block;font-size:22px;line-height:1.1}.kpi span{color:var(--muted);font-size:12px}
 .cov{display:inline-block;width:70px;height:8px;background:var(--bar);border-radius:4px;vertical-align:middle;margin-right:5px;overflow:hidden}
 .cov i{display:block;height:100%;background:var(--acc)}
+.tag{display:inline-block;border-radius:10px;padding:0 8px;font-size:12px;color:#fff}.tag.dual{background:var(--dual)}.tag.ctl{background:var(--ctl)}.tag.htl{background:var(--htl)}
+.seq{font-family:ui-monospace,monospace}
 .vd{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:2px;background:var(--bar)}.vd.y{background:var(--ok)}.vd.n{background:var(--bad);opacity:.55}
 tr.rowc{cursor:pointer} tr.rowc:hover{background:var(--bar)}
 td.detail{white-space:normal;background:var(--bg)}
-.fun{display:grid;grid-template-columns:260px 1fr 70px;gap:3px 8px;align-items:center;margin:2px 0}
-.dls a{margin-right:6px;text-decoration:none;color:inherit;display:inline-block}
-#advr{margin:6px 0}#advr .grid2{margin-top:4px}
-.tabs button{margin-right:4px}.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.fun{display:grid;grid-template-columns:300px 1fr 70px;gap:3px 8px;align-items:center;margin:2px 0}
+.dl{display:inline-block;padding:4px 10px;border:1px solid var(--line);border-radius:5px;text-decoration:none;color:inherit;margin:2px 4px 2px 0;background:var(--bg)}
+.dl.big{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.dl:hover{filter:brightness(.95)}
+.pv{margin:8px 0;padding:8px 10px;border-radius:6px;background:var(--bg);border:1px solid var(--line);font-size:13px}
+details>summary{cursor:pointer}
 #settings{padding:14px;flex-direction:column;gap:8px;overflow:auto}
 #cfg{width:100%;height:240px}
 .cardm{border:1px solid var(--line);border-radius:6px;padding:8px;margin:6px 0;background:var(--card)}
@@ -73,102 +85,55 @@ td.detail{white-space:normal;background:var(--bg)}
 <button data-t="netmhcpan">NetMHCpan only</button>
 <button data-t="bigmhc">BigMHC only</button>
 <button data-t="settings">Settings</button></nav>
+<div id="tip"></div>
 
 <!-- ============================ PIPELINE ============================ -->
 <div class="pane" id="pipeline">
- <div id="form" data-cls="1">
-  <div class="clsrow">
-    <label><input type="radio" name="cls" value="1" checked> <b>MHC class I</b> <span class="muted">CD8 T cells</span></label>
-    <label><input type="radio" name="cls" value="2"> <b>MHC class II</b> <span class="muted">CD4 T cells</span></label>
-  </div>
-  <h3>1. Sequence or peptides</h3>
+ <div id="form">
+  <h3>1 &middot; Protein or peptides <span class="q" data-h="mode">?</span></h3>
   <label class="i"><input type="radio" name="mode" value="scan" checked> Cut a protein / FASTA into fragments</label>
   <label class="i"><input type="radio" name="mode" value="peptides"> Use the peptides exactly as given (one per line)</label>
   <textarea id="text" rows="7" spellcheck="false">&gt;demo
 MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
-  <div style="margin-top:4px"><input type="file" id="file" accept=".txt,.fa,.fasta,.pep"> <span class="muted">or load a file</span></div>
-  <div id="lenrow" style="margin-top:6px">Fragment sizes: <span id="lens" class="c1"></span><span id="lens2" class="c2"></span></div>
+  <div style="margin-top:4px"><input type="file" id="file" accept=".txt,.fa,.fasta,.pep"> <span class="muted sm">or load a file</span></div>
 
-  <h3>2. Alleles</h3>
-  <div class="presets" id="presets"></div>
-  <input type="text" id="asearch" placeholder="search alleles, e.g. A*24 or H-2-K" style="width:100%;margin-top:4px">
-  <div id="hits"></div>
-  <div id="chips" style="margin-top:4px"></div>
-  <button class="b" id="clearA">clear all</button>
+  <h3>2 &middot; T-cell arms <span class="q" data-h="arms">?</span></h3>
+  <div id="arms"></div>
 
-  <h3>3. Models</h3>
-<div class="c1">
-  <label class="i"><span class="dot fdot" data-m="netmhcpan"></span><input type="checkbox" id="m_nmp" checked> NetMHCpan 4.2: binding (EL + BA)</label>
-  <label class="i"><span class="dot fdot" data-m="mixmhcpred"></span><input type="checkbox" id="m_mix" checked> MixMHCpred 3.0: presentation</label>
-  <label class="i"><span class="dot fdot" data-m="mhcflurry"></span><input type="checkbox" id="m_mhcf" checked> MHCflurry 2: affinity, processing, presentation</label>
-  <label class="i"><span class="dot fdot" data-m="prime"></span><input type="checkbox" id="m_prime" checked> PRIME 2.1: immunogenicity</label>
-  <label class="i"><span class="dot fdot ok" title="built in, nothing to install"></span><input type="checkbox" id="m_iedb" checked> IEDB Class I immunogenicity (baseline)</label>
-  <div id="iedbopts" style="margin:0 0 6px 30px">Positions to mask
-    <select id="iedb_mask"><option value="default">1,2,C Terminal (Default)</option><option value="by_allele">By allele</option><option value="custom">Custom</option></select>
-    <input type="text" id="iedb_pos" placeholder="e.g. 2,5,9" style="width:90px;display:none"></div>
-  <label class="i"><span class="dot fdot" data-m="iedb_bundle"></span><input type="checkbox" id="m_ctl" checked> NetCTLpan 1.1: antigen processing <span class="muted">(8-11-mers)</span></label>
-  <label class="i"><span class="dot fdot" data-m="iedb_bundle"></span><input type="checkbox" id="m_chop" checked> NetChop 3.1: proteasome cleavage</label>
-  <div id="procnote" class="muted" style="font-size:12px;margin:0 0 4px 30px;display:none">NetCTLpan and NetChop need the protein: choose "Cut a protein" in step 1.</div>
-  <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_el" checked> BigMHC EL: presentation</label>
-  <label class="i"><span class="dot fdot" data-m="bigmhc"></span><input type="checkbox" id="m_im" checked> BigMHC IM: immunogenicity</label>
-</div>
-<div class="c2">
-  <label class="i"><span class="dot fdot" data-m="iedb_bundle_ii"></span><input type="checkbox" id="m2_el" checked> NetMHCIIpan: eluted ligand (EL)</label>
-  <label class="i"><span class="dot fdot" data-m="iedb_bundle_ii"></span><input type="checkbox" id="m2_ba" checked> NetMHCIIpan: binding affinity (BA)</label>
-  <div style="margin:0 0 6px 30px">Version
-    <select id="nii_version"><option value="4.3">4.3 (newest)</option><option value="4.2">4.2</option><option value="default">IEDB default (matches IEDB web exports)</option></select></div>
-  <label class="i"><span class="dot fdot" data-m="mixmhc2pred"></span><input type="checkbox" id="m2_mix" checked> MixMHC2pred 2.1: ligand prediction</label>
-  <label class="i"><span class="dot fdot" data-m="iedb_bundle_ii"></span><input type="checkbox" id="m2_cd4" checked> CD4episcore: CD4 immunogenicity <span class="muted">(peptide only, lower = better)</span></label>
-  </div>
-  <div id="notready" class="bad" style="font-size:12px;margin:2px 0 4px"></div>
-  <label class="i c1" style="margin-top:6px"><input type="checkbox" id="chain" checked>
-    <b>Chain:</b> run BigMHC only on pairs that pass the NetMHCpan / MixMHCpred / MHCflurry filters <span class="muted">(much faster)</span></label>
-  <label class="i c2" style="margin-top:6px"><input type="checkbox" id="chain2" checked>
-    <b>Chain:</b> run CD4episcore only on peptides that pass the binding filters for at least one allele</label>
-
-  <h3>4. Strategy</h3>
+  <h3>3 &middot; Strategy <span class="q" data-h="strategy">?</span></h3>
   <select id="strat" style="width:100%"></select>
-  <div id="stratwhy" class="muted" style="font-size:12px;margin:4px 0"></div>
-  <details id="advr"><summary class="muted">Adjust the rules (blank = the strategy's value)</summary>
-   <div class="grid2">
-    <span>Rank candidates by</span><select id="r_rank_by" style="width:90px"><option value="">-</option><option value="consensus">consensus</option><option value="coverage">coverage</option><option value="promiscuity">alleles</option><option value="binding">binding</option><option value="immunogenicity">immunogenicity</option></select>
-    <span>Binder when tools agree</span><select id="r_bind_min_agree" style="width:90px"><option value="">-</option><option value="any">any one</option><option value="majority">majority</option><option value="all">all</option></select>
-    <span>Binding %Rank &le;</span><input type="number" id="r_bind_rank_max" step="0.5" min="0">
-    <span>Immunogenic when</span><select id="r_imm_min_agree" style="width:90px"><option value="">-</option><option value="off">not required</option><option value="any">any one</option><option value="majority">majority</option><option value="all">all</option></select>
-    <span>...in the top (% of binders)</span><input type="number" id="r_imm_top_q" step="5" min="1" max="100">
-    <span>At least this many alleles</span><input type="number" id="r_min_alleles" step="1" min="1">
-    <span>Population coverage at least (%)</span><input type="number" id="r_min_coverage" step="5" min="0" max="100">
-    <span>Merge overlapping windows</span><select id="r_collapse" style="width:90px"><option value="">-</option><option value="1">yes</option><option value="0">no</option></select>
-    <span>Panel goal (coverage %)</span><input type="number" id="r_panel_target" step="5" min="10" max="100">
+  <div id="stratwhy" class="muted sm" style="margin:4px 0"></div>
+  <details id="advr"><summary class="muted sm">Adjust the rules (blank = the strategy's value)</summary>
+   <div class="grid2" style="margin-top:6px">
+    <span>Rank candidates by <span class="q" data-h="rank_by">?</span></span><select id="r_rank_by"><option value="">-</option><option value="consensus">consensus</option><option value="coverage">coverage</option><option value="promiscuity">alleles</option><option value="binding">binding</option><option value="immunogenicity">immunogenicity</option></select>
+    <span>Binder when tools agree <span class="q" data-h="bind_min_agree">?</span></span><select id="r_bind_min_agree"><option value="">-</option><option value="any">any one</option><option value="majority">majority</option><option value="all">all</option></select>
+    <span>Binding %Rank &le; <span class="q" data-h="bind_rank_max">?</span></span><input type="number" id="r_bind_rank_max" step="0.5" min="0">
+    <span>Immunogenic when <span class="q" data-h="imm_min_agree">?</span></span><select id="r_imm_min_agree"><option value="">-</option><option value="off">not required</option><option value="any">any one</option><option value="majority">majority</option><option value="all">all</option></select>
+    <span>...in the top (% of binders) <span class="q" data-h="imm_top_q">?</span></span><input type="number" id="r_imm_top_q" step="5" min="1" max="100">
+    <span>At least this many alleles <span class="q" data-h="min_alleles">?</span></span><input type="number" id="r_min_alleles" step="1" min="1">
+    <span>Population coverage at least (%) <span class="q" data-h="min_coverage">?</span></span><input type="number" id="r_min_coverage" step="5" min="0" max="100">
+    <span>Merge overlapping windows <span class="q" data-h="collapse">?</span></span><select id="r_collapse"><option value="">-</option><option value="1">yes</option><option value="0">no</option></select>
+    <span>Panel goal (coverage %) <span class="q" data-h="panel_target">?</span></span><input type="number" id="r_panel_target" step="5" min="10" max="100">
    </div></details>
 
-  <h3>5. Optional per-tool filters <span class="muted" style="font-weight:normal">(advanced; the strategy above already combines the tools)</span></h3>
-  <div class="grid2 c2">
-    <span>NetMHCIIpan %Rank EL &le;</span><input type="number" id="f2_nii_el_rank_max" step="0.1" min="0" placeholder="off">
-    <span>NetMHCIIpan %Rank BA &le;</span><input type="number" id="f2_nii_ba_rank_max" step="0.1" min="0" placeholder="off">
-    <span>NetMHCIIpan IC50 &le; (nM)</span><input type="number" id="f2_nii_ic50_max" step="50" min="0" placeholder="off">
-    <span>MixMHC2pred %Rank &le;</span><input type="number" id="f2_mix2_rank_max" step="0.5" min="0" placeholder="off">
-    <span>CD4episcore percentile &le;</span><input type="number" id="f2_cd4_max" step="1" min="0" max="100" placeholder="off">
-  </div>
-  <div class="grid2 c1">
-    <span>NetMHCpan %Rank EL &le;</span><input type="number" id="f_rank_el_max" step="0.1" min="0" placeholder="off">
-    <span>NetMHCpan %Rank BA &le;</span><input type="number" id="f_rank_ba_max" step="0.1" min="0" placeholder="off">
-    <span>NetMHCpan affinity &le; (nM)</span><input type="number" id="f_aff_max" step="50" min="0" placeholder="off">
-    <span>MixMHCpred %Rank &le;</span><input type="number" id="f_mix_rank_max" step="0.1" min="0" placeholder="off">
-    <span>PRIME %Rank &le;</span><input type="number" id="f_prime_rank_max" step="0.1" min="0" placeholder="off">
-    <span>MHCflurry presentation %Rank &le;</span><input type="number" id="f_mhcf_pres_rank_max" step="0.1" min="0" placeholder="off">
-    <span>MHCflurry affinity &le; (nM)</span><input type="number" id="f_mhcf_aff_max" step="50" min="0" placeholder="off">
-    <span>NetCTLpan %Rank &le;</span><input type="number" id="f_ctlpan_rank_max" step="0.5" min="0" placeholder="off">
-    <span>NetChop C-term cleavage &ge;</span><input type="number" id="f_netchop_min" step="0.05" min="0" max="1" placeholder="off">
-    <span>IEDB immunogenicity &ge;</span><input type="number" id="f_iedb_imm_min" step="0.05" placeholder="off">
-    <span>BigMHC EL &ge;</span><input type="number" id="f_bm_el_min" step="0.05" min="0" max="1" placeholder="off">
-    <span>BigMHC IM &ge;</span><input type="number" id="f_bm_im_min" step="0.05" min="0" max="1" placeholder="off">
-  </div>
-  <div class="muted" style="margin-top:4px">Blank = no limit. %Rank &le; 0.5 is a strong binder, &le; 2 weak or better (class II: &le; 2 is the usual cut-off).</div>
+  <h3>4 &middot; Population <span class="q" data-h="population">?</span></h3>
+  <div id="popstat" class="sm muted">checking...</div>
 
-  <div id="preview" style="margin:14px 0 8px"></div>
+  <details style="margin-top:14px"><summary class="muted sm">Optional per-tool filters (advanced) <span class="q" data-h="filters">?</span></summary>
+   <div id="filters" style="margin-top:6px"></div></details>
+
+  <h3>Report title</h3>
+  <input type="text" id="title" value="Epitope prediction report" style="width:100%">
+
+  <div id="preview" class="pv"></div>
   <button class="primary" id="run">Run</button>
   <span id="runmsg" class="bad"></span>
+  <div style="margin-top:10px" class="sm">
+   <button class="b" id="saveset">Save settings</button> <button class="b" id="loadset">Load settings</button>
+   <input type="file" id="setfile" accept=".json" style="display:none"> <span class="q" data-h="automate">?</span>
+   <details style="margin-top:6px"><summary class="muted">Run it without the page</summary>
+    <pre id="cmd" style="max-height:none"></pre></details>
+  </div>
  </div>
 
  <div id="out">
@@ -185,22 +150,21 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
 
   <div class="card" id="results" style="display:none">
    <div class="kpis" id="kpis"></div>
-   <div id="warnings" class="warn" style="margin:4px 0"></div>
-   <div class="dls" id="dls"></div>
-   <div class="tabs" style="margin:10px 0 6px">
-     <button class="b on" data-tab="candidates">Candidates</button>
-     <button class="b" data-tab="peptides">All peptides</button>
-     <button class="b" data-tab="master">Every value (master table)</button>
-     <button class="b" data-tab="insight">Funnel &amp; suggestions</button>
-     <label style="margin-left:12px" id="onlylab"><input type="checkbox" id="onlyPass" checked> candidates only</label>
+   <div id="warnings" class="warn sm" style="margin:4px 0"></div>
+   <div id="topdl" style="margin:6px 0"></div>
+   <div class="tabs" id="maintabs" style="margin:10px 0 6px"></div>
+   <div id="subtabs" class="tabs" style="margin:0 0 6px"></div>
+   <div id="tools" style="margin:4px 0">
+     <label id="onlylab"><input type="checkbox" id="onlyPass" checked> candidates only</label>
      <input type="text" id="tfilter" placeholder="filter rows..." style="margin-left:8px;width:170px">
    </div>
-   <div id="tnote" class="muted" style="margin-bottom:4px"></div>
+   <div id="tnote" class="muted sm" style="margin-bottom:4px"></div>
    <div id="tblwrap" style="overflow:auto;max-height:68vh"><table id="tbl"></table></div>
    <div id="insight" style="display:none"></div>
+   <div id="downloads" style="display:none"></div>
   </div>
 
-  <div id="empty" class="muted">Fill in the form and press <b>Run</b>. Progress, time left and the final table appear here.</div>
+  <div id="empty" class="muted">Fill in the form and press <b>Run</b>. Progress, time left and the results appear here.</div>
  </div>
 </div>
 
@@ -222,6 +186,8 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const f0 = n => (+n).toLocaleString();
+const pct = x => x == null || x === "" ? "" : (100 * x).toFixed(1) + "%";
 
 /* ---------- navigation ---------- */
 function show(t){
@@ -231,100 +197,207 @@ function show(t){
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.t));
 
-/* ---------- form state ---------- */
-const CLS = () => +document.querySelector("input[name=cls]:checked").value;
-let SELS = {1: [], 2: []}, ALL = [], PRESETS = {}, PRESETS_II = {}, JOB = null, TABLE = "summary", DATA = null, sortKey = null, sortDir = 1, previewTimer = null;
-$("lens").innerHTML = [8,9,10,11,12,13,14].map(n => `<label><input type="checkbox" class="len" value="${n}" ${n==9?"checked":""}> ${n}</label> `).join("");
-$("lens2").innerHTML = [11,12,13,14,15,16,17,18,19,20,21,22,23,24,25].map(n => `<label><input type="checkbox" class="len2" value="${n}" ${n==15?"checked":""}> ${n}</label> `).join("");
+/* ---------- help: a small ? next to every parameter ---------- */
+const HELP = {
+ mode: "<b>Cut a protein</b>: every window of the sizes you tick is predicted (identical windows are predicted once). <b>Peptides as given</b>: one peptide per line, used exactly; NetCTLpan and NetChop need the protein and are switched off.",
+ arms: "<b>MHC class I</b> peptides are shown to CD8 (killer) T cells, <b>class II</b> peptides to CD4 (helper) T cells. Both are on by default; where a class I and a class II candidate overlap, the region is labelled <b>CTL+HTL</b>.",
+ sizes1: "Peptide lengths cut from the protein. All lengths the models accept are ticked: 8-14 for class I (most epitopes are 9-10). Fewer sizes = faster.",
+ sizes2: "Window lengths for class II. 11-25 are ticked; the binding core is 9 aa, longer windows add flanks. Fewer sizes = faster.",
+ alleles: "The HLA alleles to predict for. The population preset lists the most common alleles of each locus (together about 80 % of haplotypes); coverage is always computed against the full population file, not only these.",
+ chain: "Slow tools (BigMHC, CD4episcore) score only the pairs that the fast tools leave a chance of becoming a binder. This changes no result and saves most of the time.",
+ strategy: "A strategy states every cut-off and rule. Pick one, read the line under it, and use <b>Adjust the rules</b> only to change a single value.",
+ rank_by: "How candidates are ordered. <b>consensus</b>: priority score (coverage 35 %, agreement 25 %, binding 20 %, immunogenicity 20 %). The other options sort on one thing.",
+ bind_min_agree: "How many of the binding tools must call a pair a binder. <b>majority</b> = more than half of the tools that scored it.",
+ bind_rank_max: "A tool calls a pair a binder when its %Rank is at or below this (lower = tighter). 0.5 strong, 2 weak or better (class I); class II commonly 5 (2 for strong).",
+ imm_min_agree: "Immunogenicity tools (PRIME, BigMHC-IM, IEDB-Calis; CD4episcore for class II) vote only on binders. Choose how many must agree, or <b>not required</b>.",
+ imm_top_q: "An immunogenicity tool votes yes when the pair ranks in this top share of the binders in this run (it needs at least 8 binder pairs).",
+ min_alleles: "A peptide is a candidate only if it passes for at least this many alleles.",
+ min_coverage: "A peptide is a candidate only if the share of the population presenting it is at least this (needs the population file).",
+ collapse: "Windows that overlap the best one by 70 % or more become one region; the best peptide represents it.",
+ panel_target: "The minimum panel adds the peptide that gains most population coverage, one at a time, until this share is reached (or 25 peptides).",
+ population: "Allele frequencies for coverage and for weighting the ranking. Hardy-Weinberg per region, loci treated as independent. Without the file, coverage is the share of your chosen alleles.",
+ filters: "Hard cut-offs on single tools, applied on top of the strategy. Leave blank unless you need one: the strategy already combines the tools by agreement.",
+ automate: "Save settings writes everything on this form to a json file. The same file runs without the page: <b>python3 run_engine.py settings.json</b>, or POST it to /api/pipeline/run.",
+ nii_version: "4.3 is the newest NetMHCIIpan; 'IEDB default' reproduces the numbers on the IEDB website.",
+ iedb_mask: "Positions of the peptide excluded from the IEDB immunogenicity score (anchor positions): 1,2 and the C-terminus by default.",
+ m_netmhcpan: "<b>NetMHCpan 4.2</b> (DTU): eluted-ligand and binding-affinity predictor, the reference for class I binding.",
+ m_mixmhcpred: "<b>MixMHCpred 3.0</b> (Gfeller lab): presentation predictor trained on ligands.",
+ m_mhcflurry: "<b>MHCflurry 2</b>: affinity, antigen processing and presentation, with the protein context around each peptide.",
+ m_prime: "<b>PRIME 2.1</b>: MixMHCpred binding combined with T-cell recognition features; predicts immunogenicity.",
+ m_iedb_imm: "<b>IEDB class I immunogenicity</b> (Calis 2013): a baseline score from amino-acid properties. Built in, nothing to install.",
+ m_netctlpan: "<b>NetCTLpan 1.1</b>: proteasomal cleavage, TAP transport and MHC binding combined; 8-11-mers only; needs the protein.",
+ m_netchop: "<b>NetChop 3.1</b>: probability that the proteasome cuts at the peptide's C-terminus; needs the protein.",
+ m_bigmhc_el: "<b>BigMHC EL</b>: deep-learning presentation score (0-1). Slow: it runs only on pairs that passed the fast tools.",
+ m_bigmhc_im: "<b>BigMHC IM</b>: deep-learning immunogenicity score (0-1). Slow: runs only on pairs already called binders.",
+ m_netmhciipan_el: "<b>NetMHCIIpan</b>: eluted-ligand prediction for class II (percentile rank).",
+ m_netmhciipan_ba: "<b>NetMHCIIpan</b>: binding-affinity prediction for class II (percentile and IC50).",
+ m_mixmhc2pred: "<b>MixMHC2pred 2.1</b> (Gfeller lab): class II ligand predictor, any peptide length.",
+ m_cd4episcore: "<b>CD4episcore</b> (IEDB): CD4 T-cell immunogenicity; the lower the percentile, the more immunogenic."
+};
+const tip = $("tip");
+function showTip(el){
+  const h = HELP[el.dataset.h]; if (!h) return;
+  tip.innerHTML = h; tip.style.display = "block";
+  const r = el.getBoundingClientRect(), w = tip.offsetWidth, hgt = tip.offsetHeight;
+  let x = Math.min(r.left, innerWidth - w - 10), y = r.bottom + 6;
+  if (y + hgt > innerHeight - 8) y = r.top - hgt - 6;
+  tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+}
+document.addEventListener("mouseover", e => { const q = e.target.closest(".q"); if (q) showTip(q); });
+document.addEventListener("mouseout", e => { if (e.target.closest(".q")) tip.style.display = "none"; });
+document.addEventListener("focusin", e => { const q = e.target.closest(".q"); if (q) showTip(q); });
+document.addEventListener("focusout", () => tip.style.display = "none");
+document.addEventListener("click", e => { const q = e.target.closest(".q"); if (q) showTip(q); else tip.style.display = "none"; });
+const Q = k => `<span class="q" data-h="${k}" tabindex="0">?</span>`;
+
+/* ---------- the two arms ---------- */
+const ARMS = {
+ 1: {title: "MHC class I", tag: "CTL", who: "CD8 T cells", sizes: [8,9,10,11,12,13,14], models: [
+      ["netmhcpan", "NetMHCpan 4.2", "binding (EL + BA)", "netmhcpan"], ["mixmhcpred", "MixMHCpred 3.0", "presentation", "mixmhcpred"],
+      ["mhcflurry", "MHCflurry 2", "affinity, processing, presentation", "mhcflurry"], ["prime", "PRIME 2.1", "immunogenicity", "prime"],
+      ["iedb_imm", "IEDB immunogenicity", "baseline (Calis)", null], ["netctlpan", "NetCTLpan 1.1", "processing, 8-11-mers", "iedb_bundle", true],
+      ["netchop", "NetChop 3.1", "proteasome cleavage", "iedb_bundle", true], ["bigmhc_el", "BigMHC EL", "presentation", "bigmhc"], ["bigmhc_im", "BigMHC IM", "immunogenicity", "bigmhc"]]},
+ 2: {title: "MHC class II", tag: "HTL", who: "CD4 T cells", sizes: [11,12,13,14,15,16,17,18,19,20,21,22,23,24,25], models: [
+      ["netmhciipan_el", "NetMHCIIpan", "eluted ligand (EL)", "iedb_bundle_ii"], ["netmhciipan_ba", "NetMHCIIpan", "binding affinity (BA)", "iedb_bundle_ii"],
+      ["mixmhc2pred", "MixMHC2pred 2.1", "ligand prediction", "mixmhc2pred"], ["cd4episcore", "CD4episcore", "CD4 immunogenicity", "iedb_bundle_ii"]]}
+};
+const FILTERS = {
+ 1: [["rank_el_max","NetMHCpan %Rank EL ≤",0.1,0],["rank_ba_max","NetMHCpan %Rank BA ≤",0.1,0],["aff_max","NetMHCpan affinity ≤ (nM)",50,0],["mix_rank_max","MixMHCpred %Rank ≤",0.1,0],
+     ["prime_rank_max","PRIME %Rank ≤",0.1,0],["mhcf_pres_rank_max","MHCflurry presentation %Rank ≤",0.1,0],["mhcf_aff_max","MHCflurry affinity ≤ (nM)",50,0],
+     ["ctlpan_rank_max","NetCTLpan %Rank ≤",0.5,0],["netchop_min","NetChop C-term cleavage ≥",0.05,0],["iedb_imm_min","IEDB immunogenicity ≥",0.05,null],
+     ["bm_el_min","BigMHC EL ≥",0.05,0],["bm_im_min","BigMHC IM ≥",0.05,0]],
+ 2: [["nii_el_rank_max","NetMHCIIpan %Rank EL ≤",0.1,0],["nii_ba_rank_max","NetMHCIIpan %Rank BA ≤",0.1,0],["nii_ic50_max","NetMHCIIpan IC50 ≤ (nM)",50,0],
+     ["mix2_rank_max","MixMHC2pred %Rank ≤",0.5,0],["cd4_max","CD4episcore percentile ≤",1,0]]
+};
+const SELS = {1: [], 2: []}, ALL = [], PRES = {1: {}, 2: {}};
+let POP = null;
+for (const c of [1, 2]) { const s = store.get("alleles" + c); if (s) { try { SELS[c] = JSON.parse(s) } catch(e){} } }
+const mode = () => document.querySelector("input[name=mode]:checked").value;
+
+function buildArms(){
+  $("arms").innerHTML = [1, 2].map(c => {
+    const A = ARMS[c];
+    const models = A.models.map(([k, name, what, health, needsProt]) =>
+      `<label class="i"><span class="dot fdot" data-m="${health || ""}" ${health ? "" : 'style="background:#3c3"'}></span><input type="checkbox" id="m_${k}" data-health="${health || ""}" ${needsProt ? 'data-prot="1"' : ""} checked> <b>${name}</b> <span class="muted sm">${what}</span>${Q("m_" + k)}</label>`).join("");
+    const extra = c == 1
+      ? `<div style="margin:0 0 4px 30px" class="sm">Positions to mask <select id="iedb_mask"><option value="default">1,2,C Terminal (Default)</option><option value="by_allele">By allele</option><option value="custom">Custom</option></select>
+         <input type="text" id="iedb_pos" placeholder="e.g. 2,5,9" style="width:90px;display:none">${Q("iedb_mask")}</div>`
+      : `<div style="margin:0 0 4px 30px" class="sm">NetMHCIIpan version <select id="nii_version"><option value="4.3">4.3 (newest)</option><option value="4.2">4.2</option><option value="default">IEDB default (matches the website)</option></select>${Q("nii_version")}</div>`;
+    return `<div class="arm c${c}" id="arm${c}"><div class="armhead"><label><input type="checkbox" id="en${c}" checked> <span class="tag ${c == 1 ? "ctl" : "htl"}">${A.tag}</span> ${A.title} <span class="muted" style="font-weight:400">${A.who}</span></label></div>
+     <div class="armbody">
+      <div class="sub">Fragment sizes ${Q("sizes" + c)} <button class="b" id="allsz${c}" style="margin-left:6px">all</button></div>
+      <div id="sizes${c}">${A.sizes.map(n => `<label><input type="checkbox" class="sz${c}" value="${n}" checked> ${n}</label> `).join("")}</div>
+      <div class="sub">Alleles ${Q("alleles")} <span id="ncount${c}"></span></div>
+      <div id="presets${c}"></div>
+      <input type="text" id="as${c}" placeholder="${c == 1 ? "search alleles, e.g. A*24 or H-2-K" : "search class II, e.g. DRB1*15 or DQA1*05:01/DQB1*02"}" style="width:100%;margin-top:4px">
+      <div class="hits" id="hits${c}"></div>
+      <div id="chips${c}" style="margin-top:3px"></div> <button class="b" id="clr${c}">clear</button>
+      <div class="sub">Models</div>${models}${extra}
+      <label class="i" style="margin-top:6px"><input type="checkbox" id="chain${c}" checked> <b>Chain</b> the slow tools after the fast ones ${Q("chain")}</label>
+      <div class="bad sm" id="nr${c}"></div>
+     </div></div>`;
+  }).join("");
+  $("filters").innerHTML = [1, 2].map(c => `<div class="sub">${ARMS[c].title}</div><div class="grid2">` +
+     FILTERS[c].map(([k, l, st, mn]) => `<span>${l}</span><input type="number" id="f_${k}" step="${st}" ${mn === 0 ? 'min="0"' : ""} placeholder="off">`).join("") + "</div>").join("");
+  for (const c of [1, 2]) {
+    $("en" + c).onchange = () => { $("arm" + c).classList.toggle("off", !$("en" + c).checked); queuePreview(); };
+    $("allsz" + c).onclick = () => { const bs = [...document.querySelectorAll(".sz" + c)]; const all = bs.every(b => b.checked); bs.forEach(b => b.checked = !all); queuePreview(); };
+    document.querySelectorAll(".sz" + c).forEach(b => b.onchange = queuePreview);
+    $("clr" + c).onclick = () => { SELS[c] = []; drawChips(c); };
+    $("as" + c).oninput = () => searchAlleles(c);
+    document.querySelectorAll(`#arm${c} input[type=checkbox][id^=m_], #chain${c}`).forEach(b => b.onchange = queuePreview);
+  }
+  $("iedb_mask").onchange = () => { $("iedb_pos").style.display = $("iedb_mask").value == "custom" ? "" : "none"; queuePreview(); };
+  $("iedb_pos").oninput = queuePreview; $("nii_version").onchange = queuePreview;
+  document.querySelectorAll("#filters input").forEach(i => i.oninput = queuePreview);
+}
+buildArms();
+
+/* alleles */
+const presetKeys = c => Object.keys(PRES[c]).sort((a, b) => (/population/i.test(b) - /population/i.test(a)) || (/^IEDB/.test(b) - /^IEDB/.test(a)) || a.localeCompare(b));
+function renderPresets(c){
+  const P = PRES[c];
+  $("presets" + c).innerHTML = presetKeys(c).map(k => `<button class="b" style="margin:2px 2px 2px 0" data-p="${esc(k)}" title="${esc(P[k].note || "")}">${esc(k)} (${P[k].alleles.length})</button>`).join("");
+  document.querySelectorAll(`#presets${c} button`).forEach(b => b.onclick = () => { SELS[c] = P[b.dataset.p].alleles.slice(); drawChips(c); });
+}
+function drawChips(c){
+  const A = SELS[c];
+  $("ncount" + c).textContent = `(${A.length} selected)`;
+  $("chips" + c).innerHTML = A.map((a, i) => `<span class="chip">${esc(a)}<b data-i="${i}">&times;</b></span>`).join("");
+  document.querySelectorAll(`#chips${c} b`).forEach(b => b.onclick = () => { A.splice(+b.dataset.i, 1); drawChips(c); });
+  store.set("alleles" + c, JSON.stringify(A)); queuePreview();
+}
+const canonAllele = a => { const m = a.trim().match(/^(?:HLA-)?([ABCEFG])\*?(\d{2,3}):(\d{2,3})/i); return m ? `HLA-${m[1].toUpperCase()}*${m[2]}:${m[3]}` : a.trim(); };
+const canonII = a => { a = a.trim(); return /^(DR|DQ|DP)/i.test(a) ? "HLA-" + a.toUpperCase().replace("_", "*") : a; };
+function showHits(c, list, typed){
+  const A = SELS[c], m = list.filter(a => !A.includes(a)).slice(0, 80);
+  $("hits" + c).innerHTML = m.map(a => `<div data-a="${esc(a)}">${esc(a)}</div>`).join("") +
+    (m.includes(typed) || A.includes(typed) ? "" : `<div data-a="${esc(typed)}" class="muted">add "${esc(typed)}" as typed</div>`);
+  $("hits" + c).style.display = "block";
+  document.querySelectorAll(`#hits${c} div`).forEach(d => d.onclick = () => { if (!A.includes(d.dataset.a)) A.push(d.dataset.a); drawChips(c); $("as" + c).value = ""; $("hits" + c).style.display = "none"; });
+}
+const timers = {};
+function searchAlleles(c){
+  const raw = $("as" + c).value.trim(), q = raw.toLowerCase().replace("*", "");
+  if (q.length < 2) { $("hits" + c).style.display = "none"; return; }
+  if (c == 1) { showHits(1, ALL.filter(a => a.toLowerCase().replace("*", "").includes(q)), canonAllele(raw)); return; }
+  clearTimeout(timers[c]);
+  timers[c] = setTimeout(async () => {
+    const d = await (await fetch("api/alleles/search?q=" + encodeURIComponent(raw))).json();
+    showHits(2, d.hits || [], canonII(raw));
+  }, 200);
+}
+fetch("api/alleles").then(r => r.json()).then(d => {
+  ALL.push(...d.all); PRES[1] = d.presets; PRES[2] = d.presets_ii || {};
+  for (const c of [1, 2]) {
+    renderPresets(c);
+    if (!SELS[c].length) { const first = presetKeys(c)[0]; if (first) SELS[c] = PRES[c][first].alleles.slice(); }   // the population preset comes first when the file exists
+    drawChips(c);
+  }
+});
+fetch("api/population").then(r => r.json()).then(d => {
+  POP = d;
+  $("popstat").innerHTML = d.ok ? `<span class="ok">&#10003;</span> <b>${esc(d.info.label)}</b>: ${d.info.alleles} alleles, ${Object.keys(d.info.regions).length} regions (${Object.entries(d.info.regions).map(([k, v]) => k + " " + (100 * v).toFixed(0) + "%").join(", ")}). Coverage and the ranking are population-weighted.`
+    : `<span class="warn">No population file found.</span> Coverage will be the share of your chosen alleles. Put <code>india_hla_allele_weightage.csv</code> beside this folder or set <code>population.weights_csv</code> in Settings.`;
+});
+$("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { $("text").value = t; queuePreview(); }); };
+$("text").oninput = queuePreview;
+$("title").oninput = () => {};
+
+/* mode: loose peptides have no protein context */
+const AUTOOFF = {};
 function applyModeRules(){
   const pep = mode() == "peptides";
-  $("lenrow").style.display = pep ? "none" : "";
-  $("procnote").style.display = pep ? "" : "none";
-  NEEDS_PROTEIN.forEach(id => {
-    const box = $(id);
-    if (pep) { if (box.checked) AUTOOFF[id] = true; box.checked = false; box.disabled = true; }
-    else if (!NOTREADY["iedb_bundle"]) { box.disabled = false; if (AUTOOFF[id]) { box.checked = true; AUTOOFF[id] = false; } }
+  document.querySelectorAll("input[data-prot]").forEach(box => {
+    if (pep) { if (box.checked) AUTOOFF[box.id] = true; box.checked = false; box.disabled = true; }
+    else if (!NOTREADY[box.dataset.health]) { box.disabled = false; if (AUTOOFF[box.id]) { box.checked = true; AUTOOFF[box.id] = false; } }
   });
+  [1, 2].forEach(c => $("sizes" + c).parentElement.style.opacity = pep ? .45 : 1);
   queuePreview();
 }
 document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = applyModeRules);
-function applyClass(){
-  $("form").dataset.cls = CLS(); store.set("cls", CLS());
-  $("asearch").placeholder = CLS() == 1 ? "search alleles, e.g. A*24 or H-2-K" : "search class II alleles, e.g. DRB1*15 or DQA1*05:01/DQB1*02";
-  $("hits").style.display = "none"; $("asearch").value = "";
-  renderPresets(); drawChips(); refreshNotReady(); loadStrategies(); queuePreview();
-}
-document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = applyClass);
-const mode = () => document.querySelector("input[name=mode]:checked").value;
 
-const SEL = () => SELS[CLS()];
-for (const c of [1, 2]) { const saved = store.get("alleles" + c); if (saved) { try { SELS[c] = JSON.parse(saved) } catch(e){} } }
-function renderPresets(){
-  const P = CLS() == 1 ? PRESETS : PRESETS_II;
-  $("presets").innerHTML = Object.keys(P).map(k => `<button class="b" data-p="${esc(k)}">${esc(k)} (${P[k].alleles.length})</button>`).join("");
-  document.querySelectorAll("#presets button").forEach(b => b.onclick = () => { SELS[CLS()] = P[b.dataset.p].alleles.slice(); drawChips(); });
+/* ---------- strategy ---------- */
+let STRATS = {};
+async function loadStrategies(){
+  const d = await (await fetch("api/rules?mhc_class=1")).json(); STRATS = d.presets;
+  const keep = store.get("strat") || "balanced";
+  $("strat").innerHTML = Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
+  $("strat").value = STRATS[keep] ? keep : "balanced"; stratInfo();
 }
-fetch("api/alleles").then(r => r.json()).then(d => {
-  ALL = d.all; PRESETS = d.presets; PRESETS_II = d.presets_ii || {};
-  renderPresets(); drawChips();
-});
-function drawChips(){
-  const A = SEL();
-  $("chips").innerHTML = `<div class="muted">${A.length} selected</div>` +
-    A.map((a,i) => `<span class="chip">${esc(a)}<b data-i="${i}">&times;</b></span>`).join("");
-  document.querySelectorAll("#chips b").forEach(b => b.onclick = () => { A.splice(+b.dataset.i, 1); drawChips(); });
-  store.set("alleles" + CLS(), JSON.stringify(A)); queuePreview();
+function stratInfo(){
+  const v = STRATS[$("strat").value]; if (!v) return; store.set("strat", $("strat").value);
+  $("stratwhy").textContent = v.why; const r = v.rules;
+  const ph = {r_bind_rank_max: r.bind_rank_max + " (class II: higher)", r_imm_top_q: Math.round(r.imm_top_q * 100), r_min_alleles: r.min_alleles, r_min_coverage: Math.round(r.min_coverage * 100), r_panel_target: Math.round(r.panel_target * 100)};
+  for (const [id, val] of Object.entries(ph)) $(id).placeholder = val;
+  for (const [id, k] of [["r_rank_by","rank_by"],["r_bind_min_agree","bind_min_agree"],["r_imm_min_agree","imm_min_agree"]]) $(id).options[0].textContent = String(r[k]);
+  $("r_collapse").options[0].textContent = r.collapse ? "yes" : "no";
 }
-$("clearA").onclick = () => { SELS[CLS()] = []; drawChips(); };
-const canonAllele = a => { const m = a.trim().match(/^(?:HLA-)?([ABCEFG])\*?(\d{2,3}):(\d{2,3})/i); return m ? `HLA-${m[1].toUpperCase()}*${m[2]}:${m[3]}` : a.trim(); };
-const canonII = a => { a = a.trim(); return /^(DR|DQ|DP)/i.test(a) ? "HLA-" + a.toUpperCase().replace("_", "*") : a; };
-let searchTimer = null;
-function showHits(list, typed){
-  const A = SEL();
-  const m = list.filter(a => !A.includes(a)).slice(0, 80);
-  $("hits").innerHTML = m.map(a => `<div data-a="${esc(a)}">${esc(a)}</div>`).join("") +
-    (m.includes(typed) || A.includes(typed) ? "" : `<div data-a="${esc(typed)}" class="muted">add "${esc(typed)}" as typed</div>`);
-  $("hits").style.display = "block";
-  document.querySelectorAll("#hits div").forEach(d => d.onclick = () => { if (!A.includes(d.dataset.a)) A.push(d.dataset.a); drawChips(); $("asearch").value = ""; $("hits").style.display = "none"; });
-}
-$("asearch").oninput = () => {
-  const raw = $("asearch").value.trim(), q = raw.toLowerCase().replace("*","");
-  if (q.length < 2) { $("hits").style.display = "none"; return; }
-  if (CLS() == 1) { showHits(ALL.filter(a => a.toLowerCase().replace("*","").includes(q)), canonAllele(raw)); return; }
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(async () => {                       // class II: searched on the server (hundreds of thousands of names)
-    const d = await (await fetch("api/alleles/search?q=" + encodeURIComponent(raw))).json();
-    showHits(d.hits || [], canonII(raw));
-  }, 200);
-};
-$("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { $("text").value = t; queuePreview(); }); };
+$("strat").onchange = () => { stratInfo(); queuePreview(); };
+document.querySelectorAll("#advr input,#advr select").forEach(e => e.onchange = queuePreview);
+loadStrategies();
 
-function baseParams(){
-  const n = id => { const v = $(id).value; return v === "" ? null : +v; };
-  if (CLS() == 2) return {
-    mhc_class: 2, text: $("text").value, mode: mode(),
-    lengths: [...document.querySelectorAll(".len2:checked")].map(x => +x.value), alleles: SEL(),
-    models: {netmhciipan_el: $("m2_el").checked, netmhciipan_ba: $("m2_ba").checked, mixmhc2pred: $("m2_mix").checked, cd4episcore: $("m2_cd4").checked},
-    nii: {version: $("nii_version").value}, chain: $("chain2").checked,
-    filters: {nii_el_rank_max: n("f2_nii_el_rank_max"), nii_ba_rank_max: n("f2_nii_ba_rank_max"), nii_ic50_max: n("f2_nii_ic50_max"),
-              mix2_rank_max: n("f2_mix2_rank_max"), cd4_max: n("f2_cd4_max")}
-  };
-  return {
-    mhc_class: 1, text: $("text").value, mode: mode(),
-    lengths: [...document.querySelectorAll(".len:checked")].map(x => +x.value),
-    alleles: SEL(),
-    iedb: {mask_choice: $("iedb_mask").value, positions: $("iedb_pos").value},
-    models: {netmhcpan: $("m_nmp").checked, mixmhcpred: $("m_mix").checked, prime: $("m_prime").checked, iedb_imm: $("m_iedb").checked,
-             mhcflurry: $("m_mhcf").checked, netctlpan: $("m_ctl").checked, netchop: $("m_chop").checked,
-             bigmhc_el: $("m_el").checked, bigmhc_im: $("m_im").checked},
-    chain: $("chain").checked,
-    filters: {rank_el_max: n("f_rank_el_max"), rank_ba_max: n("f_rank_ba_max"), aff_max: n("f_aff_max"),
-              mix_rank_max: n("f_mix_rank_max"), prime_rank_max: n("f_prime_rank_max"), iedb_imm_min: n("f_iedb_imm_min"),
-              mhcf_pres_rank_max: n("f_mhcf_pres_rank_max"), mhcf_aff_max: n("f_mhcf_aff_max"),
-              ctlpan_rank_max: n("f_ctlpan_rank_max"), netchop_min: n("f_netchop_min"),
-              bm_el_min: n("f_bm_el_min"), bm_im_min: n("f_bm_im_min")}
-  };
-}
+/* ---------- parameters ---------- */
 function advRules(){
   const o = {}, num = (id, k, f = 1) => { const v = $(id).value; if (v !== "") o[k] = +v * f; };
   for (const [id, k] of [["r_rank_by","rank_by"],["r_bind_min_agree","bind_min_agree"],["r_imm_min_agree","imm_min_agree"]]) if ($(id).value) o[k] = $(id).value;
@@ -333,184 +406,254 @@ function advRules(){
   if ($("r_collapse").value) o.collapse = $("r_collapse").value == "1";
   return o;
 }
-function params(){ return {...baseParams(), preset: $("strat").value || "balanced", rules: advRules()}; }
-let STRATS = {}, STRAT_CLS = 0;
-async function loadStrategies(){
-  if (STRAT_CLS == CLS()) return; STRAT_CLS = CLS();
-  const d = await (await fetch(`api/rules?mhc_class=${CLS()}`)).json(); STRATS = d.presets;
-  const keep = store.get("strat" + CLS()) || "balanced";
-  $("strat").innerHTML = Object.entries(STRATS).map(([k,v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
-  $("strat").value = STRATS[keep] ? keep : "balanced"; stratInfo();
+function armParams(c){
+  const n = id => { const v = $(id).value; return v === "" ? null : +v; };
+  const a = {enabled: $("en" + c).checked, alleles: SELS[c].slice(), lengths: [...document.querySelectorAll(".sz" + c + ":checked")].map(x => +x.value),
+             chain: $("chain" + c).checked, models: {}, filters: {}};
+  ARMS[c].models.forEach(([k]) => a.models[k] = $("m_" + k).checked);
+  FILTERS[c].forEach(([k]) => a.filters[k] = n("f_" + k));
+  if (c == 1) a.iedb = {mask_choice: $("iedb_mask").value, positions: $("iedb_pos").value}; else a.nii = {version: $("nii_version").value};
+  return a;
 }
-function stratInfo(){
-  const v = STRATS[$("strat").value]; if (!v) return; store.set("strat" + CLS(), $("strat").value);
-  $("stratwhy").textContent = v.why; const r = v.rules;
-  const ph = {r_bind_rank_max: r.bind_rank_max, r_imm_top_q: Math.round(r.imm_top_q * 100), r_min_alleles: r.min_alleles, r_min_coverage: Math.round(r.min_coverage * 100), r_panel_target: Math.round(r.panel_target * 100)};
-  for (const [id, val] of Object.entries(ph)) $(id).placeholder = val;
-  for (const [id, k] of [["r_rank_by","rank_by"],["r_bind_min_agree","bind_min_agree"],["r_imm_min_agree","imm_min_agree"]]) $(id).options[0].textContent = String(r[k]);
-  $("r_collapse").options[0].textContent = r.collapse ? "yes" : "no";
+function params(){
+  return {text: $("text").value, mode: mode(), preset: $("strat").value || "balanced", rules: advRules(), title: $("title").value,
+          c1: armParams(1), c2: armParams(2)};
 }
-$("strat").onchange = () => { stratInfo(); queuePreview(); };
-document.querySelectorAll("#advr input,#advr select").forEach(e => e.onchange = queuePreview);
+function applyParams(p){
+  if (p.text != null) $("text").value = p.text;
+  if (p.mode) document.querySelector(`input[name=mode][value=${p.mode}]`).checked = true;
+  if (p.preset && STRATS[p.preset]) $("strat").value = p.preset;
+  if (p.title) $("title").value = p.title;
+  const r = p.rules || {}, set = (id, v) => $(id).value = v == null ? "" : v;
+  set("r_rank_by", r.rank_by); set("r_bind_min_agree", r.bind_min_agree); set("r_imm_min_agree", r.imm_min_agree); set("r_bind_rank_max", r.bind_rank_max);
+  set("r_imm_top_q", r.imm_top_q == null ? null : r.imm_top_q * 100); set("r_min_alleles", r.min_alleles); set("r_min_coverage", r.min_coverage == null ? null : r.min_coverage * 100);
+  set("r_panel_target", r.panel_target == null ? null : r.panel_target * 100); set("r_collapse", r.collapse == null ? "" : (r.collapse ? "1" : "0"));
+  for (const c of [1, 2]) {
+    const a = p["c" + c]; if (!a) { $("en" + c).checked = false; continue; }
+    $("en" + c).checked = a.enabled !== false; $("arm" + c).classList.toggle("off", a.enabled === false);
+    if (a.alleles) { SELS[c] = a.alleles.slice(); drawChips(c); }
+    if (a.lengths) document.querySelectorAll(".sz" + c).forEach(b => b.checked = a.lengths.includes(+b.value));
+    if (a.chain != null) $("chain" + c).checked = a.chain;
+    for (const [k, v] of Object.entries(a.models || {})) if ($("m_" + k) && !$("m_" + k).disabled) $("m_" + k).checked = v;
+    for (const [k, v] of Object.entries(a.filters || {})) if ($("f_" + k)) $("f_" + k).value = v == null ? "" : v;
+    if (c == 1 && a.iedb) { $("iedb_mask").value = a.iedb.mask_choice; $("iedb_pos").value = a.iedb.positions || ""; $("iedb_pos").style.display = a.iedb.mask_choice == "custom" ? "" : "none"; }
+    if (c == 2 && a.nii) $("nii_version").value = a.nii.version;
+  }
+  stratInfo(); queuePreview();
+}
+$("saveset").onclick = () => {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(params(), null, 2)], {type: "application/json"}));
+  a.download = "epitope_settings.json"; a.click();
+};
+$("loadset").onclick = () => $("setfile").click();
+$("setfile").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { try { applyParams(JSON.parse(t)); } catch(err) { $("runmsg").textContent = "That is not a settings file: " + err.message; } }); };
+$("cmd").textContent = "# 1. press 'Save settings' and keep epitope_settings.json next to the engine\npython3 run_engine.py epitope_settings.json -o results/\n# optional: another protein\npython3 run_engine.py epitope_settings.json --fasta other.fa -o results2/\n# or against a running page:\ncurl -s -X POST localhost:5000/api/pipeline/run -H 'Content-Type: application/json' -d @epitope_settings.json";
+
+/* ---------- preview ---------- */
+let previewTimer = null;
 function queuePreview(){ clearTimeout(previewTimer); previewTimer = setTimeout(doPreview, 350); }
 async function doPreview(){
-  const r = await fetch("api/pipeline/preview", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(params())});
-  const d = await r.json(), el = $("preview");
-  if (d.hint) { el.innerHTML = `<span class="muted">${esc(d.hint)}</span>`; return; }
-  const f = n => n.toLocaleString();
-  let h = `<b>${f(d.n_peptides)}</b> peptides &times; <b>${d.n_alleles}</b> alleles`;
-  if (d.n_pairs_netmhcpan) h += ` &rarr; ${f(d.n_pairs_netmhcpan)} ${CLS() == 2 ? "NetMHCIIpan" : "NetMHCpan"} predictions`;
-  if (d.n_pairs_fast) h += CLS() == 2 ? `; ${f(d.n_pairs_fast)} MixMHC2pred predictions` : `; ${f(d.n_pairs_fast)} MixMHCpred / PRIME predictions`;
-  if (d.n_pairs_bigmhc) h += d.chained ? `; BigMHC on the pairs that pass (up to ${f(d.n_pairs_bigmhc)})` : `; ${f(d.n_pairs_bigmhc)} BigMHC predictions`;
+  const r = await fetch("api/pipeline/preview", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(params())});
+  const d = await r.json();
+  if (d.hint) { $("preview").innerHTML = `<span class="muted">${esc(d.hint)}</span>`; $("run").disabled = true; return; }
+  let h = "";
+  for (const [k, v] of Object.entries(d.classes || {})) {
+    const dup = v.n_windows - v.n_peptides;
+    h += `<div><span class="tag ${k == "c1" ? "ctl" : "htl"}">${k == "c1" ? "CTL" : "HTL"}</span> <b>${f0(v.n_peptides)}</b> unique peptides` +
+         (dup > 0 ? ` <span class="muted">(${f0(dup)} duplicate windows predicted once)</span>` : "") + ` &times; <b>${v.n_alleles}</b> alleles</div>`;
+  }
+  h += `<div class="muted sm">${f0(d.n_predictions)} predictions in total${d.n_predictions > 1500000 ? " &mdash; a long run; fewer sizes or alleles make it quicker" : ""}</div>`;
   if (d.too_big) h += `<div class="bad">Too many predictions for one run: use fewer alleles or sizes.</div>`;
-  (d.warnings || []).forEach(w => h += `<div class="warn">${esc(w)}</div>`);
-  el.innerHTML = h;
+  h += (d.warnings || []).map(w => `<div class="warn sm">${esc(w)}</div>`).join("");
+  $("preview").innerHTML = h; $("run").disabled = !!d.too_big || !!JOBRUNNING;
 }
-["text","chain","m_nmp","m_mix","m_prime","m_iedb","m_mhcf","m_ctl","m_chop","iedb_mask","iedb_pos","f_iedb_imm_min","f_mhcf_pres_rank_max","f_mhcf_aff_max","f_ctlpan_rank_max","f_netchop_min","m_el","m_im","f_rank_el_max","f_rank_ba_max","f_aff_max","f_mix_rank_max","f_prime_rank_max","f_bm_el_min","f_bm_im_min"].forEach(id => $(id).addEventListener("input", queuePreview));
-document.querySelectorAll(".len, .len2").forEach(c => c.onchange = queuePreview);
-["chain2","m2_el","m2_ba","m2_mix","m2_cd4","nii_version","f2_nii_el_rank_max","f2_nii_ba_rank_max","f2_nii_ic50_max","f2_mix2_rank_max","f2_cd4_max"].forEach(id => $(id).addEventListener("input", queuePreview));
-$("iedb_mask").onchange = () => { $("iedb_pos").style.display = $("iedb_mask").value == "custom" ? "" : "none"; $("iedbopts").style.opacity = ""; };
-
-/* ---------- run + progress ---------- */
+let JOB = null, JOBRUNNING = false, poll = null;
 $("run").onclick = async () => {
   $("runmsg").textContent = "";
-  const r = await fetch("api/pipeline/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(params())});
+  const r = await fetch("api/pipeline/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(params())});
   const d = await r.json();
   if (!r.ok) { $("runmsg").textContent = d.error; return; }
   startPolling(d.id);
 };
-$("cancel").onclick = () => { if (JOB) fetch(`api/jobs/${JOB}/cancel`, {method:"POST"}); $("cancel").disabled = true; $("pstate").textContent = "Cancelling..."; };
-let poll = null;
+$("cancel").onclick = () => { $("cancel").disabled = true; fetch(`api/jobs/${JOB}/cancel`, {method: "POST"}); };
+
+/* ---------- progress ---------- */
 function startPolling(id){
-  JOB = id; store.set("job", id);
+  JOB = id; JOBRUNNING = true; store.set("job", id);
   $("empty").style.display = "none"; $("progress").style.display = "block"; $("results").style.display = "none";
   $("run").disabled = true; $("cancel").disabled = false; $("cancel").style.display = "";
   clearInterval(poll); tick(); poll = setInterval(tick, 1000);
 }
-const fmtT = s => s == null ? "" : s < 90 ? Math.round(s) + " s" : Math.floor(s/60) + " min " + Math.round(s%60) + " s";
+const fmtT = s => s == null ? "" : s < 90 ? Math.round(s) + " s" : Math.floor(s / 60) + " min " + Math.round(s % 60) + " s";
 async function tick(){
   let d;
   try { const r = await fetch(`api/jobs/${JOB}`); if (!r.ok) { stopPolling("The server no longer knows this job (it was restarted). Run again."); return; } d = await r.json(); }
   catch(e) { $("pstate").textContent = "Lost contact with the server, retrying..."; return; }
-  const pct = Math.round(d.progress * 100);
-  const names = {queued:"Waiting for the previous job to finish...", running:`Running: ${pct}%`, done:"Finished", failed:"Failed", cancelled:"Cancelled"};
+  const p = Math.round(d.progress * 100);
+  const names = {queued: "Waiting for the previous job to finish...", running: `Running: ${p}%`, done: "Finished", failed: "Failed", cancelled: "Cancelled"};
   $("pstate").textContent = names[d.state] || d.state;
   $("pstate").className = d.state == "failed" ? "bad" : d.state == "done" ? "ok" : "";
   $("ptime").textContent = d.state == "running" ? `${fmtT(d.elapsed)} elapsed` + (d.eta != null ? `, about ${fmtT(d.eta)} left` : "") : d.state == "queued" ? "" : fmtT(d.elapsed);
   const bar = $("pbar"); bar.classList.toggle("ind", d.state == "running" && d.progress == 0);
-  bar.firstElementChild.style.width = pct + "%";
+  bar.firstElementChild.style.width = p + "%";
   $("stages").innerHTML = d.stages.map(s => {
     const known = s.total ? Math.min(100, Math.round(100 * s.done / s.total)) : (s.state == "done" ? 100 : 0);
     const ind = s.state == "running" && !s.total;
     const mark = s.state == "done" ? "&#10003; " : s.state == "running" ? "&#9654; " : "&middot; ";
-    return `<div class="stage"><span>${mark}${esc(s.label)}</span><div class="bar thin ${ind ? "ind" : ""}"><i style="width:${known}%"></i></div>
-            <div class="m">${esc(s.msg)}</div></div>`;
+    return `<div class="stage"><span>${mark}${esc(s.label)}</span><div class="bar thin ${ind ? "ind" : ""}"><i style="width:${known}%"></i></div><div class="m">${esc(s.msg)}</div></div>`;
   }).join("");
   if (d.error) $("stages").innerHTML += `<div class="bad" style="margin-top:8px">${esc(d.error)}</div>`;
   const lg = $("log"); const atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 20;
   lg.textContent = d.log.join("\n"); if (atEnd) lg.scrollTop = lg.scrollHeight;
-  if (["done","failed","cancelled"].includes(d.state)) {
-    stopPolling();
-    if (d.state == "done") loadResults(d);
-  }
+  $("progress").classList.toggle("fin", d.state == "done");
+  if (["done", "failed", "cancelled"].includes(d.state)) { stopPolling(); if (d.state == "done") loadResults(d); }
 }
 function stopPolling(msg){
-  clearInterval(poll); $("run").disabled = false; $("cancel").style.display = "none";
+  clearInterval(poll); JOBRUNNING = false; $("run").disabled = false; $("cancel").style.display = "none";
   if (msg) { $("pstate").textContent = msg; $("pstate").className = "bad"; }
 }
 
 /* ---------- results ---------- */
-let REPORT = null, OPEN = null;
-const pct = x => x == null || x === "" ? "" : (100 * x).toFixed(1) + "%";
+let REPORT = null, MAIN = "regions", SUB = "candidates", DATA = null, TABLE = "regions", sortKey = null, sortDir = 1;
+const CACHE = {};
+const CLASSES = () => Object.keys(REPORT.classes);
 const kpi = (v, l) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`;
+const dl = (t, extra = "") => `api/jobs/${JOB}/csv?table=${t}${extra}`;
 async function loadResults(d){
   const s = d.summary;
   $("results").style.display = "block";
   REPORT = await (await fetch(`api/jobs/${JOB}/report`)).json();
-  const c = REPORT.consensus, h = c.headline, pan = c.panel, last = pan.length ? pan[pan.length - 1] : null;
-  const what = c.coverage_metric == "population" ? (REPORT.consensus.population.label + " population") : "of the chosen alleles";
-  $("kpis").innerHTML = kpi(s.peptides.toLocaleString(), "peptides scanned") + kpi(h.candidates.toLocaleString(), "candidates") +
-    kpi(h.regions.toLocaleString(), "regions (windows merged)") +
-    kpi(last ? pct(last.cumulative_coverage) : "-", `coverage by a ${pan.length}-peptide panel (${what})`) +
-    kpi(fmtT(s.seconds), s.chained ? "run time, chained" : "run time");
+  for (const k in CACHE) delete CACHE[k];
+  const cl = CLASSES();
+  let k = kpi(f0(s.peptides), "unique peptides scored");
+  if (REPORT.dual) k += kpi(f0(s.regions), "epitope regions") + kpi(f0(s.regions_dual), "CTL+HTL regions");
+  for (const c of cl) {
+    const h = REPORT.classes[c].consensus.headline, pan = REPORT.classes[c].consensus.panel, last = pan.length ? pan[pan.length - 1] : null;
+    const tag = c == "1" ? "CTL" : "HTL";
+    k += kpi(f0(h.regions), `${tag} regions`) + kpi(last ? pct(last.cumulative_coverage) : "-", `${tag} panel coverage (${pan.length} peptides)`);
+  }
+  $("kpis").innerHTML = k + kpi(fmtT(s.seconds), s.chained ? "run time, chained" : "run time");
   $("warnings").innerHTML = (s.warnings || []).map(esc).join("<br>");
-  const dl = t => `api/jobs/${JOB}/csv?table=${t}`;
-  $("dls").innerHTML = `<span class="muted">Download:</span> <a class="b" href="${dl("master")}" style="padding:3px 9px;border:1px solid var(--line);border-radius:4px">Master CSV (every value)</a>
-    <a class="b" href="${dl("peptides")}">peptides</a> <a class="b" href="${dl("candidates")}">candidates</a> <a class="b" href="${dl("panel")}">panel</a>
-    <a class="b" href="${dl("details")}">run details (json)</a>`;
-  document.querySelectorAll("#dls a").forEach(a => a.style.cssText += ";padding:3px 9px;border:1px solid var(--line);border-radius:4px");
-  setTab("candidates");
+  $("topdl").innerHTML = `<a class="dl big" href="${dl("report", "&inline=1")}" target="_blank">Open summary page</a><a class="dl" href="${dl("bundle")}">All outputs (zip)</a><a class="dl" href="${dl("regions")}">regions.csv</a>`;
+  const tabs = [["regions", "Regions"]].concat(cl.map(c => [c, c == "1" ? "CTL · class I peptides" : "HTL · class II peptides"]), [["insight", "Funnel & suggestions"], ["downloads", "Downloads"]]);
+  $("maintabs").innerHTML = tabs.map(([k2, l]) => `<button class="b" data-m="${k2}">${l}</button>`).join("");
+  document.querySelectorAll("#maintabs button").forEach(b => b.onclick = () => setMain(b.dataset.m));
+  setMain(REPORT.dual || cl.length > 1 ? "regions" : cl[0]);
 }
-document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
-async function setTab(t){
-  TABLE = t; sortKey = null; OPEN = null;
-  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab == t));
-  const ins = t == "insight";
-  $("insight").style.display = ins ? "" : "none"; $("tblwrap").style.display = ins ? "none" : ""; $("tnote").style.display = ins ? "none" : "";
-  $("onlylab").style.display = (t == "peptides" || t == "master") ? "" : "none"; $("tfilter").style.display = ins ? "none" : "";
-  if (ins) { renderInsight(); return; }
-  const r = await fetch(`api/jobs/${JOB}/result?table=${t}&limit=5000`);
-  DATA = await r.json(); renderTable();
+function setMain(m){
+  MAIN = m; SUB = "candidates";
+  document.querySelectorAll("#maintabs button").forEach(b => b.classList.toggle("on", b.dataset.m == m));
+  const cls = m == "1" || m == "2";
+  $("subtabs").innerHTML = cls ? [["candidates", "Candidates"], ["peptides", "All peptides"], ["master", "Every value (peptide × allele)"]].map(([k, l]) => `<button class="b" data-s="${k}">${l}</button>`).join("") : "";
+  document.querySelectorAll("#subtabs button").forEach(b => b.onclick = () => { SUB = b.dataset.s; loadTable(); });
+  const tbl = m == "regions" || cls;
+  $("tools").style.display = tbl ? "" : "none"; $("tnote").style.display = tbl ? "" : "none"; $("tblwrap").style.display = tbl ? "" : "none";
+  $("insight").style.display = m == "insight" ? "" : "none"; $("downloads").style.display = m == "downloads" ? "" : "none";
+  if (m == "insight") renderInsight(); else if (m == "downloads") renderDownloads(); else loadTable();
+}
+async function loadTable(){
+  sortKey = null;
+  document.querySelectorAll("#subtabs button").forEach(b => b.classList.toggle("on", b.dataset.s == SUB));
+  TABLE = MAIN == "regions" ? "regions" : SUB;
+  const url = MAIN == "regions" ? `api/jobs/${JOB}/result?table=regions&limit=5000` : `api/jobs/${JOB}/result?table=${SUB}&cls=${MAIN}&limit=5000`;
+  $("onlylab").style.display = (SUB == "peptides" || SUB == "master") && MAIN != "regions" ? "" : "none";
+  DATA = await (await fetch(url)).json(); renderTable();
 }
 $("onlyPass").onchange = renderTable; $("tfilter").oninput = renderTable;
+const isT = v => v === true || v === "True";
 function passing(r){
-  if (TABLE == "peptides") return r.Candidate === true || r.Candidate === "True";
-  if (TABLE == "master") return r.Pair_Candidate === true || r.Pair_Candidate === "True";
-  return TABLE == "candidates";
+  if (MAIN == "regions") return r.Type == "CTL+HTL";
+  if (SUB == "peptides") return isT(r.Candidate);
+  if (SUB == "master") return isT(r.Pair_Candidate);
+  return true;
 }
-const SHOW = {candidates: ["Priority_Rank","Peptide","Region","Length","Best_Allele","N_Alleles_Candidate","Coverage_Candidate","Agree_Fraction_PopW","Bind_Consensus_Best","Imm_TopPct_Best","In_Panel","Synthesis_Notes"],
-              peptides: ["Priority_Rank","Peptide","Start","Length","Candidate","Best_Allele","N_Alleles_Binder","Coverage_Binder","Agree_Fraction_PopW","Bind_Consensus_PopW","Imm_TopPct_Best","Priority_Score","Region","In_Panel"]};
+const SHOW = {
+  regions: ["Region_Rank","Region_ID","Type","Protein","Start","End","Sequence","Region_Score","CTL_Best_Peptide","CTL_Coverage","HTL_Best_Peptide","HTL_Coverage","In_Panel","Synthesis_Notes"],
+  candidates: ["Priority_Rank","Peptide","Region_ID","Region_Type","Region","Length","Best_Allele","N_Alleles_Candidate","Coverage_Candidate","Agree_Fraction_PopW","Bind_Consensus_Best","Imm_TopPct_Best","In_Panel","Synthesis_Notes"],
+  peptides: ["Priority_Rank","Peptide","Region_ID","Start","Length","Candidate","Best_Allele","N_Alleles_Binder","Coverage_Binder","Agree_Fraction_PopW","Bind_Consensus_PopW","Imm_TopPct_Best","Priority_Score","In_Panel"]
+};
 function cell(c, v){
   if (v == null) return "";
-  if (c.startsWith("Coverage_")) return `<span class="cov"><i style="width:${Math.round(100 * v)}%"></i></span>${pct(v)}`;
-  if (c == "Agree_Fraction_PopW" || c == "Agree_Fraction") return pct(v);
-  if (typeof v == "number") return Math.abs(v) >= 100 ? v.toFixed(1) : +v.toFixed(4);
+  if (c == "Type" || c == "Region_Type") return v ? `<span class="tag ${v == "CTL+HTL" ? "dual" : v == "CTL only" ? "ctl" : "htl"}">${esc(v)}</span>` : "";
+  if (c.endsWith("Peptide") || c == "Sequence") return `<span class="seq">${esc(v)}</span>`;
+  if (c.includes("Coverage_") || c == "CTL_Coverage" || c == "HTL_Coverage") return typeof v == "number" ? `<span class="cov"><i style="width:${Math.round(100 * v)}%"></i></span>${pct(v)}` : esc(v);
+  if (c == "Agree_Fraction_PopW" || c == "Agree_Fraction" || c == "Allele_Freq") return pct(v);
+  if (c == "In_Panel") return isT(v) ? "yes" : "";
+  if (typeof v == "number") return Number.isInteger(v) ? v : Math.abs(v) >= 100 ? v.toFixed(1) : +v.toFixed(4);
   return esc(v);
 }
 function renderTable(){
   if (!DATA || !DATA.columns) return;
   let rows = DATA.rows.slice();
-  if ($("onlyPass").checked && (TABLE == "peptides" || TABLE == "master")) rows = rows.filter(passing);
+  if ($("onlyPass").checked && $("onlylab").style.display != "none") rows = rows.filter(passing);
   const q = $("tfilter").value.trim().toLowerCase();
   if (q) rows = rows.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q)));
-  if (sortKey) rows.sort((a,b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);
+  if (sortKey) rows.sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);
   const cols = SHOW[TABLE] ? SHOW[TABLE].filter(c => DATA.columns.includes(c)) : DATA.columns;
-  $("tnote").textContent = `${rows.length.toLocaleString()} rows shown` + (DATA.total > DATA.shown ? ` (the first ${DATA.shown.toLocaleString()} of ${DATA.total.toLocaleString()}, best first; download the CSV for all)` : "") +
-    (TABLE != "master" ? " - click a row for every tool and allele" : "");
-  const rc = TABLE != "master" ? "rowc" : "";
-  $("tbl").innerHTML = "<tr>" + cols.map(c => `<th data-c="${esc(c)}">${esc(c)}</th>`).join("") + "</tr>" +
-    rows.slice(0, 2000).map((r, i) => `<tr class="${rc} ${passing(r) && TABLE == "master" ? "pass" : ""}" data-i="${i}">` + cols.map(c => `<td>${cell(c, r[c])}</td>`).join("") + "</tr>").join("");
+  const click = TABLE == "regions" || TABLE == "candidates" || TABLE == "peptides";
+  $("tnote").textContent = `${f0(rows.length)} rows shown` + (DATA.total > DATA.shown ? ` (the first ${f0(DATA.shown)} of ${f0(DATA.total)}, best first; download the CSV for all)` : "") +
+    (click ? (TABLE == "regions" ? " - click a row for the peptides in the region" : " - click a row for every tool and allele") : "") + " - click a header to sort";
+  $("tbl").innerHTML = "<tr>" + cols.map(c => `<th data-c="${esc(c)}">${esc(c.replace(/_/g, " "))}</th>`).join("") + "</tr>" +
+    rows.slice(0, 2000).map((r, i) => `<tr class="${click ? "rowc" : ""} ${passing(r) && (SUB == "master" || MAIN == "regions") ? "pass" : ""}" data-i="${i}">` + cols.map(c => `<td>${cell(c, r[c])}</td>`).join("") + "</tr>").join("");
   document.querySelectorAll("#tbl th").forEach(th => th.onclick = () => { sortDir = sortKey == th.dataset.c ? -sortDir : 1; sortKey = th.dataset.c; renderTable(); });
-  if (rc) document.querySelectorAll("#tbl tr.rowc").forEach(tr => tr.onclick = () => toggleDetail(tr, rows[+tr.dataset.i], cols.length));
+  if (click) document.querySelectorAll("#tbl tr.rowc").forEach(tr => tr.onclick = () => toggleDetail(tr, rows[+tr.dataset.i], cols.length));
+}
+async function peptidesOf(c){
+  if (!CACHE[c]) CACHE[c] = (await (await fetch(`api/jobs/${JOB}/result?table=peptides&cls=${c}&limit=20000`)).json()).rows;
+  return CACHE[c];
 }
 async function toggleDetail(tr, r, ncol){
   const nxt = tr.nextElementSibling;
   if (nxt && nxt.classList.contains("detrow")) { nxt.remove(); return; }
-  const d = await (await fetch(`api/jobs/${JOB}/detail?peptide=${r.Peptide}&start=${r.Start ?? 0}`)).json();
-  const tools = REPORT.consensus.tools, row = document.createElement("tr"); row.className = "detrow";
-  const head = "<tr><th>Allele</th><th>Frequency</th>" + tools.map(t => `<th>${esc(t.label)}</th>`).join("") + "<th>Agree</th><th>Consensus %Rank</th><th>Call</th></tr>";
-  const body = d.rows.map(x => `<tr class="${x.Pair_Candidate ? "pass" : ""}"><td>${esc(x.Allele)}</td><td>${x.Allele_Freq ? pct(x.Allele_Freq) : "-"}</td>` +
-    tools.map(t => { const v = x["Vote_" + t.key], val = x[t.col];
-      return `<td>${v == null ? "" : `<span class="vd ${v ? "y" : "n"}"></span>`}${val == null ? "" : cell(t.col, val)}</td>`; }).join("") +
-    `<td>${x.Agree_Votes}/${x.Agree_Tools}</td><td>${x["Bind_Consensus_%Rank"] == null ? "" : +(+x["Bind_Consensus_%Rank"]).toFixed(3)}</td><td>${esc(x.Pair_Call)}${x.Pair_Candidate ? " &#10003;" : ""}</td></tr>`).join("");
-  row.innerHTML = `<td class="detail" colspan="${ncol}"><div style="overflow:auto"><table>${head}${body}</table></div>
-     <div class="muted" style="margin-top:4px">Green dot = this tool votes yes at the strategy's cut-off, red = no. ${r.Synthesis_Notes ? esc(r.Synthesis_Notes) : ""}</div></td>`;
-  tr.after(row);
+  const row = document.createElement("tr"); row.className = "detrow";
+  let inner = "";
+  if (TABLE == "regions") {
+    for (const c of CLASSES()) {
+      const ps = (await peptidesOf(c)).filter(p => p.Region_ID == r.Region_ID && isT(p.Candidate)).slice(0, 40);
+      if (!ps.length) continue;
+      inner += `<div class="sub">${c == "1" ? "CTL" : "HTL"} peptides in ${esc(r.Region_ID)}</div><table><tr><th>Peptide</th><th>Start</th><th>Best allele</th><th>Alleles</th><th>Coverage</th><th>Priority</th></tr>` +
+        ps.map(p => `<tr><td>${cell("Peptide", p.Peptide)}</td><td>${p.Start}</td><td>${esc(p.Best_Allele)}</td><td>${p.N_Alleles_Candidate}</td><td>${cell("Coverage_Candidate", p.Coverage_Candidate)}</td><td>${p.Priority_Score}</td></tr>`).join("") + "</table>";
+    }
+    inner += `<div class="muted sm" style="margin-top:4px">${esc(r.Synthesis_Notes || "")}</div>`;
+  } else {
+    const d = await (await fetch(`api/jobs/${JOB}/detail?cls=${MAIN}&peptide=${r.Peptide}&start=${r.Start ?? 0}`)).json();
+    const tools = REPORT.classes[MAIN].consensus.tools;
+    const head = "<tr><th>Allele</th><th>Frequency</th>" + tools.map(t => `<th>${esc(t.label)}</th>`).join("") + "<th>Agree</th><th>Consensus %Rank</th><th>Call</th></tr>";
+    const body = d.rows.map(x => `<tr class="${x.Pair_Candidate ? "pass" : ""}"><td>${esc(x.Allele)}</td><td>${x.Allele_Freq ? pct(x.Allele_Freq) : "-"}</td>` +
+      tools.map(t => { const v = x["Vote_" + t.key], val = x[t.col];
+        return `<td>${v == null ? "" : `<span class="vd ${v ? "y" : "n"}"></span>`}${val == null ? "" : cell(t.col, val)}</td>`; }).join("") +
+      `<td>${x.Agree_Votes}/${x.Agree_Tools}</td><td>${x["Bind_Consensus_%Rank"] == null ? "" : +(+x["Bind_Consensus_%Rank"]).toFixed(3)}</td><td>${esc(x.Pair_Call)}${x.Pair_Candidate ? " &#10003;" : ""}</td></tr>`).join("");
+    inner = `<div style="overflow:auto"><table>${head}${body}</table></div><div class="muted sm" style="margin-top:4px">Green dot = this tool votes yes at the strategy's cut-off, red = no. ${esc(r.Synthesis_Notes || "")}</div>`;
+  }
+  row.innerHTML = `<td class="detail" colspan="${ncol}">${inner}</td>`; tr.after(row);
 }
 function renderInsight(){
-  const c = REPORT.consensus, sg = c.suggestions, top = c.funnel[0].n || 1;
-  let h = "<h3>Funnel</h3>" + c.funnel.map(f => `<div class="fun"><span>${esc(f.label)}</span><div class="bar thin"><i style="width:${100 * f.n / top}%"></i></div><b>${f.n.toLocaleString()}</b></div>`).join("");
-  if (sg.advice.length) h += "<h3>Suggestions</h3>" + sg.advice.map(a => `<div>&bull; ${esc(a)}</div>`).join("");
-  if (sg.relax && sg.relax.length) h += "<h3>What would change the answer</h3><table><tr><th>Change</th><th>Candidates</th><th>Regions</th><th>Gain</th></tr>" +
-    sg.relax.map(x => `<tr><td>${esc(x.label)}</td><td>${x.candidates}</td><td>${x.regions}</td><td>${x.gain > 0 ? "+" : ""}${x.gain}</td></tr>`).join("") + "</table>";
-  if (sg.presets && sg.presets.length) h += "<h3>The same data under each strategy</h3><table><tr><th>Strategy</th><th>Candidates</th><th>Regions</th><th>Panel</th><th>Panel coverage</th></tr>" +
-    sg.presets.map(x => `<tr class="${x.preset == $("strat").value ? "pass" : ""}"><td>${esc(x.label)}</td><td>${x.candidates}</td><td>${x.regions}</td><td>${x.panel}</td><td>${pct(x.panel_coverage)}</td></tr>`).join("") + "</table>";
-  if (c.panel.length) h += `<h3>Minimum panel (${c.coverage_metric == "population" ? "population coverage" : "share of the chosen alleles"})</h3><table><tr><th>#</th><th>Peptide</th><th>Region</th><th>Gain</th><th>Cumulative</th><th>New alleles</th></tr>` +
-    c.panel.map(x => `<tr><td>${x.order}</td><td>${esc(x.peptide)}</td><td>${esc(x.region)}</td><td>+${pct(x.gain)}</td><td><span class="cov"><i style="width:${100 * x.cumulative_coverage}%"></i></span>${pct(x.cumulative_coverage)}</td><td style="white-space:normal">${esc(x.new_alleles.join(", "))}</td></tr>`).join("") + "</table>";
-  if (sg.alleles && sg.alleles.add.length) h += `<h3>Alleles worth adding</h3><div class="muted">The most common alleles of these loci that are not in your selection (national frequency):</div>` +
-    sg.alleles.add.map(a => `<span class="chip">${esc(a.allele)} ${pct(a.frequency)}</span>`).join("");
-  h += `<details style="margin-top:12px"><summary class="muted">Run details (rules, tools, input) - also in the downloadable json</summary><pre>${esc(JSON.stringify(REPORT.details, null, 1))}</pre></details>`;
+  let h = "";
+  for (const c of CLASSES()) {
+    const cons = REPORT.classes[c].consensus, sg = cons.suggestions, top = cons.funnel[0].n || 1, tag = c == "1" ? "CTL · MHC class I" : "HTL · MHC class II";
+    h += `<h3 style="margin-top:20px">${tag}</h3><div class="muted sm">Tools: ${esc(cons.tools.map(t => t.label).join(", "))}. Coverage by ${esc(cons.coverage_metric)}.</div>`;
+    h += cons.funnel.map(f => `<div class="fun"><span>${esc(f.label)}</span><div class="bar thin"><i style="width:${100 * f.n / top}%"></i></div><b>${f0(f.n)}</b></div>`).join("");
+    if (sg.advice.length) h += "<div style='margin-top:8px'>" + sg.advice.map(a => `<div>&bull; ${esc(a)}</div>`).join("") + "</div>";
+    if (sg.relax && sg.relax.length) h += "<div class='sub'>What would change the answer</div><table><tr><th>Change</th><th>Candidates</th><th>Regions</th><th>Gain</th></tr>" +
+      sg.relax.map(x => `<tr><td>${esc(x.label)}</td><td>${x.candidates}</td><td>${x.regions}</td><td>${x.gain > 0 ? "+" : ""}${x.gain}</td></tr>`).join("") + "</table>";
+    if (sg.presets && sg.presets.length) h += "<div class='sub'>The same data under each strategy</div><table><tr><th>Strategy</th><th>Candidates</th><th>Regions</th><th>Panel</th><th>Panel coverage</th></tr>" +
+      sg.presets.map(x => `<tr class="${x.preset == $("strat").value ? "pass" : ""}"><td>${esc(x.label)}</td><td>${x.candidates}</td><td>${x.regions}</td><td>${x.panel}</td><td>${pct(x.panel_coverage)}</td></tr>`).join("") + "</table>";
+    if (cons.panel.length) h += `<div class='sub'>Minimum panel</div><table><tr><th>#</th><th>Peptide</th><th>Region</th><th>Gain</th><th>Cumulative</th><th>New alleles</th></tr>` +
+      cons.panel.map(x => `<tr><td>${x.order}</td><td>${cell("Peptide", x.peptide)}</td><td>${esc(x.region)}</td><td>+${pct(x.gain)}</td><td><span class="cov"><i style="width:${100 * x.cumulative_coverage}%"></i></span>${pct(x.cumulative_coverage)}</td><td style="white-space:normal">${esc(x.new_alleles.join(", "))}</td></tr>`).join("") + "</table>";
+    if (sg.alleles && sg.alleles.add.length) h += `<div class='sub'>Alleles worth adding (national frequency)</div>` + sg.alleles.add.map(a => `<span class="chip">${esc(a.allele)} ${pct(a.frequency)}</span>`).join("");
+  }
+  h += `<details style="margin-top:14px"><summary class="muted">Run details (rules, tools, input) - also in the downloads</summary><pre>${esc(JSON.stringify(REPORT.classes[CLASSES()[0]].details, null, 1))}</pre></details>`;
   $("insight").innerHTML = h;
+}
+function renderDownloads(){
+  let h = `<div class="sub">Everything</div><a class="dl big" href="${dl("report", "&inline=1")}" target="_blank">Summary page (html)</a><a class="dl" href="${dl("bundle")}">All outputs (zip)</a>`;
+  if (REPORT.dual) h += `<a class="dl" href="${dl("regions")}">Regions (csv)</a>`;
+  for (const c of CLASSES()) {
+    const tag = c == "1" ? "CTL · class I" : "HTL · class II", q = `&cls=${c}`;
+    h += `<div class="sub">${tag}</div><a class="dl" href="${dl("master", q)}">Every value, peptide × allele (csv)</a><a class="dl" href="${dl("peptides", q)}">Peptides</a><a class="dl" href="${dl("candidates", q)}">Candidates</a><a class="dl" href="${dl("panel", q)}">Minimum panel</a><a class="dl" href="${dl("details", q)}">Run details (json)</a>`;
+    h += `<div class="muted sm" style="margin-top:6px">One file per model: ` + REPORT.classes[c].consensus.tools.map(t => `<a class="dl" href="${dl("model", `&cls=${c}&key=${t.key}`)}">${esc(t.label)}</a>`).join("") + "</div>";
+  }
+  $("downloads").innerHTML = h;
 }
 
 /* resume a job after a page reload */
@@ -531,33 +674,30 @@ async function loadCfg(){
   $("msg").innerHTML = d.error ? `<span class="bad">${esc(d.error)}</span>` : "";
 }
 async function saveCfg(){
-  const r = await fetch("api/config", {method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: $("cfg").value})});
+  const r = await fetch("api/config", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text: $("cfg").value})});
   const d = await r.json();
   $("msg").innerHTML = r.ok ? '<span class="ok">saved</span>' : `<span class="bad">${esc(d.error)}</span>`;
   if (r.ok) { loadCfg(); checkAll(false); }
 }
-const BOXES = {mixmhc2pred: ["m2_mix"], iedb_bundle_ii: ["m2_el", "m2_ba", "m2_cd4"], netmhcpan: ["m_nmp"], mixmhcpred: ["m_mix"], mhcflurry: ["m_mhcf"], prime: ["m_prime"], iedb_bundle: ["m_ctl", "m_chop"], bigmhc: ["m_el", "m_im"]};
-const NEEDS_PROTEIN = ["m_ctl", "m_chop"];
-const blockedByMode = id => NEEDS_PROTEIN.includes(id) && mode() == "peptides";
-const NOTREADY = {}, AUTOOFF = {};
+const NOTREADY = {};
+const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2};
 function showReadiness(m, d){
   document.querySelectorAll(`.fdot[data-m="${m}"]`).forEach(e => e.className = "dot fdot " + (d.ok ? "ok" : "bad"));
   const why = d.ok ? "" : ((d.checks.find(c => !c.ok) || {}).name || "not ready");
   NOTREADY[m] = d.ok ? null : why;
-  (BOXES[m] || []).forEach(id => {
-    const box = $(id), lab = box.parentElement;
-    if (!d.ok) { if (box.checked) AUTOOFF[id] = true; box.checked = false; box.disabled = true; lab.title = "Not ready: " + why + " (see Settings)"; }
-    else { box.disabled = blockedByMode(id); lab.title = ""; if (AUTOOFF[id] && !blockedByMode(id)) { box.checked = true; AUTOOFF[id] = false; } }
+  document.querySelectorAll(`input[data-health="${m}"]`).forEach(box => {
+    const lab = box.parentElement, blocked = box.dataset.prot && mode() == "peptides";
+    if (!d.ok) { if (box.checked) AUTOOFF[box.id] = true; box.checked = false; box.disabled = true; lab.title = "Not ready: " + why + " (see Settings)"; }
+    else { box.disabled = !!blocked; lab.title = ""; if (AUTOOFF[box.id] && !blocked) { box.checked = true; AUTOOFF[box.id] = false; } }
   });
-  refreshNotReady(); queuePreview();
-}
-const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2};
-function refreshNotReady(){
-  const bad = Object.keys(NOTREADY).filter(k => NOTREADY[k] && CLASS_OF[k] == CLS());
-  $("notready").innerHTML = bad.length ? "Not ready: " + bad.map(k => `${k} (${esc(NOTREADY[k])})`).join(", ") + ". See Settings." : "";
+  for (const c of [1, 2]) {
+    const bad = Object.keys(NOTREADY).filter(k => NOTREADY[k] && CLASS_OF[k] == c);
+    $("nr" + c).innerHTML = bad.length ? "Not ready: " + bad.map(k => `${k} (${esc(NOTREADY[k])})`).join(", ") + ". See Settings." : "";
+  }
+  queuePreview();
 }
 async function check(m, deep){
-  const d = await (await fetch(`api/health/${m}` + (deep ? "?deep=1" : ""), {method:"POST"})).json();
+  const d = await (await fetch(`api/health/${m}` + (deep ? "?deep=1" : ""), {method: "POST"})).json();
   const dot = $("d_" + m); if (dot) dot.className = "dot " + (d.ok ? "ok" : "bad");
   showReadiness(m, d); return d;
 }
@@ -577,7 +717,6 @@ async function deepTest(m){
   alert(m + (d.ok ? " test run OK" : " test run FAILED") + "\n" + d.checks.map(c => (c.ok ? "ok   " : "FAIL ") + c.name + " " + c.detail).join("\n"));
 }
 
-(() => { if (store.get("cls") == "2") document.querySelector('input[name=cls][value="2"]').checked = true; applyClass(); })();
-loadCfg(); checkAll(false); queuePreview();
+loadCfg(); checkAll(false);
 show(store.get("tab") || "pipeline");
 </script></body></html>

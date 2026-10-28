@@ -20,12 +20,12 @@ for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts", "MHC1/Processin
     sys.path.insert(0, os.path.join(HERE, sub))
 sys.path.insert(0, HERE)
 
-from common import alleles as allele_lib, config            # noqa: E402
+from common import alleles as allele_lib, config, population            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
-import pipeline, pipeline_ii                                  # noqa: E402
+import pipeline, pipeline_ii, pipeline_dual                                  # noqa: E402
 import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import pandas as pd                                          # noqa: E402
 
@@ -300,10 +300,31 @@ def api_alleles():
         seen |= {a for v in allele_lib.PRESETS.values() for a in v["alleles"]}     # searchable even if NetMHCpan is missing
         _all_cache.clear()
         _all_cache[key] = sorted(seen)
-    return jsonify(presets=allele_lib.PRESETS, all=_all_cache[key], presets_ii=allele_lib.PRESETS_II)
+    pre1, pre2 = dict(allele_lib.PRESETS), dict(allele_lib.PRESETS_II)
+    pop, msg = _population()
+    c1, c2 = population.presets(pop)
+    if c1:
+        pre1 = {f"{pop.label} population (common alleles)": c1, **pre1}
+        pre2 = {f"{pop.label} population (common DRB1)": c2, **pre2}
+    return jsonify(presets=pre1, all=_all_cache[key], presets_ii=pre2)
+
+
+def _population():
+    return population.load(config.load().get("population"), config.search_root())
+
+
+@main.get("/api/population")
+def api_population():
+    pop, msg = _population()
+    return jsonify(ok=pop is not None, message=msg, info=pop.info() if pop else None)
 
 
 def _needed_models(params):
+    if _is_dual(params):
+        out = []
+        for c, p in pipeline_dual.split(params).items():
+            out += _needed_models(p) if p else []
+        return list(dict.fromkeys(out))
     m = params.get("models") or {}
     need = []
     if int(params.get("mhc_class", 1)) == 2:
@@ -319,7 +340,13 @@ def _needed_models(params):
     return need
 
 
+def _is_dual(params):
+    return "c1" in params or "c2" in params
+
+
 def _pipe(params):
+    if _is_dual(params):
+        return pipeline_dual
     return pipeline_ii if int(params.get("mhc_class", 1)) == 2 else pipeline
 
 
@@ -382,46 +409,63 @@ def job_cancel(job_id):
     return jsonify(ok=True)
 
 
-def _table_path(job, table):
+def _res(job, cls=None):
+    """The result dict to read tables from: the job's own, or one class of a combined job."""
     if not job or not job.result:
         return None
+    r = job.result
+    if r.get("dual"):
+        return r["classes"].get(str(cls or min(r["classes"])))
+    return r
+
+
+def _table_path(job, table, cls=None):
+    if job and job.result and table == "model":
+        return job.result.get("permodel", {}).get(f"{cls}:{request.args.get('key', '')}")
+    if job and job.result and table in ("regions", "report", "bundle"):
+        return job.result.get({"regions": "regions_csv", "report": "report_html", "bundle": "bundle_zip"}[table])
+    r = _res(job, cls)
+    if not r:
+        return None
     key = {"summary": "summary_csv", "pairs": "pairs_csv", "details": "details_json"}.get(table, f"{table}_csv")
-    return job.result.get(key)
+    return r.get(key)
 
 
 @main.get("/api/jobs/<job_id>/result")
 def job_result(job_id):
-    path = _table_path(MANAGER.get(job_id), request.args.get("table", "summary"))
+    path = _table_path(MANAGER.get(job_id), request.args.get("table", "summary"), request.args.get("cls"))
     if not path:
         return jsonify(error="no result"), 404
     limit = min(int(request.args.get("limit", 5000)), 20000)
     df = pd.read_csv(path, nrows=limit)
     total = sum(1 for _ in open(path)) - 1
-    df = df.astype(object).where(df.notna(), None)
-    return jsonify(columns=list(df.columns), rows=df.to_dict("records"), total=total, shown=len(df))
+    return jsonify(columns=list(df.columns), rows=json.loads(df.to_json(orient="records")), total=total, shown=len(df))
 
 
 @main.get("/api/jobs/<job_id>/csv")
 def job_csv(job_id):
     table = request.args.get("table", "summary")
-    path = _table_path(MANAGER.get(job_id), table)
+    path = _table_path(MANAGER.get(job_id), table, request.args.get("cls"))
     if not path:
         return jsonify(error="no result"), 404
     if table == "details":
         return send_file(path, mimetype="application/json", as_attachment=True, download_name="epitope_run_details.json")
+    if table == "report":
+        return send_file(path, mimetype="text/html", as_attachment=request.args.get("inline") != "1", download_name="epitope_report.html")
+    if table == "bundle":
+        return send_file(path, mimetype="application/zip", as_attachment=True, download_name="epitope_all_outputs.zip")
     return send_file(path, mimetype="text/csv", as_attachment=True, download_name=f"epitopes_{table}.csv")
 
 
 @main.get("/api/jobs/<job_id>/detail")
 def job_detail(job_id):
     """Every tool value for one peptide window, per allele (the expandable row in the results)."""
-    job = MANAGER.get(job_id)
-    if not job or not job.result:
+    r = _res(MANAGER.get(job_id), request.args.get("cls"))
+    if not r:
         return jsonify(error="no result"), 404
-    df = pd.read_csv(job.result["master_csv"])
+    df = pd.read_csv(r["master_csv"], low_memory=False)
     df = df[(df["Peptide"] == request.args.get("peptide", "")) & (df["Start"] == int(request.args.get("start", 0)))]
-    df = df.astype(object).where(df.notna(), None)
-    return jsonify(columns=list(df.columns), rows=df.to_dict("records"))
+    return jsonify(columns=list(df.columns), rows=json.loads(df.to_json(orient="records")))
 
 
 @main.get("/api/rules")
@@ -437,9 +481,16 @@ def job_report(job_id):
     job = MANAGER.get(job_id)
     if not job or not job.result:
         return jsonify(error="no result"), 404
-    with open(job.result["details_json"]) as f:
+    r = job.result
+    if r.get("dual"):
+        out = {}
+        for c, cr in r["classes"].items():
+            with open(cr["details_json"]) as f:
+                out[c] = {"consensus": cr["consensus"], "details": json.load(f)}
+        return jsonify(dual=True, classes=out, summary=r["summary"])
+    with open(r["details_json"]) as f:
         details = json.load(f)
-    return jsonify(consensus=job.result["consensus"], details=details, summary=job.result["summary"])
+    return jsonify(dual=False, classes={"1" if details.get("mhc_class", 1) == 1 else "2": {"consensus": r["consensus"], "details": details}}, summary=r["summary"])
 
 
 @main.get("/")
