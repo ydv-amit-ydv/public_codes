@@ -940,6 +940,44 @@ if have_tools:
     assert d1["state"] == d2["state"] == "done" and r1 == r2 and r1, (r1[:1], r2[:1])
     assert any("already known" in l for l in d2["log"]) and not any(l.startswith("\u25b6 NetMHCIIpan") for l in d2["log"]), d2["log"]
 
+# MHCnuggets (class II affinity, its own TensorFlow environment): a stand-in package that behaves like the real one
+FAKE_MN = os.path.join(TMP, "fake_mn"); os.makedirs(f"{FAKE_MN}/mhcnuggets/src"); os.makedirs(f"{FAKE_MN}/mhcnuggets/data/production")
+import pickle as _pk                                                              # noqa: E402
+_pk.dump({"HLA-DRB101:01": 1, "HLA-DRB115:01": 1, "HLA-DQA105:01-DQB102:01": 1}, open(f"{FAKE_MN}/mhcnuggets/data/production/examples_per_allele.pkl", "wb"))
+open(f"{FAKE_MN}/mhcnuggets/__init__.py", "w").write(""); open(f"{FAKE_MN}/mhcnuggets/src/__init__.py", "w").write("")
+open(f"{FAKE_MN}/mhcnuggets/src/predict.py", "w").write(textwrap.dedent('''\
+    import os
+    MHCNUGGETS_HOME = os.path.join(os.path.dirname(__file__), "..")
+    Adam = None
+    def predict(class_, peptides_path, mhc, output=None, rank_output=False, **k):
+        assert class_ == "II" and mhc.startswith("HLA-") and "*" not in mhc and "/" not in mhc, mhc          # MHCnuggets' own spelling
+        peps = [l.strip() for l in open(peptides_path) if l.strip()]
+        ic = lambda p: 100.0 if p == "PKYVKQNTLKLATGM" else 5000.0
+        with open(output, "w") as f:
+            f.write("peptide,ic50\\n" + "".join(f"{p},{ic(p)}\\n" for p in peps))
+        with open(output + "_ranks", "w") as f:
+            f.write("peptide,ic50,human_proteome_rank\\n" + "".join(f"{p},{ic(p)},{0.01 if ic(p) < 500 else 0.6}\\n" for p in peps))
+    '''))
+MNPY = os.path.join(TMP, "mn_python")
+open(MNPY, "w").write(f"#!/bin/bash\nexport PYTHONPATH={FAKE_MN}\nexec {sys.executable} \"$@\"\n"); os.chmod(MNPY, 0o755)
+withmn = json.loads(json.dumps(settings)); withmn["models"]["mhcnuggets"] = {"python": MNPY}
+c.put("/api/config", json={"text": json.dumps(withmn)})
+assert c.post("/api/health/mhcnuggets?deep=1").get_json()["ok"]
+mn_in = {"model": "mhcnuggets", "text": "PKYVKQNTLKLATGM\nAAAAAAAAAAAAAAA", "mode": "peptides", "alleles": ["HLA-DRB1*01:01", "HLA-DRB1*15:01", "HLA-DRB1*99:99", "HLA-DQA1*05:01/DQB1*02:01", "H2-IAb"]}
+d = wait_job(c.post("/api/single/run", json=mn_in).get_json()["id"], timeout=90)
+rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=single").get_json()["rows"]}
+assert d["state"] == "done" and len(rows) == 6 and rows[("PKYVKQNTLKLATGM", "HLA-DRB1*15:01")]["MHCnuggets_%Rank"] == 1.0 and rows[("AAAAAAAAAAAAAAA", "HLA-DQA1*05:01/DQB1*02:01")]["MHCnuggets_IC50_nM"] == 5000.0, rows
+w = d["summary"]["warnings"]
+assert any("not trained for: HLA-DRB1*99:99" in x for x in w) and any("skipped (human DR, DQ and DP only)" in x for x in w), w
+mn_pipe = {**ii, "models": {"mixmhc2pred": True, "mhcnuggets": True}, "chain": False, "filters": {}, "alleles": ["HLA-DRB1*01:01", "HLA-DRB1*15:01"], "preset": "iedb"}
+d = wait_job(c.post("/api/pipeline/run", json=mn_pipe).get_json()["id"], timeout=120)
+assert d["state"] == "done", d.get("error")
+pr_ = c.get(f"/api/jobs/{d['id']}/result?table=pairs&limit=20000").get_json()
+assert "MHCnuggets_%Rank" in pr_["columns"] and any(r["MHCnuggets_%Rank"] == 1.0 for r in pr_["rows"]), pr_["columns"]
+cons_tools = c.get(f"/api/jobs/{d['id']}/report").get_json()["classes"]["2"]["consensus"]["tools"]
+assert "MHCnuggets" in [t["label"] for t in cons_tools], cons_tools
+c.put("/api/config", json={"text": json.dumps(settings)})
+
 # performance settings are validated and take effect
 assert c.get("/api/performance").get_json()["effective"]["parallel_models"] >= 1
 r = c.put("/api/performance", json={"threads": 2, "nice": 0, "stall_seconds": 600, "parallel_models": 2}); assert r.status_code == 200, r.get_json()

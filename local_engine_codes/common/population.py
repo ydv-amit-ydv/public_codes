@@ -206,6 +206,22 @@ def load(cfg, root):
         return None, f"Population file not used: {e}"
 
 
+# The usual DQA1 partner of each DQB1 allele on the same haplotype (the population file types DQB1 only). An approximation from the
+# well-known DQ haplotypes (DQ2.5, DQ2.2, DQ8, DQ7, DQ4, DQ5, DQ6): the preset says so.
+DQA1_PARTNER = {"02:01": "05:01", "02:02": "02:01", "03:01": "05:05", "03:02": "03:01", "03:03": "02:01", "04:02": "04:01",
+                "05:01": "01:01", "05:02": "01:02", "05:03": "01:04", "06:01": "01:03", "06:02": "01:02", "06:03": "01:03"}
+
+
+def dq_pairs(pop, target=0.8):
+    """Common DQB1 alleles (up to `target` of the locus) as DQA1/DQB1 pairs the class II tools accept."""
+    out = []
+    for a in pop.alleles_for_coverage("DQB1", target):
+        b = a.split("*")[1]
+        if b in DQA1_PARTNER:
+            out.append(f"HLA-DQA1*{DQA1_PARTNER[b]}/DQB1*{b}")
+    return out
+
+
 def presets(pop):
     """Allele sets built from the population file: the most common alleles per locus up to 80 % of haplotypes.
     -> (class I preset or None, class II preset or None), each {"alleles": [...], "note": str}."""
@@ -219,4 +235,7 @@ def presets(pop):
     two = ["HLA-" + a for a in pop.alleles_for_coverage("DRB1", 0.8)]
     c1 = {"alleles": one, "note": f"{pop.label}: the most common alleles covering 80 % of each locus ({', '.join(loci)})"}
     c2 = {"alleles": two, "note": f"{pop.label}: DRB1 alleles covering 80 % of the locus (DQ and DP are not typed in the file)"}
-    return c1, c2
+    dq = dq_pairs(pop)
+    c3 = {"alleles": two + dq, "note": f"{pop.label}: DRB1 (80 %) plus the common DQB1 alleles as DQA1/DQB1 pairs; the DQA1 partner is the usual one for that DQB1, "
+                                       "not typed in the file. HLA-DP has no population data."}
+    return c1, c2, c3

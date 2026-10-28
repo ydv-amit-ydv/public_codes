@@ -120,6 +120,22 @@ assert rep.Cluster_Size == 3 and rep.Cluster_Members.count("@") == 2, rep[["Clus
 assert set(cres[cres.Cluster_ID == rep.Cluster_ID].Cluster_Representative) == {rep.Peptide}
 assert cres[cres.Start == 40].iloc[0].Cluster_Size == 1 and cres[cres.Start == 40].iloc[0].Cluster_Members == ""
 
+# class II clusters by binding core: windows of different length around one 9-aa core are one cluster
+seq2 = "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWY"
+def win(st, L, core_abs):
+    pep = seq2[st - 1:st - 1 + L]
+    core = seq2[core_abs - 1:core_abs + 8]
+    return ("P", st, pep, "HLA-DRB1*01:01", 0.5, core)
+rows2 = pd.DataFrame([win(1, 15, 7), win(7, 15, 7), win(1, 21, 7), win(30, 9, 30)], columns=["Protein", "Start", "Peptide", "Allele", "NII_%Rank_EL", "NII_Core"])
+res_c = C.analyse(rows2, 2, dict(C.resolve_rules(2, "iedb"), cluster_by="core"), pop)["peptides"]
+res_p = C.analyse(rows2, 2, dict(C.resolve_rules(2, "iedb"), cluster_by="peptide"), pop)["peptides"]
+assert res_c.Cluster_ID.nunique() == 2 and res_p.Cluster_ID.nunique() == 3, (res_c.Cluster_ID.nunique(), res_p.Cluster_ID.nunique())
+assert (res_c[res_c.Start == 7].Core_Start == 7).all() and (res_c.Cluster_Overlap.dropna() == 1.0).all()
+try:
+    C.resolve_rules(2, "balanced", {"cluster_by": "nonsense"}); raise SystemExit("no error")
+except ValueError:
+    pass
+
 # every preset runs and states every rule field
 for cls in (1, 2):
     for name, r in C.preset_rules(cls).items():
@@ -136,5 +152,9 @@ for path in glob.glob(os.path.join(HERE, "..", "..", "HEV", "Outputs", "india_hl
     top = P.alleles_for_coverage("A", 0.9)
     cov = [P.coverage(["HLA-" + a for a in top[:k]]) for k in range(1, len(top) + 1)]
     assert all(b >= a - 1e-12 for a, b in zip(cov, cov[1:])) and 0 < cov[-1] <= 1
-    print("real population table ok:", round(cov[-1], 3))
+    from common import population as _popm
+    c1_, c2_, c3_ = _popm.presets(P)
+    dq_ = [a for a in c3_["alleles"] if "/" in a]
+    assert dq_ and all(a.startswith("HLA-DQA1*") and "/DQB1*" in a for a in dq_) and set(c2_["alleles"]) <= set(c3_["alleles"]), c3_["alleles"]
+    print("real population table ok:", round(cov[-1], 3), "DQ pairs:", len(dq_))
 print("consensus tests passed")

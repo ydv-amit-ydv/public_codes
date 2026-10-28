@@ -68,6 +68,7 @@ TOOLS = [
     Tool("NII_EL", "NetMHCIIpan-EL", "NII_%Rank_EL", "binding", "abs", "low", True, 2),
     Tool("NII_BA", "NetMHCIIpan-BA", "NII_%Rank_BA", "binding", "abs", "low", True, 2),
     Tool("MIX2", "MixMHC2pred", "MIX2_%Rank", "binding", "abs", "low", True, 2),
+    Tool("MHCNUG", "MHCnuggets", "MHCnuggets_%Rank", "binding", "abs", "low", True, 2),
     Tool("CD4", "CD4episcore", "CD4_Episcore", "immunogenicity", "rel", "low", False, 2),
 ]
 GROUPS = ("binding", "immunogenicity", "processing")
@@ -76,7 +77,7 @@ GROUP_PREFIX = {"binding": "Bind", "immunogenicity": "Imm", "processing": "Proc"
 # ---------------------------------------------------------------------------------------------- rules
 RULE_FIELDS = ("bind_rank_max", "strong_rank_max", "bigmhc_el_min", "bind_min_agree", "imm_top_q", "imm_abs_rank_max",
                "imm_min_agree", "ctlpan_rank_max", "netchop_min", "require_processing", "min_alleles", "min_coverage",
-               "collapse", "overlap_fraction", "panel_target", "panel_cap", "rank_by", "rank_weights")
+               "collapse", "overlap_fraction", "cluster_by", "panel_target", "panel_cap", "rank_by", "rank_weights")
 RANK_BY = ("consensus", "coverage", "promiscuity", "binding", "immunogenicity")
 DEFAULT_WEIGHTS = {"coverage": 0.35, "agreement": 0.25, "binding": 0.20, "immunogenicity": 0.20}
 
@@ -85,7 +86,7 @@ def _rules(cls, **over):
     base = {"bind_rank_max": 2.0 if cls == 1 else 5.0, "strong_rank_max": 0.5 if cls == 1 else 2.0, "bigmhc_el_min": 0.2,
             "bind_min_agree": "majority", "imm_top_q": 0.25, "imm_abs_rank_max": 5.0, "imm_min_agree": "any",
             "ctlpan_rank_max": 1.0, "netchop_min": None, "require_processing": False, "min_alleles": 1,
-            "min_coverage": 0.0, "collapse": True, "overlap_fraction": 0.7, "panel_target": 0.95, "panel_cap": 25,
+            "min_coverage": 0.0, "collapse": True, "overlap_fraction": 0.7, "cluster_by": "core" if cls == 2 else "peptide", "panel_target": 0.95, "panel_cap": 25,
             "rank_by": "consensus", "rank_weights": dict(DEFAULT_WEIGHTS)}
     base.update(over)
     return base
@@ -127,6 +128,8 @@ def resolve_rules(cls, preset="balanced", overrides=None):
         if k not in RULE_FIELDS or v in (None, "") and k not in ("netchop_min",):
             continue
         r[k] = ({**r["rank_weights"], **v} if k == "rank_weights" else v)
+    if r.get("cluster_by") not in ("peptide", "core"):
+        raise ValueError("cluster_by must be peptide or core")
     if r["rank_by"] not in RANK_BY:
         raise ValueError(f"rank_by must be one of {RANK_BY}")
     for k in ("bind_min_agree", "imm_min_agree"):
@@ -300,10 +303,15 @@ def peptide_table(d, tools, rules, pop, cls):
     b = d[d["Binder"]].copy()
     b["_k"] = b["Bind_Consensus_%Rank"].fillna(1e9)
     best = b.sort_values(["_k", "Agree_Fraction"], ascending=[True, False]).drop_duplicates(KEYS)
-    best = best[KEYS + ["Allele", "Bind_Consensus_%Rank", "Agree_Fraction", "Imm_Votes", "Imm_Tools", "Proc_Votes"]].rename(
+    core_col = [c for c in ("NII_Core", "MIX2_Core") if c in best.columns][:1]
+    best = best[KEYS + ["Allele", "Bind_Consensus_%Rank", "Agree_Fraction", "Imm_Votes", "Imm_Tools", "Proc_Votes"] + core_col].rename(
         columns={"Allele": "Best_Allele", "Bind_Consensus_%Rank": "Bind_Consensus_Best", "Agree_Fraction": "Agree_Fraction_Best",
-                 "Imm_Votes": "Imm_Votes_Best", "Imm_Tools": "Imm_Tools_Best", "Proc_Votes": "Proc_Votes_Best"})
+                 "Imm_Votes": "Imm_Votes_Best", "Imm_Tools": "Imm_Tools_Best", "Proc_Votes": "Proc_Votes_Best", **{c: "Best_Core" for c in core_col}})
     out = out.merge(best, on=KEYS, how="left")
+    if "Best_Core" in out:                       # where the binding core sits in the protein (class II: the 9-aa core in a longer window)
+        off = [pep.find(core) if isinstance(core, str) else -1 for pep, core in zip(out["Peptide"], out["Best_Core"])]
+        out["Core_Start"] = [st + o if o >= 0 else np.nan for st, o in zip(out["Start"], off)]
+        out["Core_End"] = [cs + len(core) - 1 if cs == cs else np.nan for cs, core in zip(out["Core_Start"], out["Best_Core"].fillna(""))]
     immb = b.groupby(KEYS, sort=False)["Imm_TopPct_Consensus"].min().rename("Imm_TopPct_Best").reset_index()
     out = out.merge(immb, on=KEYS, how="left")
 
@@ -373,26 +381,38 @@ def peptide_table(d, tools, rules, pop, cls):
 
 
 # ---------------------------------------------------------------------------------------------- shortlist
-def collapse_overlaps(cands, min_overlap):
-    """Group candidates (already best-first) whose windows overlap the representative by >= min_overlap of the
+def _spans(cands, by_core):
+    """(start, end) used to decide what clusters together: the binding core where known and asked for, else the whole peptide."""
+    s, e = cands["Start"].to_numpy(float), cands["End"].to_numpy(float)
+    if by_core and "Core_Start" in cands:
+        cs, ce = cands["Core_Start"].to_numpy(float), cands["Core_End"].to_numpy(float)
+        ok = ~np.isnan(cs)
+        s, e = np.where(ok, cs, s), np.where(ok, ce, e)
+    return s, e
+
+
+def collapse_overlaps(cands, min_overlap, by_core=False):
+    """Group candidates (already best-first) whose spans overlap the representative by >= min_overlap of the
     shorter one. Anchored on the representative's own span (not the growing cluster), so a region cannot creep along
-    the antigen. Same protein only."""
+    the antigen. Same protein only. With by_core, class II windows are compared by their 9-aa binding cores, so the many
+    15-25-mers built around one core fall into one cluster."""
     clusters = []
+    cs, ce = _spans(cands, by_core)
     for i, r in enumerate(cands.itertuples(index=False)):
         placed = False
         for c in clusters:
             if c["protein"] != r.Protein:
                 continue
             a0, a1 = c["anchor"]
-            ov = min(r.End, a1) - max(r.Start, a0) + 1
-            shorter = min(r.End - r.Start + 1, a1 - a0 + 1)
+            ov = min(ce[i], a1) - max(cs[i], a0) + 1
+            shorter = min(ce[i] - cs[i] + 1, a1 - a0 + 1)
             if shorter > 0 and ov / shorter >= min_overlap:
                 c["members"].append(i)
                 c["lo"], c["hi"] = min(c["lo"], r.Start), max(c["hi"], r.End)
                 placed = True
                 break
         if not placed:
-            clusters.append({"protein": r.Protein, "anchor": (r.Start, r.End), "lo": r.Start, "hi": r.End, "members": [i]})
+            clusters.append({"protein": r.Protein, "anchor": (cs[i], ce[i]), "lo": r.Start, "hi": r.End, "members": [i]})
     return clusters
 
 
@@ -412,7 +432,7 @@ def shortlist(pep, rules, pop, n_alleles_tested):
     if cands.empty:
         return pep, [], []
     if rules["collapse"]:
-        clusters = collapse_overlaps(cands, float(rules["overlap_fraction"]))
+        clusters = collapse_overlaps(cands, float(rules["overlap_fraction"]), rules.get("cluster_by") == "core")
     else:
         clusters = [{"protein": r.Protein, "anchor": (r.Start, r.End), "lo": r.Start, "hi": r.End, "members": [i]}
                     for i, r in enumerate(cands.itertuples(index=False))]
@@ -426,8 +446,11 @@ def shortlist(pep, rules, pop, n_alleles_tested):
         rep = pep.loc[members[0]]
         pep.loc[members, "Cluster_Representative"] = rep["Peptide"]
         for m in members:
-            ov = min(pep.at[m, "End"], rep["End"]) - max(pep.at[m, "Start"], rep["Start"]) + 1
-            pep.at[m, "Cluster_Overlap"] = round(ov / max(1, min(pep.at[m, "End"] - pep.at[m, "Start"] + 1, rep["End"] - rep["Start"] + 1)), 3)
+            use_core = rules.get("cluster_by") == "core" and "Core_Start" in pep and pep.at[m, "Core_Start"] == pep.at[m, "Core_Start"] and rep["Core_Start"] == rep["Core_Start"]
+            a0, a1, b0, b1 = ((pep.at[m, "Core_Start"], pep.at[m, "Core_End"], rep["Core_Start"], rep["Core_End"]) if use_core
+                              else (pep.at[m, "Start"], pep.at[m, "End"], rep["Start"], rep["End"]))
+            ov = min(a1, b1) - max(a0, b0) + 1
+            pep.at[m, "Cluster_Overlap"] = round(ov / max(1, min(a1 - a0 + 1, b1 - b0 + 1)), 3)
         pep.at[members[0], "Cluster_Members"] = "; ".join(f"{pep.at[m, 'Peptide']}@{pep.at[m, 'Start']}" for m in members[1:])
 
     # greedy panel over the representatives: add the peptide that gains the most coverage, until the target is reached

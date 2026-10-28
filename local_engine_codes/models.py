@@ -17,6 +17,7 @@ import calis_immunogenicity as ci
 import cd4episcore_runner as cd
 import iedb_processing as ip
 import mhcflurry_runner as mf
+import mhcnuggets_runner as mn
 import mixmhc2pred_runner as m2
 import mixmhcpred_runner as mx
 import netmhcpan_app as nm
@@ -49,6 +50,7 @@ SPECS = {s.key: s for s in [
     Spec("bigmhc_el", 1, "BigMHC EL", True, False, 5, "BigMHC_EL", False, ("bigmhc",), 2.0),
     Spec("bigmhc_im", 1, "BigMHC IM", True, False, 5, "BigMHC_IM", False, ("bigmhc",), 2.0),
     Spec("mixmhc2pred", 2, "MixMHC2pred 2.1", True, False, 1, "MIX2_%Rank", True, ("mixmhc2pred",), 0.7),
+    Spec("mhcnuggets", 2, "MHCnuggets", True, False, 4, "MHCnuggets_%Rank", True, ("mhcnuggets",), 1.0),
     Spec("netmhciipan_el", 2, "NetMHCIIpan (EL)", True, False, 3, "NII_%Rank_EL", True, ("iedb_bundle_ii",), 1.0),
     Spec("netmhciipan_ba", 2, "NetMHCIIpan (BA)", True, False, 3, "NII_%Rank_BA", True, ("iedb_bundle_ii",), 1.0),
     Spec("cd4episcore", 2, "CD4episcore", False, False, 3, "CD4_Episcore", True, ("iedb_bundle_ii",), 0.5),
@@ -80,6 +82,8 @@ def run(keys, rows, ctx, job=None):
             df, n = nn.predict(peps, als, lengths, seqs, ("ba",), p.get("version", "4.3"), job=job)
         elif key == "mixmhc2pred":
             df, n = m2.predict(peps, als, seqs, job=job)
+        elif key == "mhcnuggets":
+            df, n = mn.predict(uniq, als, job=job)
         elif key == "cd4episcore":
             df, n = cd.predict(uniq, job=job), []
         elif key == "netmhcpan":
