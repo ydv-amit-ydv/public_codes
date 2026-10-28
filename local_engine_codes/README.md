@@ -49,6 +49,36 @@ binders. Class II chains CD4episcore the same way.
 - Runs over 3,000,000 predictions per class are refused (use fewer alleles or sizes). Stray characters in a FASTA make the windows containing
   them skip, and the page says so.
 
+## The funnel: which peptides go on to the next model
+
+Each arm has a **Funnel** setting:
+
+- **Automatic** (default): the quick tools (MixMHCpred, NetMHCpan, MHCflurry, PRIME, IEDB, NetCTLpan, NetChop; MixMHC2pred, NetMHCIIpan) score every
+  pair. BigMHC EL then scores only the pairs that can still become binders under the agreement rule, BigMHC IM only the pairs already called binders,
+  CD4episcore only peptides that bind some allele. The gate is exact for the rule, so nothing a full run would have found is lost.
+- **No funnel**: every model scores every pair; the filtering happens afterwards (slowest).
+- **Manual**: you list stages. Stage *k* runs its models on the pairs still alive; its **pass rule** decides what goes on: everything, the pairs the
+  stage's tools call a hit (any / majority / all of the tools, with your own cut-off or the strategy's), the best N peptides (or pairs), or the best P %.
+  Models of one stage run side by side. A model appears in one stage only. Start from a template (cheap tools first, slow ones on the survivors) and edit.
+
+Every pair in the tables carries the flags: `S1_In, S1_Pass, S2_In, ...` (scored in stage k / went on), `Funnel_Reached` (stages that scored it),
+`Stopped_At` (the stage that stopped it, 0 = came through) and `Funnel_Alive`. A pair that was dropped is never a candidate, and the run details list
+the real counts of each stage (pairs and peptides in and out, seconds). NetCTLpan and NetChop work on whole proteins, so putting them late saves nothing.
+
+**Re-rank**: a finished run keeps its pair table. *Re-rank* (results page) applies another strategy or other rules to the same predictions in seconds
+and saves the result as a new run. If the new rules are looser than the ones the slow tools were gated with, the page says some pairs have no slow-tool score.
+
+**Clusters**: overlapping candidate windows (default 70 % of the shorter peptide, anchored on the best one) collapse onto one representative. Each
+peptide table has `Cluster_ID, Cluster_Representative, Cluster_Overlap`; a representative also has `Cluster_Size` and `Cluster_Members` ("SEQ@start; ...").
+Click a candidate to see the peptides clustered into it.
+
+## Performance and no hanging
+
+Settings > Performance (also `performance` in the json): `threads` per tool (0 = the tool decides), `parallel_models` (how many models of a stage run at
+once, sharing the threads), `nice` (process priority, 5 by default so the browser stays smooth), `stall_seconds` (a tool with no CPU, disk or output
+activity for this long is stopped and the run says which one; a merely slow tool keeps computing and is never stopped) and `timeout_minutes` (optional hard
+limit per call). Cancel stops every running program. Standard input of every tool is closed, so none can wait for a keypress.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's

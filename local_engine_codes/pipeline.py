@@ -22,6 +22,7 @@ import mixmhcpred_runner as mx
 import netmhcpan_app as nm
 import prime_runner as pr
 import consensus
+import funnel
 import report
 
 MAX_PAIRS = 3_000_000
@@ -38,8 +39,12 @@ def _num(x):
 def normalise(params):
     """Fill defaults and validate; raises ValueError with a message meant for the user."""
     p = dict(params or {})
+    fun = funnel.normalise(p.get("funnel"), 1, p.get("mode", "scan"))
     models = {k: False for k in MODEL_KEYS}
-    models.update({k: bool(v) for k, v in (p.get("models") or {}).items() if k in models})
+    if fun["mode"] == "manual":
+        models.update({m: True for st in fun["stages"] for m in st["models"]})
+    else:
+        models.update({k: bool(v) for k, v in (p.get("models") or {}).items() if k in models})
     if not any(models.values()):
         raise ValueError("Select at least one model.")
     alleles = list(dict.fromkeys(allele_lib.canonical(a) for a in p.get("alleles", []) if str(a).strip()))
@@ -62,7 +67,7 @@ def normalise(params):
     if models["iedb_imm"] and iedb["mask_choice"] == "custom":
         ci.parse_positions(iedb["positions"])                  # ValueError with a readable message
     return {"text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths,
-            "alleles": alleles, "models": models, "chain": bool(p.get("chain", True)),
+            "alleles": alleles, "models": models, "chain": bool(p.get("chain", True)) and fun["mode"] == "auto", "funnel": fun,
             "filters": f, "nmp": nmp, "iedb": iedb,
             "preset": p.get("preset") or "balanced", "rules": p.get("rules") or {}}
 
@@ -170,95 +175,103 @@ def run(params, job):
         job.stage(f"bigmhc_{x}", f"BigMHC {x.upper()}", weight=2.0)
     job.stage("merge", "Merging and filtering", weight=0.3)
 
-    # ---- 1. NetMHCpan ------------------------------------------------------------------------
-    nmp = None
-    if m["netmhcpan"]:
-        if not nm_ok:
-            raise ValueError("None of the selected alleles is known to NetMHCpan.")
-        res, logs = nm.run_netmhcpan(uniq, [allele_lib.netmhcpan_name(a) for a in nm_ok],
-                                     {**p["nmp"], "t": None, "raw": ""}, job=job)
-        for l in logs[-3:]:
-            job.log(l[:300])
-        if res.empty:
-            raise RuntimeError("NetMHCpan returned no results (see the log).")
-        res["Allele"] = [allele_lib.canonical(a) for a in res["Allele"]]
-        nmp = res
-        job.finish_stage("netmhcpan", f"{len(res):,} predictions")
-
-    # ---- 2. MixMHCpred and PRIME (fast, every pair) ----------------------------------------------
-    mix = pri = None
-    if m["mixmhcpred"]:
-        mix, n = mx.predict(uniq, p["alleles"], job=job)
-        warns += n
-        job.finish_stage("mixmhcpred", f"{len(mix):,} predictions")
-    if m["prime"]:
-        pri, n = pr.predict(uniq, p["alleles"], job=job)
-        warns += [x for x in n if x not in warns]
-        job.finish_stage("prime", f"{len(pri):,} predictions")
-
-    iedb = None
-    if m["iedb_imm"]:
-        iedb, n = ci.predict(uniq, p["alleles"], p["iedb"]["mask_choice"], p["iedb"]["positions"])
-        warns += n
-        job.finish_stage("iedb_imm", f"{len(iedb):,} scores")
-
+    manual = p["funnel"]["mode"] == "manual"
     seqs = nm.read_sequences(p["text"]) if p["mode"] == "scan" else None
-    mhcf = ctl = chop = None
-    if m["mhcflurry"]:
-        mhcf, n = mf.predict(peps, p["alleles"], sequences=seqs, job=job)
-        warns += n
-        job.finish_stage("mhcflurry", f"{len(mhcf):,} predictions")
-    if m["netctlpan"]:
-        ctl, n = ip.netctlpan(seqs, p["lengths"], p["alleles"], job=job)
-        warns += n
-        job.finish_stage("netctlpan", f"{len(ctl):,} scores")
-    if m["netchop"]:
-        chop = ip.netchop_cterm(seqs, peps, job=job)
-        job.finish_stage("netchop", f"{len(chop):,} scores")
-    if seqs and any(set(sq) - set("ACDEFGHIKLMNPQRSTVWY") for _, sq in seqs) and (m["netctlpan"] or m["netchop"]):
-        warns.append("Characters that are not amino acids were replaced by X before NetCTLpan / NetChop; "
-                     "scores near them are less reliable")
-
-    # ---- 3. assemble the pair table so far (the chain gate needs it) ---------------------------------
-    if nmp is not None:
-        base = peps.merge(nmp, on="Peptide")
+    fstats = []
+    nmp = mix = pri = iedb = mhcf = ctl = chop = None
+    if manual:
+        base, ran, fstats = funnel.run_manual(1, p, peps, seqs, job, warns)
+        nmp, mix, pri, iedb, mhcf, ctl, chop = (base if k in ran else None for k in ("netmhcpan", "mixmhcpred", "prime", "iedb_imm", "mhcflurry", "netctlpan", "netchop"))
     else:
-        base = peps.merge(pd.DataFrame({"Allele": p["alleles"]}), how="cross")
-    for extra in (mix, pri, iedb):
-        if extra is not None and not extra.empty:
-            base = base.merge(extra, on=["Peptide", "Allele"], how="left")
-    for extra in (mhcf, ctl):                                     # context-dependent: keyed by position
-        if extra is not None and not extra.empty:
-            base = base.merge(extra, on=["Protein", "Start", "Peptide", "Allele"], how="left")
-    if chop is not None and not chop.empty:
-        base = base.merge(chop, on=["Protein", "Start", "Peptide"], how="left")
+        # ---- 1. NetMHCpan ------------------------------------------------------------------------
+        nmp = None
+        if m["netmhcpan"]:
+            if not nm_ok:
+                raise ValueError("None of the selected alleles is known to NetMHCpan.")
+            res, logs = nm.run_netmhcpan(uniq, [allele_lib.netmhcpan_name(a) for a in nm_ok],
+                                         {**p["nmp"], "t": None, "raw": ""}, job=job)
+            for l in logs[-3:]:
+                job.log(l[:300])
+            if res.empty:
+                raise RuntimeError("NetMHCpan returned no results (see the log).")
+            res["Allele"] = [allele_lib.canonical(a) for a in res["Allele"]]
+            nmp = res
+            job.finish_stage("netmhcpan", f"{len(res):,} predictions")
 
-    # ---- 4. BigMHC. Chained: EL scores the pairs that could still become binders, IM only the pairs that did ----------
-    bmres = None
-    if use_bm:
-        gated = p["chain"] and (nmp is not None or mix is not None or mhcf is not None)
-        rules = consensus.resolve_rules(1, p["preset"], p["rules"])
-        ok_allele = base["Allele"].isin(bm_ok)
-        if gated:
-            first = _binding_pass(base, f) & consensus.gate_mask(base, 1, rules, pending=int(m["bigmhc_el"]))
+        # ---- 2. MixMHCpred and PRIME (fast, every pair) ----------------------------------------------
+        mix = pri = None
+        if m["mixmhcpred"]:
+            mix, n = mx.predict(uniq, p["alleles"], job=job)
+            warns += n
+            job.finish_stage("mixmhcpred", f"{len(mix):,} predictions")
+        if m["prime"]:
+            pri, n = pr.predict(uniq, p["alleles"], job=job)
+            warns += [x for x in n if x not in warns]
+            job.finish_stage("prime", f"{len(pri):,} predictions")
+
+        iedb = None
+        if m["iedb_imm"]:
+            iedb, n = ci.predict(uniq, p["alleles"], p["iedb"]["mask_choice"], p["iedb"]["positions"])
+            warns += n
+            job.finish_stage("iedb_imm", f"{len(iedb):,} scores")
+
+        seqs = nm.read_sequences(p["text"]) if p["mode"] == "scan" else None
+        mhcf = ctl = chop = None
+        if m["mhcflurry"]:
+            mhcf, n = mf.predict(peps, p["alleles"], sequences=seqs, job=job)
+            warns += n
+            job.finish_stage("mhcflurry", f"{len(mhcf):,} predictions")
+        if m["netctlpan"]:
+            ctl, n = ip.netctlpan(seqs, p["lengths"], p["alleles"], job=job)
+            warns += n
+            job.finish_stage("netctlpan", f"{len(ctl):,} scores")
+        if m["netchop"]:
+            chop = ip.netchop_cterm(seqs, peps, job=job)
+            job.finish_stage("netchop", f"{len(chop):,} scores")
+        if seqs and any(set(sq) - set("ACDEFGHIKLMNPQRSTVWY") for _, sq in seqs) and (m["netctlpan"] or m["netchop"]):
+            warns.append("Characters that are not amino acids were replaced by X before NetCTLpan / NetChop; "
+                         "scores near them are less reliable")
+
+        # ---- 3. assemble the pair table so far (the chain gate needs it) ---------------------------------
+        if nmp is not None:
+            base = peps.merge(nmp, on="Peptide")
         else:
-            first = pd.Series(True, index=base.index)
-        steps = [("el", first & ok_allele)] if m["bigmhc_el"] else []
-        if m["bigmhc_im"]:
-            steps.append(("im", None if m["bigmhc_el"] and gated else first & ok_allele))      # None: decided after EL
-        for model, keep in steps:
-            if keep is None:
-                keep = consensus.binder_mask(base, 1, rules) & _binding_pass(base, f) & first & ok_allele
-            pairs = base.loc[keep, ["Peptide", "Allele"]].drop_duplicates()
+            base = peps.merge(pd.DataFrame({"Allele": p["alleles"]}), how="cross")
+        for extra in (mix, pri, iedb):
+            if extra is not None and not extra.empty:
+                base = base.merge(extra, on=["Peptide", "Allele"], how="left")
+        for extra in (mhcf, ctl):                                     # context-dependent: keyed by position
+            if extra is not None and not extra.empty:
+                base = base.merge(extra, on=["Protein", "Start", "Peptide", "Allele"], how="left")
+        if chop is not None and not chop.empty:
+            base = base.merge(chop, on=["Protein", "Start", "Peptide"], how="left")
+
+        # ---- 4. BigMHC. Chained: EL scores the pairs that could still become binders, IM only the pairs that did ----------
+        bmres = None
+        if use_bm:
+            gated = p["chain"] and (nmp is not None or mix is not None or mhcf is not None)
+            rules = consensus.resolve_rules(1, p["preset"], p["rules"])
+            ok_allele = base["Allele"].isin(bm_ok)
             if gated:
-                job.log(f"chain: {len(pairs):,} pairs -> BigMHC {model.upper()}")
-            if pairs.empty:
-                job.finish_stage(f"bigmhc_{model}", "nothing to score")
-                warns.append(f"BigMHC {model.upper()} had nothing to score (no pair passed the earlier tools, or no human alleles).")
-                continue
-            sc = bm.predict_pairs(pairs.rename(columns={"Peptide": "peptide", "Allele": "allele"}),
-                                  (model,), job=job).rename(columns={"peptide": "Peptide", "allele": "Allele"})
-            base = base.merge(sc, on=["Peptide", "Allele"], how="left")
+                first = _binding_pass(base, f) & consensus.gate_mask(base, 1, rules, pending=int(m["bigmhc_el"]))
+            else:
+                first = pd.Series(True, index=base.index)
+            steps = [("el", first & ok_allele)] if m["bigmhc_el"] else []
+            if m["bigmhc_im"]:
+                steps.append(("im", None if m["bigmhc_el"] and gated else first & ok_allele))      # None: decided after EL
+            for model, keep in steps:
+                if keep is None:
+                    keep = consensus.binder_mask(base, 1, rules) & _binding_pass(base, f) & first & ok_allele
+                pairs = base.loc[keep, ["Peptide", "Allele"]].drop_duplicates()
+                if gated:
+                    job.log(f"chain: {len(pairs):,} pairs -> BigMHC {model.upper()}")
+                if pairs.empty:
+                    job.finish_stage(f"bigmhc_{model}", "nothing to score")
+                    warns.append(f"BigMHC {model.upper()} had nothing to score (no pair passed the earlier tools, or no human alleles).")
+                    continue
+                sc = bm.predict_pairs(pairs.rename(columns={"Peptide": "peptide", "Allele": "allele"}),
+                                      (model,), job=job).rename(columns={"peptide": "Peptide", "allele": "Allele"})
+                base = base.merge(sc, on=["Peptide", "Allele"], how="left")
 
     # ---- 5. flags, ordering, per-peptide summary -------------------------------------------------------
     job.update("merge", msg="merging", state="running")
@@ -310,6 +323,8 @@ def run(params, job):
     if skipped:
         warns.append("Filters ignored because their model was not run: " + ", ".join(skipped))
     base["Pass_All"] = base[flags].all(axis=1) if flags else pd.Series(True, index=base.index)
+    if manual:
+        base["Pass_All"] &= base["Funnel_Alive"]
 
     sort_cols, asc = ["Pass_All"], [False]
     for col, a in (("NMP_%Rank_EL", True), ("MixMHC_%Rank", True), ("MHCF_Presentation_%Rank", True),
@@ -341,7 +356,7 @@ def run(params, job):
     job.update("merge", msg="consensus, population coverage, ranking", state="running")
     info = {"mode": p["mode"], "lengths": p["lengths"], "alleles": p["alleles"], "peptides": n_pep,
             "models": [k for k, on in m.items() if on], "filters": {k: v for k, v in f.items() if v is not None},
-            "chain": p["chain"], "input_chars": len(p["text"]),
+            "chain": p["chain"], "funnel": {**p["funnel"], "stats": fstats}, "input_chars": len(p["text"]),
             "input_peptides": peps["Peptide"].drop_duplicates().tolist() if p["mode"] == "peptides" else None}
     cons = report.finish(base, 1, p, job, info, warns, base["Pass_All"])
 

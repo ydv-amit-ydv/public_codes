@@ -26,6 +26,7 @@ from common import runs                                      # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
+import funnel, models as model_registry
 import pipeline, pipeline_ii, pipeline_dual, pipeline_single                                  # noqa: E402
 import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import pandas as pd                                          # noqa: E402
@@ -327,6 +328,9 @@ def _needed_models(params):
             out += _needed_models(p) if p else []
         return list(dict.fromkeys(out))
     m = params.get("models") or {}
+    fun = params.get("funnel") or {}
+    if fun.get("mode") == "manual":
+        m = {k: True for st in fun.get("stages") or [] for k in st.get("models", [])}
     need = []
     if int(params.get("mhc_class", 1)) == 2:
         if m.get("netmhciipan_el") or m.get("netmhciipan_ba") or m.get("cd4episcore"): need.append("iedb_bundle_ii")
@@ -441,6 +445,27 @@ def runs_list():
     return jsonify(runs=out, workspace=config.workspace(), total_size=sum(r["size"] for r in out))
 
 
+@main.post("/api/runs/<run_id>/rerank")
+def runs_rerank(run_id):
+    """The same predictions under another strategy: seconds, no model runs; the result is a new run in Projects."""
+    body = request.get_json(force=True) or {}
+    src, meta = _job(run_id), runs.read(run_id) if run_id.isalnum() else None
+    if not src or not meta or src.state != "done":
+        return jsonify(error="Only a finished run can be re-ranked."), 400
+    preset = body.get("preset") or (meta["params"].get("preset") or "balanced")
+    params = {**meta["params"], "preset": preset, "rules": body.get("rules") or {}, "rerank_of": run_id,
+              "title": body.get("title") or f"{meta['name']} (re-ranked: {preset})"}
+    try:
+        for c in (1, 2):
+            if params.get(f"c{c}"):
+                import consensus
+                consensus.resolve_rules(c, preset, params["rules"])
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    job = _submit("pipeline", params, lambda j: pipeline_dual.rerank(src, params, j))
+    return jsonify(id=job.id)
+
+
 @main.get("/api/runs/<run_id>")
 def runs_get(run_id):
     m = runs.read(run_id) if run_id.isalnum() else None
@@ -543,6 +568,35 @@ def job_detail(job_id):
     df = pd.read_csv(r["master_csv"], low_memory=False)
     df = df[(df["Peptide"] == request.args.get("peptide", "")) & (df["Start"] == int(request.args.get("start", 0)))]
     return jsonify(columns=list(df.columns), rows=json.loads(df.to_json(orient="records")))
+
+
+@main.get("/api/funnel")
+def api_funnel():
+    cls = int(request.args.get("mhc_class", 1))
+    cat = [{"key": k, "label": sp.label, "cost": sp.cost, "protein": sp.protein, "alleles": sp.alleles}
+           for k, sp in model_registry.SPECS.items() if sp.cls == cls]
+    return jsonify(models=sorted(cat, key=lambda x: (x["cost"], x["label"])), templates={k: {"label": v[0], "stages": v[1]} for k, v in funnel.templates(cls).items()})
+
+
+@main.get("/api/performance")
+def api_performance_get():
+    return jsonify(performance=config.load()["performance"], effective=config.performance())
+
+
+@main.put("/api/performance")
+def api_performance_put():
+    body = request.get_json(force=True)
+    try:
+        cur = json.loads(config.raw_text())
+        perf = {**config.DEFAULT["performance"], **cur.get("performance", {})}
+        for k in perf:
+            if k in body:
+                perf[k] = float(body[k]) if k == "timeout_minutes" else int(body[k])
+        cur["performance"] = perf
+        config.save_text(json.dumps(cur))
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(performance=perf, effective=config.performance())
 
 
 @main.get("/api/rules")

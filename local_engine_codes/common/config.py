@@ -16,6 +16,7 @@ CONFIG_PATH = os.path.expanduser(
 DEFAULT = {
     "tmp_dir": "auto",
     "workspace_dir": "auto",
+    "performance": {"threads": 0, "nice": 5, "stall_seconds": 900, "timeout_minutes": 0, "parallel_models": 2},
     "population": {"label": "India", "weights_csv": "auto"},
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
@@ -69,6 +70,9 @@ def validate(obj):
     for k in ("tmp_dir", "workspace_dir"):
         if k in obj and not isinstance(obj[k], str):
             errs.append(f"{k} must be a string")
+    perf = obj.get("performance", {})
+    if not isinstance(perf, dict) or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in perf.values()):
+        errs.append("performance must be an object of numbers (threads, nice, stall_seconds, timeout_minutes, parallel_models)")
     models = obj.get("models", {})
     if not isinstance(models, dict):
         return errs + ["'models' must be an object"]
@@ -125,6 +129,17 @@ def tmp_dir():
     d = os.path.join(tempfile.gettempdir(), "epitope_engine") if v in ("", "auto") else os.path.expanduser(v)
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def performance():
+    """Resource limits applied to every program the engine starts. threads 0 = let each tool use all cores; nice 0-19 lowers
+    the priority so the machine stays responsive; stall_seconds 0 = never kill a quiet program; timeout_minutes 0 = no limit;
+    parallel_models = how many models of one funnel stage run at the same time (they share the thread budget)."""
+    perf = {**DEFAULT["performance"], **(load().get("performance") or {})}
+    cpus = os.cpu_count() or 1
+    return {"threads": max(0, int(perf["threads"])), "nice": min(19, max(0, int(perf["nice"]))), "cpus": cpus,
+            "stall_seconds": max(0, int(perf["stall_seconds"])), "timeout_seconds": max(0, int(perf["timeout_minutes"])) * 60,
+            "parallel_models": max(1, min(8, int(perf["parallel_models"])))}
 
 
 def workspace():

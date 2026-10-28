@@ -5,7 +5,7 @@ programs are started through run_cmd(), which registers the process with the job
 so Cancel can stop it (its whole process group, so BigMHC's data-loader workers
 die too) and can stream output lines for progress parsing.
 """
-import os, signal, subprocess, threading, time, uuid
+import contextvars, os, shutil, signal, subprocess, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -112,23 +112,105 @@ class Job:
                     "summary": (self.result or {}).get("summary")}
 
 
-def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None):
-    """subprocess.run lookalike. With a job: cancellable. With merge=True stderr is folded
-    into stdout and each line is passed to on_line as it arrives. Standard input is always
-    closed: some tools (IEDB's bundle) otherwise sit waiting for it forever."""
-    if job is None and on_line is None:
-        return subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cwd, stdin=subprocess.DEVNULL)
+class ToolHung(RuntimeError):
+    """A program stopped making progress (or ran past its time limit) and was killed."""
+
+
+THREADS = contextvars.ContextVar("engine_threads", default=None)      # per-thread CPU budget set by a parallel stage
+_THREAD_VARS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+                "TF_NUM_INTRAOP_THREADS", "TF_NUM_INTEROP_THREADS", "RAYON_NUM_THREADS")
+
+
+def _liveness(pgid):
+    """A number that changes whenever the process group computes, reads or writes (Linux /proc); None where unavailable."""
+    total = 0
+    try:
+        for name in os.listdir("/proc"):
+            if not name.isdigit():
+                continue
+            try:
+                with open(f"/proc/{name}/stat") as f:
+                    st = f.read()
+                fields = st[st.rindex(")") + 2:].split()
+                if int(fields[2]) != pgid:                       # pgrp
+                    continue
+                total += int(fields[11]) + int(fields[12])      # utime + stime
+                try:
+                    with open(f"/proc/{name}/io") as f:
+                        io = dict(l.split(": ") for l in f.read().splitlines())
+                    total += int(io.get("rchar", 0)) + int(io.get("wchar", 0))
+                except (OSError, ValueError):
+                    pass
+            except (OSError, ValueError, IndexError):
+                continue
+    except OSError:
+        return None
+    return total
+
+
+def _limits():
+    from . import config
+    return config.performance()
+
+
+def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None, stall=None, timeout=None):
+    """subprocess.run lookalike. With a job: cancellable. With merge=True stderr is folded into stdout and each line
+    is passed to on_line as it arrives. Standard input is always closed (IEDB's bundle otherwise waits for it forever).
+
+    Never hangs: a watchdog kills the program when it shows no CPU, disk or output activity for `stall` seconds
+    (Settings > performance.stall_seconds) or runs longer than `timeout`, and raises ToolHung with the reason. Thread
+    limits (performance.threads) are put in the environment, and the program runs at a lower priority (performance.nice)."""
+    lim = _limits()
+    stall = lim["stall_seconds"] if stall is None else stall
+    timeout = lim["timeout_seconds"] if timeout is None else timeout
     env = dict(env or os.environ, PYTHONUNBUFFERED="1")     # so progress lines arrive immediately
+    threads = THREADS.get() or lim["threads"]
+    if threads:
+        for v in _THREAD_VARS:
+            env[v] = str(threads)
+    name = os.path.basename(str(cmd[0]))
+    if name in ("bash", "sh") and len(cmd) > 1:
+        name = os.path.basename(str(cmd[1]))
+    if lim["nice"] and shutil.which("nice") and shutil.which(str(cmd[0])):      # a missing program must still fail as itself
+        cmd = ["nice", "-n", str(lim["nice"])] + list(cmd)
     if job:
         job.check()
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT if merge else subprocess.PIPE,
                          stdin=subprocess.DEVNULL, text=True, env=env, bufsize=1, start_new_session=True, cwd=cwd)
     if job:
         job._register(p)
+    state = {"why": None, "last_out": time.time()}
+    done = threading.Event()
+
+    def watchdog():
+        t0 = last_change = time.time()
+        sig = _liveness(p.pid)
+        tick = max(0.5, min(5.0, (stall or timeout or 20) / 4))
+        while not done.wait(tick):
+            now = time.time()
+            cur = _liveness(p.pid)
+            if cur is None or cur != sig or now - state["last_out"] < 5:
+                sig, last_change = cur, now
+            if timeout and now - t0 > timeout:
+                state["why"] = f"ran longer than the {int(timeout)} s limit"
+            elif stall and now - last_change > stall and cur is not None:
+                state["why"] = f"showed no activity (no CPU, disk or output) for {int(stall)} s"
+            if state["why"]:
+                for sgn in (signal.SIGTERM, signal.SIGKILL):
+                    try:
+                        os.killpg(p.pid, sgn)
+                    except (ProcessLookupError, PermissionError):
+                        break
+                    if done.wait(5):
+                        return
+                return
+    wd = threading.Thread(target=watchdog, daemon=True)
+    wd.start()
     try:
         if merge:
             out = []
             for line in p.stdout:
+                state["last_out"] = time.time()
                 out.append(line)
                 if on_line:
                     on_line(line.rstrip("\n"))
@@ -138,8 +220,12 @@ def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None):
             so, se = p.communicate()
             res = subprocess.CompletedProcess(cmd, p.returncode, so, se)
     finally:
+        done.set()
         if job:
             job._unregister(p)
+    if state["why"]:
+        raise ToolHung(f"{name} {state['why']} and was stopped. "
+                       "Check the tool in Settings > Test run, or raise performance.stall_seconds if it is only slow.")
     if job:
         job.check()
     return res

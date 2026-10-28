@@ -13,6 +13,7 @@ import os, time
 import pandas as pd
 
 import consensus
+import funnel
 import report
 
 from common import alleles as allele_lib, config
@@ -34,8 +35,12 @@ def _num(x):
 
 def normalise(params):
     p = dict(params or {})
+    fun = funnel.normalise(p.get("funnel"), 2, p.get("mode", "scan"))
     models = {k: False for k in MODEL_KEYS}
-    models.update({k: bool(v) for k, v in (p.get("models") or {}).items() if k in models})
+    if fun["mode"] == "manual":
+        models.update({m: True for st in fun["stages"] for m in st["models"]})
+    else:
+        models.update({k: bool(v) for k, v in (p.get("models") or {}).items() if k in models})
     if not any(models.values()):
         raise ValueError("Select at least one model.")
     raw = [str(a) for a in p.get("alleles", []) if str(a).strip()]
@@ -53,7 +58,7 @@ def normalise(params):
         raise ValueError(f"NetMHCIIpan version must be one of {nn.VERSIONS}.")
     f = {k: _num((p.get("filters") or {}).get(k)) for k in FILTER_KEYS}
     return {"text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths, "alleles": alleles,
-            "models": models, "chain": bool(p.get("chain", True)), "filters": f, "version": version,
+            "models": models, "chain": bool(p.get("chain", True)) and fun["mode"] == "auto", "funnel": fun, "filters": f, "version": version,
             "preset": p.get("preset") or "balanced", "rules": p.get("rules") or {}}
 
 
@@ -112,43 +117,52 @@ def run(params, job):
     job.stage("merge", "Merging and filtering", weight=0.3)
     scan_keys = ["Protein", "Start", "Peptide", "Allele"]
 
-    nii = None
-    if kinds:
-        nii, n = nn.predict(peps, p["alleles"], p["lengths"] or sorted({len(x) for x in uniq}), seqs, kinds, p["version"], job=job)
-        warns += n
-        if nii.empty:
-            raise RuntimeError("NetMHCIIpan returned no results (see the log).")
-        job.finish_stage("netmhciipan", f"{len(nii):,} predictions")
-    mix = None
-    if m["mixmhc2pred"]:
-        mix, n = m2.predict(peps, p["alleles"], seqs, job=job)
-        warns += n
-        job.finish_stage("mixmhc2pred", f"{len(mix):,} predictions")
-
-    if nii is not None:
-        base = peps.merge(nii, on=["Protein", "Start", "Peptide"] if seqs else ["Peptide"])
+    manual = p["funnel"]["mode"] == "manual"
+    fstats = []
+    nii = mix = chop = None
+    if manual:
+        base, ran, fstats = funnel.run_manual(2, p, peps, seqs, job, warns)
+        nii = base if ran & {"netmhciipan_el", "netmhciipan_ba"} else None
+        mix = base if "mixmhc2pred" in ran else None
+        chop = base if "cd4episcore" in ran else None
     else:
-        base = peps.merge(pd.DataFrame({"Allele": p["alleles"]}), how="cross")
-    if mix is not None and not mix.empty:
-        base = base.merge(mix, on=scan_keys, how="left")
+        nii = None
+        if kinds:
+            nii, n = nn.predict(peps, p["alleles"], p["lengths"] or sorted({len(x) for x in uniq}), seqs, kinds, p["version"], job=job)
+            warns += n
+            if nii.empty:
+                raise RuntimeError("NetMHCIIpan returned no results (see the log).")
+            job.finish_stage("netmhciipan", f"{len(nii):,} predictions")
+        mix = None
+        if m["mixmhc2pred"]:
+            mix, n = m2.predict(peps, p["alleles"], seqs, job=job)
+            warns += n
+            job.finish_stage("mixmhc2pred", f"{len(mix):,} predictions")
 
-    chop = None
-    if m["cd4episcore"]:
-        gated = p["chain"] and (nii is not None or mix is not None)
-        if gated:
-            rules = consensus.resolve_rules(2, p["preset"], p["rules"])
-            use = base[_binding_pass(base, f) & consensus.gate_mask(base, 2, rules)]["Peptide"].drop_duplicates().tolist()
+        if nii is not None:
+            base = peps.merge(nii, on=["Protein", "Start", "Peptide"] if seqs else ["Peptide"])
         else:
-            use = uniq
-        if gated:
-            job.log(f"chain: {len(use):,} of {n_pep:,} peptides pass the binding filters -> CD4episcore")
-        if use:
-            chop = cd.predict(use, job=job)
-            base = base.merge(chop, on="Peptide", how="left")
-            job.finish_stage("cd4episcore", f"{len(chop):,} peptides scored")
-        else:
-            job.finish_stage("cd4episcore", "nothing to score")
-            warns.append("CD4episcore had nothing to score (no peptide passed the binding filters).")
+            base = peps.merge(pd.DataFrame({"Allele": p["alleles"]}), how="cross")
+        if mix is not None and not mix.empty:
+            base = base.merge(mix, on=scan_keys, how="left")
+
+        chop = None
+        if m["cd4episcore"]:
+            gated = p["chain"] and (nii is not None or mix is not None)
+            if gated:
+                rules = consensus.resolve_rules(2, p["preset"], p["rules"])
+                use = base[_binding_pass(base, f) & consensus.gate_mask(base, 2, rules)]["Peptide"].drop_duplicates().tolist()
+            else:
+                use = uniq
+            if gated:
+                job.log(f"chain: {len(use):,} of {n_pep:,} peptides pass the binding filters -> CD4episcore")
+            if use:
+                chop = cd.predict(use, job=job)
+                base = base.merge(chop, on="Peptide", how="left")
+                job.finish_stage("cd4episcore", f"{len(chop):,} peptides scored")
+            else:
+                job.finish_stage("cd4episcore", "nothing to score")
+                warns.append("CD4episcore had nothing to score (no peptide passed the binding filters).")
 
     job.update("merge", msg="merging", state="running")
     base.insert(3, "Length", base["Peptide"].str.len())
@@ -177,6 +191,8 @@ def run(params, job):
     if skipped:
         warns.append("Filters ignored because their model was not run: " + ", ".join(skipped))
     base["Pass_All"] = base[flags].all(axis=1)
+    if manual:
+        base["Pass_All"] &= base["Funnel_Alive"]
 
     sort_cols, asc = ["Pass_All"], [False]
     for col, a in (("NII_%Rank_EL", True), ("NII_%Rank_BA", True), ("MIX2_%Rank", True), ("CD4_Episcore", True)):
@@ -204,7 +220,7 @@ def run(params, job):
     job.update("merge", msg="consensus, population coverage, ranking", state="running")
     info = {"mode": p["mode"], "lengths": p["lengths"], "alleles": p["alleles"], "peptides": n_pep,
             "models": [k for k, on in m.items() if on], "filters": {k: v for k, v in f.items() if v is not None},
-            "chain": p["chain"], "netmhciipan_version": p["version"], "input_chars": len(p["text"])}
+            "chain": p["chain"], "funnel": {**p["funnel"], "stats": fstats}, "netmhciipan_version": p["version"], "input_chars": len(p["text"])}
     cons = report.finish(base, 2, p, job, info, warns, base["Pass_All"])
 
     jobdir = config.run_dir(job.id)

@@ -70,6 +70,9 @@ def finish(base, cls, p, job, info, warns, filters_ok):
     with open(dpath, "w") as f:
         json.dump(details, f, indent=2, default=str)
     out["details_json"] = dpath
+    bpath = os.path.join(jobdir, f"{job.id}_pairs_base.pkl.gz")
+    base.assign(_filters_ok=pd.Series(filters_ok).reindex(base.index).fillna(False).astype(bool)).to_pickle(bpath, compression="gzip")
+    out["base_pkl"] = bpath
     out["consensus"] = {"rules": rules, "funnel": res["funnel"], "panel": res["panel"], "curve": res["curve"], "suggestions": sugg,
                         "coverage_metric": res["coverage_metric"], "tools": res["tools"], "headline": cur,
                         "population": pop.info() if pop else None}

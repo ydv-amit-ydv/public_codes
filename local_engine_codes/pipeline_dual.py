@@ -13,6 +13,7 @@ import zipfile
 import pandas as pd
 
 import consensus
+import report
 import html_report
 import pipeline
 import pipeline_ii
@@ -79,12 +80,17 @@ def run(params, job):
     for c in classes:
         job.log(f"--- MHC class {'I' if c == 1 else 'II'} ---")
         MODULE[c].run(parts[c], views[c])
+    _finalize(job, params, classes, {c: views[c].result for c in classes}, seqs, t0, parts[classes[0]].get("preset", "balanced"))
+
+
+def _finalize(job, params, classes, class_results, seqs, t0, strategy):
+    """Regions, report, per-model files and the zip, from the per-class results (fresh or re-ranked)."""
     job.stage("regions", "Regions and report", weight=0.3)
     job.update("regions", msg="grouping candidates into regions", state="running")
 
     results = {}
     for c in classes:
-        r = views[c].result
+        r = class_results[c]
         results[c] = {"result": r, "peptides": pd.read_csv(r["peptides_csv"], low_memory=False), "consensus": r["consensus"],
                       "details": json.load(open(r["details_json"]))}
     rules = results[classes[0]]["consensus"]["rules"]
@@ -106,7 +112,7 @@ def run(params, job):
         f"class {'I' if c == 1 else 'II'}: {len(results[c]['details']['input']['alleles'])} alleles, fragment sizes "
         f"{', '.join(map(str, results[c]['details']['input'].get('lengths') or [])) or 'as given'}, models "
         f"{', '.join(results[c]['details']['input']['models'])}" for c in classes)
-    html = html_report.build({"title": params.get("title") or "Epitope prediction report", "job": job.id, "strategy": parts[classes[0]].get("preset", "balanced"),
+    html = html_report.build({"title": params.get("title") or "Epitope prediction report", "job": job.id, "strategy": strategy,
                               "regions": reg, "classes": results, "seqs": seqs, "warnings": warns, "rules": rules, "info_text": info_text,
                               "population_text": (f"{pop.label}: {len(pop.freqs)} alleles, regions weighted " +
                                                   ", ".join(f"{k} {v:.2f}" for k, v in pop.region_weights.items())) if pop else "none: coverage is the share of the chosen alleles"})
@@ -152,3 +158,42 @@ def _per_model(results, jobdir, jid):
             df.to_csv(path, index=False)
             out.append((f"per_model/class{'I' * c}_{t['label']}.csv", path))
     return out
+
+
+LOOSER = {"any": 0, "majority": 1, "all": 2}
+
+
+def rerank(src_job, params, job):
+    """Same predictions, another strategy: rebuilds votes, coverage, ranking, regions and the report from the saved pair tables
+    (seconds, no model runs). Pairs that a slow tool never scored because the original strategy ruled them out stay unscored."""
+    t0 = time.time()
+    src = src_job.result
+    if not src or not src.get("dual"):
+        raise ValueError("Only finished pipeline runs can be re-ranked.")
+    classes = sorted(int(c) for c in src["classes"])
+    pop_job_text = params.get("text", "")
+    seqs = _seqs(pop_job_text, params.get("mode", "scan"))
+    job.stage("rank", "Re-ranking the saved predictions", weight=1.0, total=len(classes))
+    out, warns = {}, []
+    for c in classes:
+        r0 = src["classes"][str(c)]
+        if not r0.get("base_pkl") or not os.path.exists(r0["base_pkl"]):
+            raise ValueError("This run was made before re-ranking existed: its pair table was not kept. Run it again once.")
+        base = pd.read_pickle(r0["base_pkl"])
+        fok = base.pop("_filters_ok").astype(bool)
+        details0 = json.load(open(r0["details_json"]))
+        p = {"preset": params.get("preset", "balanced"), "rules": params.get("rules") or {}}
+        new = consensus.resolve_rules(c, p["preset"], p["rules"])
+        old = details0["rules"]
+        looser = (new["bind_rank_max"] > old["bind_rank_max"] or LOOSER.get(str(new["bind_min_agree"]), 1) < LOOSER.get(str(old["bind_min_agree"]), 1))
+        if looser and details0["input"].get("funnel", {}).get("mode", "auto") == "auto":
+            warns.append(f"Class {'I' if c == 1 else 'II'}: this strategy is looser than the one the run was made with. The slow tools (BigMHC, CD4episcore) "
+                         "scored only pairs that could pass the original rules, so some new binders have no slow-tool score. Run again for exact numbers.")
+        view = JobView(job, f"c{c}", "MHC I (CTL)" if c == 1 else "MHC II (HTL)")
+        res = report.finish(base, c, p, view, details0["input"], list(details0.get("warnings", [])), fok)
+        res["summary"] = {**r0["summary"], "warnings": list(dict.fromkeys(details0.get("warnings", []) + warns)), "seconds": round(time.time() - t0, 1)}
+        out[c] = res
+        job.update("rank", done=len(out), msg=f"{len(out)}/{len(classes)} classes")
+    job.finish_stage("rank", "done")
+    _finalize(job, params, classes, out, seqs, t0, params.get("preset", "balanced"))
+

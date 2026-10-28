@@ -109,6 +109,17 @@ assert RG.build(None, None, {}).empty
 lab = RG.label_peptides(peps([(10, 18, 90, .5), (250, 258, 1, .1)]), reg, 1)
 assert lab.Region_Type.tolist() == ["CTL+HTL", ""], lab[["Region_ID", "Region_Type"]]
 
+# clusters: overlapping windows collapse onto the best one and the members are listed
+rows = []
+for st in (1, 2, 3, 40):                      # 9-mers at 1,2,3 overlap (8/9, 7/9); 40 does not
+    pepx = "ACDEFGHIKLMNPQRSTVWY"[st % 20: st % 20 + 9].ljust(9, "A")
+    rows.append(("P", st, pepx + str(st)[:0], "HLA-A*02:01", 0.1 if st == 2 else 0.5, 0.1 if st == 2 else 0.5, 0.1 if st == 2 else 0.5, 1.0))
+cres = C.analyse(pairs(rows), 1, dict(C.resolve_rules(1, "iedb"), collapse=True, overlap_fraction=0.7), pop)["peptides"]
+rep = cres[cres.Is_Representative & (cres.Start == 2)].iloc[0]
+assert rep.Cluster_Size == 3 and rep.Cluster_Members.count("@") == 2, rep[["Cluster_Size", "Cluster_Members"]]
+assert set(cres[cres.Cluster_ID == rep.Cluster_ID].Cluster_Representative) == {rep.Peptide}
+assert cres[cres.Start == 40].iloc[0].Cluster_Size == 1 and cres[cres.Start == 40].iloc[0].Cluster_Members == ""
+
 # every preset runs and states every rule field
 for cls in (1, 2):
     for name, r in C.preset_rules(cls).items():

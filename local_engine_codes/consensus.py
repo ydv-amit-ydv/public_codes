@@ -402,6 +402,9 @@ def shortlist(pep, rules, pop, n_alleles_tested):
     pep["Is_Representative"] = False
     pep["Cluster_Size"] = pd.array([pd.NA] * len(pep), dtype="Int64")
     pep["Region"] = ""
+    pep["Cluster_Representative"] = ""        # the peptide that stands for this one (itself for a representative)
+    pep["Cluster_Overlap"] = np.nan           # overlap with the representative, as a fraction of the shorter peptide
+    pep["Cluster_Members"] = ""               # on a representative: the other peptides clustered into it, "SEQ@start"
     pep["In_Panel"] = False
     pep["Panel_Order"] = pd.array([pd.NA] * len(pep), dtype="Int64")
     pep["Panel_Cum_Coverage"] = np.nan
@@ -420,6 +423,12 @@ def shortlist(pep, rules, pop, n_alleles_tested):
         pep.loc[members, "Cluster_Size"] = len(members)
         pep.loc[members, "Region"] = f"{c['protein']}:{c['lo']}-{c['hi']}"
         pep.loc[members[0], "Is_Representative"] = True
+        rep = pep.loc[members[0]]
+        pep.loc[members, "Cluster_Representative"] = rep["Peptide"]
+        for m in members:
+            ov = min(pep.at[m, "End"], rep["End"]) - max(pep.at[m, "Start"], rep["Start"]) + 1
+            pep.at[m, "Cluster_Overlap"] = round(ov / max(1, min(pep.at[m, "End"] - pep.at[m, "Start"] + 1, rep["End"] - rep["Start"] + 1)), 3)
+        pep.at[members[0], "Cluster_Members"] = "; ".join(f"{pep.at[m, 'Peptide']}@{pep.at[m, 'Start']}" for m in members[1:])
 
     # greedy panel over the representatives: add the peptide that gains the most coverage, until the target is reached
     reps = pep[pep["Is_Representative"]]

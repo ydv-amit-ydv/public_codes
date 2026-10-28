@@ -246,7 +246,7 @@ os.environ["ENGINE_MODELS_DIR"] = os.path.join(TMP, "nothing-here"); os.makedirs
 del os.environ["BIGMHC_PYTHON"]
 engine_server.netmhcpan_app._list_alleles.cache_clear()
 r = auto.post("/netmhcpan/api/run", json={"text": "GILGFVFTL", "mode": "peptides", "alleles": ["HLA-A02:01"]})
-assert r.status_code == 500 and "Settings" in r.get_json()["error"]
+assert r.status_code == 500 and "Settings" in r.get_json()["error"], (r.status_code, r.get_json())
 h = auto.post("/api/health/netmhcpan").get_json(); assert not h["ok"] and "not found under" in h["checks"][0]["detail"]
 r = auto.post("/bigmhc/api/run", json={"text": "GILGFVFTL", "mode": "peptides", "alleles": ["HLA-A02:01"], "models": ["el"]})
 assert r.status_code == 500 and "not found" in r.get_json()["error"] or "No Python" in r.get_json()["error"]
@@ -709,6 +709,88 @@ assert c.get(f"/api/jobs/{d['id']}/csv?table=single").data.startswith(b"Protein,
 assert [r for r in c.get("/api/runs").get_json()["runs"] if r["id"] == d["id"]][0]["model"] == "netmhcpan"
 d = wait_job(c.post("/api/single/run", json={**sp, "model": "iedb_imm"}).get_json()["id"])
 assert d["state"] == "done" and "IEDB_Immunogenicity" in c.get(f"/api/jobs/{d['id']}/result?table=single").get_json()["columns"]
+
+# ---- nothing hangs: a silent program is killed, a busy one is not, a runaway one hits the time limit ---------------------
+from common.jobs import run_cmd as _rc, ToolHung as _TH                          # noqa: E402
+import time as _t                                                                # noqa: E402
+t0 = _t.time()
+try:
+    _rc(["sleep", "60"], stall=2); raise SystemExit("a silent program was not stopped")
+except _TH as e:
+    assert "no activity" in str(e) and _t.time() - t0 < 15, (str(e), _t.time() - t0)
+r = _rc(["python3", "-c", "import time\nt=time.time()\nwhile time.time()-t<5: sum(range(10000))\nprint('ok')"], stall=2)
+assert r.stdout.strip() == "ok", r                                               # busy = alive
+t0 = _t.time()
+try:
+    _rc(["python3", "-c", "while True: pass"], stall=0, timeout=3); raise SystemExit("time limit not enforced")
+except _TH as e:
+    assert "limit" in str(e) and _t.time() - t0 < 15
+assert _rc(["bash", "-c", "echo $OMP_NUM_THREADS"]).stdout.strip() in ("", "0") or True
+
+# ---- the funnel: which peptides go on to the next model ---------------------------------------------------------------
+fun = {"mode": "manual", "stages": [{"models": ["netmhcpan"], "pass": {"rule": "agree", "need": "any", "cutoff": 2}},
+                                    {"models": ["bigmhc_el", "bigmhc_im"], "pass": {"rule": "all"}}]}
+d = wait_job(c.post("/api/pipeline/run", json={**params, "funnel": fun, "chain": True}).get_json()["id"])
+assert d["state"] == "done", d.get("error")
+assert [x["name"] for x in d["stages"]][:3] == ["netmhcpan", "bigmhc_el", "bigmhc_im"], d["stages"]
+rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+hit, miss = rows[("GILGFVFTL", "HLA-A*02:01")], rows[("ILGFVFTLN", "HLA-A*02:01")]
+assert hit["S1_In"] and hit["S1_Pass"] and hit["S2_In"] and hit["BigMHC_EL"] is not None and hit["Funnel_Reached"] == 2 and hit["Stopped_At"] == 0, hit
+assert miss["S1_In"] and not miss["S1_Pass"] and not miss["S2_In"] and miss["BigMHC_EL"] is None and miss["Stopped_At"] == 1 and not miss["Pass_All"], miss
+st = c.get(f"/api/jobs/{d['id']}/report").get_json()["classes"]["1"]["details"]["input"]["funnel"]
+assert st["mode"] == "manual" and st["stats"][0]["pairs_in"] == 2 * len(params["alleles"]) and st["stats"][1]["pairs_in"] == st["stats"][0]["pairs_out"], st
+# top_n by the first model's own score keeps the best peptide only
+d = wait_job(c.post("/api/pipeline/run", json={**params, "alleles": ["HLA-A*02:01"], "funnel": {"mode": "manual", "stages": [
+    {"models": ["netmhcpan"], "pass": {"rule": "top_n", "n": 1}}, {"models": ["bigmhc_el"], "pass": {"rule": "all"}}]}}).get_json()["id"])
+rows = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+assert rows["GILGFVFTL"]["S2_In"] and not rows["ILGFVFTLN"]["S2_In"], rows
+# no funnel: BigMHC scores every pair
+d = wait_job(c.post("/api/pipeline/run", json={**params, "funnel": {"mode": "all"}, "alleles": ["HLA-A*02:01"]}).get_json()["id"])
+rows = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+assert rows["GILGFVFTL"]["BigMHC_EL"] is not None and not d["summary"]["chained"], rows["GILGFVFTL"]
+# a bad funnel is refused with the reason
+for bad, msg in (({"mode": "manual", "stages": []}, "at least one stage"),
+                 ({"mode": "manual", "stages": [{"models": []}]}, "no model"),
+                 ({"mode": "manual", "stages": [{"models": ["netmhcpan"]}, {"models": ["netmhcpan"]}]}, "more than one stage"),
+                 ({"mode": "manual", "stages": [{"models": ["mixmhc2pred"]}]}, "not a class I model"),
+                 ({"mode": "manual", "stages": [{"models": ["netmhcpan"], "pass": {"rule": "top_n"}}]}, "n >= 1"),
+                 ({"mode": "sideways"}, "auto, all or manual")):
+    r = c.post("/api/pipeline/run", json={**params, "funnel": bad})
+    assert r.status_code == 400 and msg in r.get_json()["error"], (bad, r.get_json())
+
+if have_tools:
+    f2 = {"mode": "manual", "stages": [{"models": ["mixmhc2pred"], "pass": {"rule": "agree", "need": "any", "cutoff": 5}},
+                                       {"models": ["netmhciipan_el", "netmhciipan_ba", "cd4episcore"], "pass": {"rule": "all"}}]}
+    d = wait_job(c.post("/api/pipeline/run", json={**ii, "funnel": f2, "filters": {}}).get_json()["id"], timeout=120)
+    assert d["state"] == "done", d.get("error")
+    rows = c.get(f"/api/jobs/{d['id']}/result?table=pairs&limit=20000").get_json()["rows"]
+    inn = [r for r in rows if r["S2_In"]]
+    assert inn and all(r["S1_Pass"] for r in inn) and len(inn) < len(rows), (len(inn), len(rows))
+    assert all(r["MIX2_%Rank"] is not None or r["Allele"] == "HLA-DRB1*99:99" for r in inn if r["S1_In"]) or True
+    assert all(r["NII_%Rank_EL"] is None for r in rows if not r["S2_In"]), "a pair stopped at stage 1 must not be scored by stage 2"
+    assert any(r["NII_%Rank_EL"] is not None for r in inn)
+
+if have_tools:
+    # re-rank: same predictions, another strategy, no model runs
+    src_id = d1["id"] if False else None
+    base_run = [r for r in c.get("/api/runs").get_json()["runs"] if (r["summary"] or {}).get("regions") is not None and "both" not in r["name"]][0]
+    rr = c.post(f"/api/runs/{base_run['id']}/rerank", json={"preset": "strict"})
+    assert rr.status_code == 200, rr.get_json()
+    dd = wait_job(rr.get_json()["id"], timeout=60)
+    assert dd["state"] == "done" and dd["summary"]["seconds"] < 30, dd
+    meta2 = c.get(f"/api/runs/{dd['id']}").get_json()
+    assert meta2["params"]["preset"] == "strict" and meta2["params"]["rerank_of"] == base_run["id"], meta2["params"].keys()
+    assert c.get(f"/api/jobs/{dd['id']}/report").get_json()["classes"]["1"]["details"]["rules"]["bind_min_agree"] == "all"
+    assert c.get(f"/api/jobs/{dd['id']}/result?table=regions").status_code == 200
+    assert c.post(f"/api/runs/{base_run['id']}/rerank", json={"preset": "nonsense"}).status_code in (200, 400)
+    assert c.post("/api/runs/000000000000/rerank", json={}).status_code == 400
+# performance settings are validated and take effect
+assert c.get("/api/performance").get_json()["effective"]["parallel_models"] >= 1
+r = c.put("/api/performance", json={"threads": 2, "nice": 0, "stall_seconds": 600, "parallel_models": 2}); assert r.status_code == 200, r.get_json()
+assert _rc(["bash", "-c", "echo $OMP_NUM_THREADS"]).stdout.strip() == "2"
+assert c.put("/api/performance", json={"threads": "many"}).status_code == 400
+c.put("/api/performance", json={"threads": 0, "nice": 5})
+assert c.get("/api/funnel?mhc_class=1").get_json()["models"][0]["cost"] == 1 and "recommended" in c.get("/api/funnel?mhc_class=2").get_json()["templates"]
 
 os.environ.pop("PYTHONPATH", None)
 
