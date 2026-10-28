@@ -153,7 +153,8 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
    </div>
    <div class="bar" id="pbar" style="margin:8px 0"><i></i></div>
    <div id="stages"></div>
-   <details id="logbox"><summary class="muted">Log</summary><pre id="log"></pre></details>
+   <div id="activity"></div>
+   <details id="logbox" open><summary class="muted">Log</summary><pre id="log"></pre></details>
   </div>
 
   <div class="card" id="results" style="display:none">
@@ -201,8 +202,8 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
  <div id="sout" class="ocol">
   <div class="card" id="s_progress" style="display:none">
    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b id="s_pstate">Starting...</b><span class="muted" id="s_ptime"></span><button class="b" id="s_cancel">Cancel</button></div>
-   <div class="bar" id="s_pbar" style="margin:8px 0"><i></i></div><div id="s_stages"></div>
-   <details><summary class="muted">Log</summary><pre id="s_log"></pre></details>
+   <div class="bar" id="s_pbar" style="margin:8px 0"><i></i></div><div id="s_stages"></div><div id="s_activity"></div>
+   <details open><summary class="muted">Log</summary><pre id="s_log"></pre></details>
   </div>
   <div class="card" id="s_results" style="display:none">
    <div id="s_info" style="margin-bottom:6px"></div>
@@ -642,6 +643,23 @@ function paintProgress(d, pf){
   const lg = g("log"); const atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 20;
   lg.textContent = d.log.join("\n"); if (atEnd) lg.scrollTop = lg.scrollHeight;
   g("progress").classList.toggle("fin", d.state == "done");
+  paintActivity(d.tasks, g("activity"));
+}
+function paintActivity(t, el){
+  if (!t) { el.innerHTML = ""; return; }
+  const sec = x => x < 90 ? Math.round(x) + " s" : Math.floor(x / 60) + " min " + Math.round(x % 60) + " s";
+  const models = Object.entries(t.by_model).map(([m, v]) => `<tr><td><b>${esc(m)}</b></td><td>${v.running ? `<span class="st running">${v.running} running</span>` : ""}</td><td>${v.done} done</td>
+     <td>${v.failed ? `<span class="st failed">${v.failed} failed</span>` : "0 failed"}</td><td>${v.done ? "avg " + sec(v.seconds / v.done) + ", slowest " + sec(v.slowest) : ""}</td><td>${v.peptides ? f0(v.peptides) + " peptides" : ""}</td></tr>`).join("");
+  const run = t.running.map(x => {
+    const cls = x.quiet > 180 ? "bad" : x.quiet > 60 ? "warn" : "ok";
+    return `<tr><td>${esc(x.model)}</td><td style="white-space:normal">${esc(x.what)}</td><td>${x.n ? f0(x.n) : ""}</td><td class="seq">${esc(x.sample.join(" "))}</td><td>${sec(x.elapsed)}</td><td>${x.cpu_s} s</td>
+      <td class="${cls}">${x.quiet < 15 ? "working" : "quiet " + sec(x.quiet)}${x.quiet > 180 ? " &mdash; may be stuck" : ""}</td></tr>`;
+  }).join("");
+  const prob = t.problems.map(x => `<tr><td>${esc(x.model)}</td><td style="white-space:normal">${esc(x.what)}</td><td><span class="st failed">${esc(x.status)}</span></td><td style="white-space:normal">${esc(x.note)}</td></tr>`).join("");
+  el.innerHTML = `<div class="sub">Activity: what each engine is working on</div>
+    <div style="overflow:auto"><table><tr><th>Engine</th><th></th><th></th><th></th><th>Finished batches</th><th></th></tr>${models}</table></div>` +
+    (run ? `<table style="margin-top:6px"><tr><th>Engine</th><th>Batch</th><th>Peptides</th><th>e.g.</th><th>Running</th><th>CPU</th><th>State</th></tr>${run}</table>` : "") +
+    (prob ? `<div class="sub bad">Problems</div><table><tr><th>Engine</th><th>Batch</th><th>Outcome</th><th>Detail</th></tr>${prob}</table>` : "");
 }
 const TERMINAL = ["done", "failed", "cancelled", "interrupted"];
 async function tick(){

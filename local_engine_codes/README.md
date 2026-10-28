@@ -91,6 +91,12 @@ machine; NetMHCpan, PRIME, MixMHCpred, NetMHCIIpan and CD4episcore run that many
 each with its share of the threads, as memory allows), **Balanced** (half), **Gentle** (a quarter, low priority) or **Automatic** (Maximum with 16+ cores and 16+ GB free,
 else Balanced). Thread counts are derived from the machine and the profile; `threads` in Settings is only an override (0 = automatic). The log of every run states what it used.
 
+**Activity feed (to see which engine is stuck).** While a run is going, the progress card lists, for every engine, the batches finished, running and failed
+(average and slowest time), and the batches running right now with their size, a few example peptides, how long they have run, the CPU seconds they used and
+how long they have been quiet (green: working, yellow: over a minute, red: over three minutes, "may be stuck"). The log has a line when each batch starts and
+ends (`▶ NetMHCpan · 9-mers · A*02:01, B*07:02 — 2,453 peptides (e.g. ...)`, `✓ ... done in 41 s`, `✗ ... stalled`). Stopped, failed or timed-out batches are listed
+under *Problems* with the reason, and the record is kept with the run in Projects.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's

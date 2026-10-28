@@ -77,7 +77,7 @@ def finish(job):
     snap = job.snapshot(with_log=False)
     meta.update({"state": job.state, "started": job.started, "finished": job.finished, "error": job.error,
                  "summary": (job.result or {}).get("summary"), "stages": snap["stages"], "log": list(job.logs[-120:]),
-                 "result": _swap(job.result, d, RUN) if job.result else None,
+                 "result": _swap(job.result, d, RUN) if job.result else None, "tasks": job.tasks_snapshot() if job._tasks else None,
                  "tools": {k: {kk: vv for kk, vv in v.items() if kk in ("home", "python", "command", "device")}
                            for k, v in config.effective()["models"].items() if v.get("home") or v.get("python")}})
     _write(job.id, meta)
@@ -125,6 +125,7 @@ def load_job(rid):
     j.id, j.state, j.started, j.finished, j.error = rid, m["state"], m.get("started"), m.get("finished"), m.get("error")
     j.stages, j.logs = m.get("stages") or [], m.get("log") or []
     j.created = m.get("created") or time.time()
+    j._saved_tasks = m.get("tasks")
     if m.get("result"):
         j.result = _swap(m["result"], RUN, config.run_dir(rid))
     return j

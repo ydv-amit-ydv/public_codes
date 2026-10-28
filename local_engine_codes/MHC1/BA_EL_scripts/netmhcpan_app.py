@@ -174,7 +174,8 @@ def run_netmhcpan_raw(peptides, alleles, p, job=None, stage="netmhcpan"):
             cmd += ["-t", str(p["t"])]
         if p.get("raw", "").strip():
             cmd += shlex.split(p["raw"])
-        r = run_cmd(cmd, env=env, job=job)
+        r = run_cmd(cmd, env=env, job=job, task={"model": "NetMHCpan", "what": f"{L}-mers \u00b7 {', '.join(a.replace('HLA-', '') for a in als)}",
+                                                 "n": len(by_len[L]), "sample": by_len[L][:3]})
         with lock:
             done[0] += 1
             if job:

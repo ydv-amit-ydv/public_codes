@@ -51,11 +51,11 @@ def _fasta(sequences):
     return "\n".join(f">{i}\n" + "".join(c if c in AA else "X" for c in seq) for i, (_, seq) in enumerate(sequences, 1))
 
 
-def _run(s, spec, job, workdir):
+def _run(s, spec, job, workdir, task=None):
     path = os.path.join(workdir, "job.json")
     with open(path, "w") as f:
         json.dump(spec, f)
-    return run_cmd([s["python"], "src/tcell_mhci.py", "-j", path, "-f", "tsv"], env=_env(s), job=job, cwd=s["home"])
+    return run_cmd([s["python"], "src/tcell_mhci.py", "-j", path, "-f", "tsv"], env=_env(s), job=job, cwd=s["home"], task=task)
 
 
 def _table(stdout, first_col):
@@ -94,7 +94,7 @@ def netctlpan(sequences, lengths, alleles, job=None, stage="netctlpan"):
                 "predictors": [{"type": "processing", "method": "netctlpan", "tap_weight": 0.05,
                                 "cleavage_weight": 0.225, "epitope_threshold": 1}]}
         with tempfile.TemporaryDirectory(dir=config.tmp_dir()) as wd:
-            r = _run(s, spec, job, wd)
+            r = _run(s, spec, job, wd, task={"model": "NetCTLpan", "what": f"{allele} \u00b7 {len(sequences)} protein(s)", "n": None})
         with lock:
             done[0] += 1
             if job:
@@ -129,7 +129,7 @@ def netchop_cterm(sequences, rows, job=None, stage="netchop"):
                 "predictors": [{"type": "processing", "method": "netchop", "threshold": 0.5, "network_method": "c_term"}]}
         if job:
             job.update(stage, done=0, total=1, msg=f"{len(sequences)} proteins")
-        r = _run(s, spec, job, wd)
+        r = _run(s, spec, job, wd, task={"model": "NetChop", "what": f"{len(sequences)} protein(s)", "n": len(rows), "sample": list(rows["Peptide"][:3])})
     if r.returncode:
         raise ToolError(f"NetChop failed:\n{(r.stderr or r.stdout)[-1500:]}")
     t = _table(r.stdout, "sequence_number")

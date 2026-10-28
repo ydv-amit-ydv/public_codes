@@ -28,6 +28,7 @@ class Job:
         self._lock = threading.RLock()
         self._procs = set()
         self._peak = 0.0
+        self._tasks, self._tid = {}, 0          # every program started for this job: what it is working on, since when, how it ended
 
     # --- progress ---------------------------------------------------------------
     def stage(self, name, label, weight=1.0, total=None):
@@ -62,6 +63,58 @@ class Job:
     def check(self):
         if self.cancelled:
             raise Cancelled()
+
+    # --- tasks: which batch is on which engine ------------------------------------------
+    def task_begin(self, model, what, n=None, sample=None, pid=None):
+        with self._lock:
+            self._tid += 1
+            now = time.time()
+            self._tasks[self._tid] = {"id": self._tid, "model": model, "what": what, "n": n, "sample": list(sample or [])[:3], "start": now,
+                                      "last_active": now, "cpu_s": 0.0, "status": "running", "note": "", "pid": pid, "end": None}
+            tid = self._tid
+        self.log(f"\u25b6 {model} \u00b7 {what}" + (f" \u2014 {n:,} peptides" if n else "") + (f" (e.g. {', '.join(list(sample)[:3])})" if sample else ""))
+        return tid
+
+    def task_touch(self, tid, cpu_s, active):
+        with self._lock:
+            t = self._tasks.get(tid)
+            if t and t["status"] == "running":
+                t["cpu_s"] = round(cpu_s, 1)
+                if active:
+                    t["last_active"] = time.time()
+
+    def task_end(self, tid, status, note=""):
+        with self._lock:
+            t = self._tasks.get(tid)
+            if not t:
+                return
+            t["status"], t["note"], t["end"] = status, note, time.time()
+            dur = t["end"] - t["start"]
+        mark = "\u2713" if status == "done" else "\u2717"
+        self.log(f"{mark} {t['model']} \u00b7 {t['what']} \u2014 {status} in {dur:.0f} s" + (f": {note}" if note and status != "done" else ""))
+
+    def tasks_snapshot(self):
+        if not self._tasks and getattr(self, "_saved_tasks", None):
+            return self._saved_tasks
+        with self._lock:
+            now = time.time()
+            rows = [dict(t, elapsed=round((t["end"] or now) - t["start"], 1), quiet=round(now - t["last_active"], 1) if t["status"] == "running" else 0)
+                    for t in self._tasks.values()]
+        by = {}
+        for t in rows:
+            m = by.setdefault(t["model"], {"running": 0, "done": 0, "failed": 0, "seconds": 0.0, "slowest": 0.0, "peptides": 0})
+            if t["status"] == "running":
+                m["running"] += 1
+            elif t["status"] == "done":
+                m["done"] += 1
+                m["seconds"] += t["elapsed"]
+                m["slowest"] = max(m["slowest"], t["elapsed"])
+                m["peptides"] += t["n"] or 0
+            else:
+                m["failed"] += 1
+        finished = sorted((t for t in rows if t["status"] != "running"), key=lambda t: -(t["end"] or 0))
+        return {"running": [t for t in rows if t["status"] == "running"], "recent": finished[:40],
+                "problems": [t for t in finished if t["status"] != "done"][:20], "by_model": by}
 
     # --- processes ----------------------------------------------------------------
     def _register(self, p):
@@ -107,8 +160,8 @@ class Job:
             return {"id": self.id, "kind": self.kind, "state": self.state, "progress": round(frac, 4),
                     "elapsed": round(elapsed, 1), "eta": None if eta is None else round(eta, 1),
                     "stages": [dict(s) for s in self.stages], "error": self.error,
-                    "log": list(self.logs[-80:]) if with_log else [],
-                    "has_result": self.result is not None,
+                    "log": list(self.logs[-150:]) if with_log else [],
+                    "has_result": self.result is not None, "tasks": self.tasks_snapshot() if (self._tasks or getattr(self, "_saved_tasks", None)) else None,
                     "summary": (self.result or {}).get("summary")}
 
 
@@ -121,9 +174,13 @@ _THREAD_VARS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "N
                 "TF_NUM_INTRAOP_THREADS", "TF_NUM_INTEROP_THREADS", "RAYON_NUM_THREADS")
 
 
+_TICKS = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+
+
 def _liveness(pgid):
-    """A number that changes whenever the process group computes, reads or writes (Linux /proc); None where unavailable."""
-    total = 0
+    """(activity number, CPU seconds) of the process group: the number changes whenever it computes, reads or writes (Linux /proc);
+    None where unavailable."""
+    total, cpu = 0, 0
     try:
         for name in os.listdir("/proc"):
             if not name.isdigit():
@@ -135,6 +192,7 @@ def _liveness(pgid):
                 if int(fields[2]) != pgid:                       # pgrp
                     continue
                 total += int(fields[11]) + int(fields[12])      # utime + stime
+                cpu += int(fields[11]) + int(fields[12])
                 try:
                     with open(f"/proc/{name}/io") as f:
                         io = dict(l.split(": ") for l in f.read().splitlines())
@@ -145,7 +203,7 @@ def _liveness(pgid):
                 continue
     except OSError:
         return None
-    return total
+    return total, cpu / _TICKS
 
 
 def _limits():
@@ -153,7 +211,7 @@ def _limits():
     return config.performance()
 
 
-def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None, stall=None, timeout=None):
+def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None, stall=None, timeout=None, task=None):
     """subprocess.run lookalike. With a job: cancellable. With merge=True stderr is folded into stdout and each line
     is passed to on_line as it arrives. Standard input is always closed (IEDB's bundle otherwise waits for it forever).
 
@@ -179,6 +237,7 @@ def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None, stall=
                          stdin=subprocess.DEVNULL, text=True, env=env, bufsize=1, start_new_session=True, cwd=cwd)
     if job:
         job._register(p)
+    tid = job.task_begin(task["model"], task["what"], task.get("n"), task.get("sample"), pid=p.pid) if (job and task and hasattr(job, "task_begin")) else None
     state = {"why": None, "last_out": time.time()}
     done = threading.Event()
 
@@ -223,6 +282,11 @@ def run_cmd(cmd, env=None, job=None, merge=False, on_line=None, cwd=None, stall=
         done.set()
         if job:
             job._unregister(p)
+        if tid is not None:
+            tail = ((locals().get("res") and (res.stderr or res.stdout)) or "").strip().splitlines()[-1:] or [""]
+            rc = p.returncode
+            status = "stalled" if state["why"] and "activity" in state["why"] else "timeout" if state["why"] else "cancelled" if (job and job.cancelled) else "done" if rc == 0 else "failed"
+            job.task_end(tid, status, state["why"] or (f"exit {rc}: {tail[0][:160]}" if rc else ""))
     if state["why"]:
         raise ToolHung(f"{name} {state['why']} and was stopped. "
                        "Check the tool in Settings > Test run, or raise performance.stall_seconds if it is only slow.")

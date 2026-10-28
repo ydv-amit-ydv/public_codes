@@ -38,3 +38,12 @@ class JobView:
 
     def _unregister(self, p):
         self._job._unregister(p)
+
+    def task_begin(self, model, what, n=None, sample=None, pid=None):
+        return self._job.task_begin(f"{self._tag} \u00b7 {model}", what, n, sample, pid)
+
+    def task_touch(self, tid, cpu_s, active):
+        self._job.task_touch(tid, cpu_s, active)
+
+    def task_end(self, tid, status, note=""):
+        self._job.task_end(tid, status, note)

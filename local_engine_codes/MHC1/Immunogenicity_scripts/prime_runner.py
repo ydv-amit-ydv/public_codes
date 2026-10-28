@@ -95,7 +95,8 @@ def predict(peptides, alleles, job=None, stage="prime"):
                     with open(inp, "w") as f:
                         f.write("\n".join(part) + "\n")
             try:
-                r = run_cmd(["bash", s["script"], "-i", inp, "-o", out, "-a", g, "-mix", s["mix"]], env=env, job=job, timeout=_timeout(len(part)))
+                r = run_cmd(["bash", s["script"], "-i", inp, "-o", out, "-a", g, "-mix", s["mix"]], env=env, job=job, timeout=_timeout(len(part)),
+                            task={"model": "PRIME", "what": f"{canon} \u00b7 chunk {i}/{len(parts)}", "n": len(part), "sample": part[:3]})
             except ToolHung:
                 with lock:
                     skipped.append(canon)

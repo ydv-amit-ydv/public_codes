@@ -57,7 +57,8 @@ def predict(peptides, alleles, job=None, stage="mixmhcpred"):
                 if not os.path.exists(inp):
                     with open(inp, "w") as f:
                         f.write("\n".join(part) + "\n")
-            r = run_cmd(["bash", s["script"], "-i", inp, "-o", out, "-a", ",".join(grp)], env=env, job=job)
+            r = run_cmd(["bash", s["script"], "-i", inp, "-o", out, "-a", ",".join(grp)], env=env, job=job,
+                        task={"model": "MixMHCpred", "what": f"chunk {i}/{len(parts)} \u00b7 {len(grp)} alleles ({grp[0]}...)", "n": len(part), "sample": part[:3]})
             gfeller.require_output(out, r, "MixMHCpred")
             t = gfeller.read_table(out)
             res = [pd.DataFrame({"Peptide": t["Peptide"], "Allele": names[g], "MixMHC_Score": t[f"Score_{g}"], "MixMHC_%Rank": t[f"%Rank_{g}"]}) for g in grp]

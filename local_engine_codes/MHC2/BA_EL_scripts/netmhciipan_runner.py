@@ -73,7 +73,8 @@ def predict(rows, alleles, lengths, sequences=None, kinds=("el", "ba"), version=
         else:
             spec.update({"input_sequence_text": bundle.fasta(group[1]), "peptide_length_range": [group[0], group[0]]})
         with tempfile.TemporaryDirectory(dir=config.tmp_dir()) as wd:
-            r = bundle.run(s, spec, wd, job)
+            r = bundle.run(s, spec, wd, job, task={"model": "NetMHCIIpan", "what": f"{kind.upper()} \u00b7 {', '.join(a.replace('HLA-', '') for a in als)}",
+                                                   "n": len(group[1]) if group else len(peptides), "sample": (group[1] if group else peptides)[:3]})
         with lock:
             done[0] += 1
             if job:

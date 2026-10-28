@@ -869,6 +869,22 @@ try:
 finally:
     config.machine = _real; config.set_profile(None); predcache.clear()
 
+# the activity feed: which batch is on which engine, and what went wrong
+d = wait_job(c.post("/api/single/run", json={**one, "alleles": ["HLA-A*02:01"], "text": "GILGFVFTLA", "mode": "peptides"}).get_json()["id"])
+tk = d["tasks"]; assert tk and "NetMHCpan" in tk["by_model"] and tk["by_model"]["NetMHCpan"]["done"] >= 1, tk
+assert any(l.startswith("\u25b6 NetMHCpan") for l in d["log"]) and any(l.startswith("\u2713 NetMHCpan") for l in d["log"]), d["log"][:6]
+_j = Job(); _j.state = "running"
+try:
+    _rc(["sleep", "60"], job=_j, stall=2, task={"model": "Demo tool", "what": "batch 3/9", "n": 12, "sample": ["AAA"]}); raise SystemExit("not stopped")
+except _TH:
+    pass
+_ts = _j.tasks_snapshot()
+assert _ts["problems"][0]["status"] == "stalled" and _ts["problems"][0]["what"] == "batch 3/9" and _ts["by_model"]["Demo tool"]["failed"] == 1, _ts
+assert _rc(["bash", "-c", "exit 3"], job=_j, task={"model": "Demo tool", "what": "bad"}).returncode == 3 and _j.tasks_snapshot()["problems"][0]["status"] == "failed"
+# the finished run keeps its activity record and shows it again after a restart
+_MGR._jobs.pop(d["id"], None)
+assert c.get(f"/api/jobs/{d['id']}").get_json()["tasks"]["by_model"]["NetMHCpan"]["done"] >= 1
+
 # performance settings are validated and take effect
 assert c.get("/api/performance").get_json()["effective"]["parallel_models"] >= 1
 r = c.put("/api/performance", json={"threads": 2, "nice": 0, "stall_seconds": 600, "parallel_models": 2}); assert r.status_code == 200, r.get_json()

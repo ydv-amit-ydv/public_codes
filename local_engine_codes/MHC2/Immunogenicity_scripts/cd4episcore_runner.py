@@ -43,7 +43,7 @@ def predict(peptides, job=None, stage="cd4episcore"):
         spec = {"input_sequence_text": bundle.fasta(part), "peptide_length_range": [L, L], "alleles": "DRB1*01:01",
                 "predictors": [{"type": "immunogenicity", "method": "cd4episcore"}]}
         with tempfile.TemporaryDirectory(dir=config.tmp_dir()) as wd:
-            r = bundle.run(s, spec, wd, job)
+            r = bundle.run(s, spec, wd, job, task={"model": "CD4episcore", "what": f"{L}-mers", "n": len(part), "sample": part[:3]})
         done[0] += 1
         if job:
             job.update(stage, done=done[0], msg=f"{done[0]}/{len(tasks)} runs finished")

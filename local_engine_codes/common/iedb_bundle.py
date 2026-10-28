@@ -43,12 +43,12 @@ def fasta(records):
     return "\n".join(f">{i}\n" + "".join(c if c in AA else "X" for c in seq) for i, seq in enumerate(records, 1))
 
 
-def run(s, spec, workdir, job=None):
+def run(s, spec, workdir, job=None, task=None):
     path = os.path.join(workdir, "job.json")
     with open(path, "w") as f:
         json.dump(spec, f)
     return run_cmd([s["python"], os.path.join("src", s["entry"]), "-j", path, "-f", "tsv"],
-                   env=env(s), job=job, cwd=s["home"])
+                   env=env(s), job=job, cwd=s["home"], task=task)
 
 
 def table(stdout, first_col):

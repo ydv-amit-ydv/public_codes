@@ -90,7 +90,7 @@ _LOADED = re.compile(r"loading model .*\.\.\.done")
 _BATCH = re.compile(r"batch (\d+)/(\d+)")
 
 
-def run_bigmhc(s, model, pairs, workdir, job=None, stage=None):
+def run_bigmhc(s, model, pairs, workdir, job=None, stage=None, tag=""):
     """pairs: DataFrame with 'allele' and 'peptide'. Returns scores aligned to pairs.
     With a job, BigMHC's own progress lines ("loading model ...done", "batch i/N") drive the bar."""
     inp = os.path.join(workdir, f"in_{model}.csv")
@@ -122,7 +122,9 @@ def run_bigmhc(s, model, pairs, workdir, job=None, stage=None):
 
     if job and stage:
         job.update(stage, done=0, total=100, msg=f"starting BigMHC {model.upper()} on {len(pairs):,} pairs")
-    r = run_cmd(cmd, env=env, job=job, merge=True, on_line=on_line)
+    r = run_cmd(cmd, env=env, job=job, merge=True, on_line=on_line,
+                task={"model": f"BigMHC {model.upper()}", "what": f"{len(pairs):,} pairs" + (f" \u00b7 {tag}" if tag else ""), "n": len(pairs),
+                      "sample": [f"{a} {p}" for a, p in zip(pairs["allele"][:2], pairs["peptide"][:2])]})
     if r.returncode or not os.path.exists(out):
         raise BigMHCError(f"BigMHC {model} failed:\n{' '.join(cmd)}\n{r.stdout[-3000:]}")
     prd = pd.read_csv(out)
@@ -161,7 +163,7 @@ def run_bigmhc_sharded(s, model, pairs, workdir, job=None, stage=None):
         part = pairs.iloc[bounds[i]:bounds[i + 1]]
         wd = os.path.join(workdir, f"shard{i}")
         os.makedirs(wd, exist_ok=True)
-        sc = run_bigmhc(s, model, part, wd, job=job, stage=None)
+        sc = run_bigmhc(s, model, part, wd, job=job, stage=None, tag=f"slice {i + 1}/{k}")
         done[0] += 1
         if job and stage:
             job.update(stage, done=done[0], msg=f"{done[0]}/{k} slices scored")

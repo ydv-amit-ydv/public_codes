@@ -115,7 +115,8 @@ def predict(rows, alleles, sequences=None, job=None, stage="mixmhc2pred"):
             cmd = [s["exe"], "-i", inp, "-o", out, "-a", *names]
             if not sequences:
                 cmd.append("--no_context")
-            r = run_cmd(cmd, env=env, job=job)
+            r = run_cmd(cmd, env=env, job=job, task={"model": "MixMHC2pred", "what": f"chunk {i}/{len(parts)} \u00b7 {len(names)} alleles", "n": len(part),
+                                                     "sample": list(part["Peptide"][:3])})
             gfeller.require_output(out, r, "MixMHC2pred")
             t = gfeller.read_table(out)
             if list(t["Peptide"]) != list(part["Peptide"]):

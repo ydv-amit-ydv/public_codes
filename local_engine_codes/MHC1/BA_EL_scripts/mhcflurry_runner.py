@@ -79,7 +79,8 @@ def predict(rows, alleles, sequences=None, job=None, stage="mhcflurry"):
             inp, out = os.path.join(wd, f"in{i}.csv"), os.path.join(wd, f"out{i}.csv")
             cols = ["allele", "Peptide"] + (["n_flank", "c_flank"] if sequences else [])
             part[cols].rename(columns={"Peptide": "peptide"}).to_csv(inp, index=False)
-            r = run_cmd([s["command"], inp, "--out", out, "--no-throw"], env=env, job=job)
+            r = run_cmd([s["command"], inp, "--out", out, "--no-throw"], env=env, job=job,
+                        task={"model": "MHCflurry", "what": f"chunk {i}/{len(parts)}", "n": len(part), "sample": list(part["Peptide"][:3])})
             gfeller.require_output(out, r, "MHCflurry")
             t = pd.read_csv(out)
             res = part[["Protein", "Start", "Peptide", "allele"]].reset_index(drop=True)
