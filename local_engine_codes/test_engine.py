@@ -913,6 +913,33 @@ if have_tools:
     d4 = wait_job(c.post("/api/pipeline/run", json={**both2, "reuse": False}).get_json()["id"], timeout=120)
     assert any("--- MHC class I ---" in l for l in d4["log"]), "reuse switched off"
 
+# a model that breaks is skipped with a warning; the others are kept; if all break the run fails
+_ok_prime = open(f"{PRM}/PRIME").read()
+open(f"{PRM}/PRIME", "w").write("#!/bin/bash\necho 'prime exploded' >&2\nexit 1\n")
+d = wait_job(c.post("/api/pipeline/run", json={**full, "models": {"mixmhcpred": True, "prime": True}, "alleles": ["HLA-A*02:01"], "filters": {}}).get_json()["id"])
+assert d["state"] == "done" and d["summary"]["failed_models"] == ["PRIME"], d.get("error") or d["summary"]
+assert any("PRIME failed and was left out" in w for w in d["summary"]["warnings"]) and any(l.startswith("\u2717 PRIME failed") for l in d["log"]), d["summary"]["warnings"]
+rows = c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]
+assert rows and rows[0]["MixMHC_%Rank"] is not None and "PRIME_%Rank" not in rows[0], rows[0]
+d = wait_job(c.post("/api/pipeline/run", json={**full, "models": {"prime": True}, "alleles": ["HLA-A*02:01"], "filters": {}}).get_json()["id"])
+assert d["state"] == "failed" and "Every selected model failed" in d["error"], d
+open(f"{PRM}/PRIME", "w").write(_ok_prime)
+from common.iedb_bundle import explain as _explain                                 # noqa: E402
+import subprocess as _subp                                                          # noqa: E402
+_x = _explain(_subp.CompletedProcess([], 1, "Command for immunogenicity\nfoo", "FutureWarning: x\nValueError: loop of ufunc does not support argument 0 of type float which has no callable rint method"))
+assert "rint method" in _x and "perl" in _x and "conda" in _x, _x
+
+# NetMHCIIpan results are cached too: the same peptides again are not sent to the bundle
+if have_tools:
+    nn_run = {"model": "netmhciipan", "text": ">h\nPKYVKQNTLKLATGMRN", "mode": "scan", "lengths": [15], "alleles": ["HLA-DRB1*01:01"]}
+    predcache.clear()
+    d1 = wait_job(c.post("/api/single/run", json=nn_run).get_json()["id"], timeout=90)
+    d2 = wait_job(c.post("/api/single/run", json=nn_run).get_json()["id"], timeout=90)
+    r1 = c.get(f"/api/jobs/{d1['id']}/result?table=single").get_json()["rows"]
+    r2 = c.get(f"/api/jobs/{d2['id']}/result?table=single").get_json()["rows"]
+    assert d1["state"] == d2["state"] == "done" and r1 == r2 and r1, (r1[:1], r2[:1])
+    assert any("already known" in l for l in d2["log"]) and not any(l.startswith("\u25b6 NetMHCIIpan") for l in d2["log"]), d2["log"]
+
 # performance settings are validated and take effect
 assert c.get("/api/performance").get_json()["effective"]["parallel_models"] >= 1
 r = c.put("/api/performance", json={"threads": 2, "nice": 0, "stall_seconds": 600, "parallel_models": 2}); assert r.status_code == 200, r.get_json()

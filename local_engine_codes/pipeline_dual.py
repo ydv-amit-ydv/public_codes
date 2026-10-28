@@ -98,8 +98,12 @@ def run(params, job):
             continue
         job.log(f"--- MHC class {tag} ---")
         MODULE[c].run(parts[c], views[c])
-        checkpoints.save(fp, job.id, c, views[c].result)           # kept now, so a later failure or Cancel does not lose this class
-        job.log(f"MHC class {tag} finished and saved; it will be reused if you run this again")
+        bad = views[c].result["summary"].get("failed_models")
+        if bad:
+            job.log(f"MHC class {tag} finished without {', '.join(bad)} (failed): not saved for reuse, so a rerun tries those models again")
+        else:
+            checkpoints.save(fp, job.id, c, views[c].result)       # kept now, so a later failure or Cancel does not lose this class
+            job.log(f"MHC class {tag} finished and saved; it will be reused if you run this again")
     _finalize(job, params, classes, {c: views[c].result for c in classes}, seqs, t0, parts[classes[0]].get("preset", "balanced"))
 
 

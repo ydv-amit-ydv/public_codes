@@ -24,6 +24,7 @@ import prime_runner as pr
 import consensus
 import funnel
 import report
+from guard import try_model
 
 MAX_PAIRS = 3_000_000
 MODEL_KEYS = ("netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_imm", "netctlpan", "netchop", "bigmhc_el", "bigmhc_im")
@@ -181,6 +182,8 @@ def run(params, job):
         job.stage(st["name"], st["label"], st["weight"], work=st["work"])
 
     manual = p["funnel"]["mode"] == "manual"
+    failed = []                                  # models that broke and were skipped (see guard.py)
+    n_selected = sum(bool(v) for v in m.values())
     seqs = nm.read_sequences(p["text"]) if p["mode"] == "scan" else None
     fstats = []
     nmp = mix = pri = iedb = mhcf = ctl = chop = None
@@ -193,46 +196,74 @@ def run(params, job):
         if m["netmhcpan"]:
             if not nm_ok:
                 raise ValueError("None of the selected alleles is known to NetMHCpan.")
-            res, logs = nm.run_netmhcpan(uniq, [allele_lib.netmhcpan_name(a) for a in nm_ok],
-                                         {**p["nmp"], "t": None, "raw": ""}, job=job)
-            for l in logs[-3:]:
-                job.log(l[:300])
-            if res.empty:
-                raise RuntimeError("NetMHCpan returned no results (see the log).")
-            res["Allele"] = [allele_lib.canonical(a) for a in res["Allele"]]
-            nmp = res
-            job.finish_stage("netmhcpan", f"{len(res):,} predictions")
+
+            def _nmp():
+                res, logs = nm.run_netmhcpan(uniq, [allele_lib.netmhcpan_name(a) for a in nm_ok], {**p["nmp"], "t": None, "raw": ""}, job=job)
+                for l in logs[-3:]:
+                    job.log(l[:300])
+                if res.empty:
+                    raise RuntimeError("NetMHCpan returned no results (see the log).")
+                res["Allele"] = [allele_lib.canonical(a) for a in res["Allele"]]
+                return res
+            nmp = try_model("NetMHCpan", "netmhcpan", _nmp, job, warns, failed)
+            if nmp is None:
+                m["netmhcpan"] = False
+            else:
+                job.finish_stage("netmhcpan", f"{len(nmp):,} predictions")
 
         # ---- 2. MixMHCpred and PRIME (fast, every pair) ----------------------------------------------
         mix = pri = None
         if m["mixmhcpred"]:
-            mix, n = mx.predict(uniq, p["alleles"], job=job)
-            warns += n
-            job.finish_stage("mixmhcpred", f"{len(mix):,} predictions")
+            got = try_model("MixMHCpred", "mixmhcpred", lambda: mx.predict(uniq, p["alleles"], job=job), job, warns, failed)
+            if got is None:
+                m["mixmhcpred"] = False
+            else:
+                mix, n = got
+                warns += n
+                job.finish_stage("mixmhcpred", f"{len(mix):,} predictions")
         if m["prime"]:
-            pri, n = pr.predict(uniq, p["alleles"], job=job)
-            warns += [x for x in n if x not in warns]
-            job.finish_stage("prime", f"{len(pri):,} predictions")
+            got = try_model("PRIME", "prime", lambda: pr.predict(uniq, p["alleles"], job=job), job, warns, failed)
+            if got is None:
+                m["prime"] = False
+            else:
+                pri, n = got
+                warns += [x for x in n if x not in warns]
+                job.finish_stage("prime", f"{len(pri):,} predictions")
 
         iedb = None
         if m["iedb_imm"]:
-            iedb, n = ci.predict(uniq, p["alleles"], p["iedb"]["mask_choice"], p["iedb"]["positions"])
-            warns += n
-            job.finish_stage("iedb_imm", f"{len(iedb):,} scores")
+            got = try_model("IEDB immunogenicity", "iedb_imm", lambda: ci.predict(uniq, p["alleles"], p["iedb"]["mask_choice"], p["iedb"]["positions"]), job, warns, failed)
+            if got is None:
+                m["iedb_imm"] = False
+            else:
+                iedb, n = got
+                warns += n
+                job.finish_stage("iedb_imm", f"{len(iedb):,} scores")
 
         seqs = nm.read_sequences(p["text"]) if p["mode"] == "scan" else None
         mhcf = ctl = chop = None
         if m["mhcflurry"]:
-            mhcf, n = mf.predict(peps, p["alleles"], sequences=seqs, job=job)
-            warns += n
-            job.finish_stage("mhcflurry", f"{len(mhcf):,} predictions")
+            got = try_model("MHCflurry", "mhcflurry", lambda: mf.predict(peps, p["alleles"], sequences=seqs, job=job), job, warns, failed)
+            if got is None:
+                m["mhcflurry"] = False
+            else:
+                mhcf, n = got
+                warns += n
+                job.finish_stage("mhcflurry", f"{len(mhcf):,} predictions")
         if m["netctlpan"]:
-            ctl, n = ip.netctlpan(seqs, p["lengths"], p["alleles"], job=job)
-            warns += n
-            job.finish_stage("netctlpan", f"{len(ctl):,} scores")
+            got = try_model("NetCTLpan", "netctlpan", lambda: ip.netctlpan(seqs, p["lengths"], p["alleles"], job=job), job, warns, failed)
+            if got is None:
+                m["netctlpan"] = False
+            else:
+                ctl, n = got
+                warns += n
+                job.finish_stage("netctlpan", f"{len(ctl):,} scores")
         if m["netchop"]:
-            chop = ip.netchop_cterm(seqs, peps, job=job)
-            job.finish_stage("netchop", f"{len(chop):,} scores")
+            chop = try_model("NetChop", "netchop", lambda: ip.netchop_cterm(seqs, peps, job=job), job, warns, failed)
+            if chop is None:
+                m["netchop"] = False
+            else:
+                job.finish_stage("netchop", f"{len(chop):,} scores")
         if seqs and any(set(sq) - set("ACDEFGHIKLMNPQRSTVWY") for _, sq in seqs) and (m["netctlpan"] or m["netchop"]):
             warns.append("Characters that are not amino acids were replaced by X before NetCTLpan / NetChop; "
                          "scores near them are less reliable")
@@ -274,10 +305,16 @@ def run(params, job):
                     job.finish_stage(f"bigmhc_{model}", "nothing to score")
                     warns.append(f"BigMHC {model.upper()} had nothing to score (no pair passed the earlier tools, or no human alleles).")
                     continue
-                sc = bm.predict_pairs(pairs.rename(columns={"Peptide": "peptide", "Allele": "allele"}),
-                                      (model,), job=job).rename(columns={"peptide": "Peptide", "allele": "Allele"})
-                base = base.merge(sc, on=["Peptide", "Allele"], how="left")
+                sc = try_model(f"BigMHC {model.upper()}", f"bigmhc_{model}", lambda: bm.predict_pairs(pairs.rename(columns={"Peptide": "peptide", "Allele": "allele"}),
+                                                                                                         (model,), job=job), job, warns, failed)
+                if sc is None:
+                    m[f"bigmhc_{model}"] = False
+                    continue
+                base = base.merge(sc.rename(columns={"peptide": "Peptide", "allele": "Allele"}), on=["Peptide", "Allele"], how="left")
 
+    if failed and len(failed) >= n_selected:
+        raise RuntimeError("Every selected model failed: " + ", ".join(failed) + ". See the log for each reason.")
+    use_bm = m["bigmhc_el"] or m["bigmhc_im"]
     # ---- 5. flags, ordering, per-peptide summary -------------------------------------------------------
     job.update("merge", msg="merging", state="running")
     base.insert(3, "Length", base["Peptide"].str.len())
@@ -375,6 +412,6 @@ def run(params, job):
         "peptides": n_pep, "pairs": int(len(base)), "pairs_passed": int(base["Pass_All"].sum()),
         "peptides_passed": int((summ["Alleles_passed"] > 0).sum()),
         "seconds": round(time.time() - t0, 1), "warnings": list(dict.fromkeys(warns)),
-        "chained": bool(use_bm and p["chain"] and (nmp is not None or mix is not None or mhcf is not None))}}
+        "failed_models": failed, "chained": bool(use_bm and p["chain"] and (nmp is not None or mix is not None or mhcf is not None))}}
     job.log(f"done in {time.time() - t0:.1f}s: {int(base['Pass_All'].sum()):,} pairs / "
             f"{int((summ['Alleles_passed'] > 0).sum()):,} peptides pass")

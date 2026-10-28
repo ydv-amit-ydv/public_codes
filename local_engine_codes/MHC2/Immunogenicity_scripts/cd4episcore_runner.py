@@ -49,7 +49,7 @@ def predict(peptides, job=None, stage="cd4episcore"):
             job.update(stage, done=done[0], msg=f"{done[0]}/{len(tasks)} runs finished")
         t = bundle.table(r.stdout, "seq_num")
         if t.empty:
-            raise ToolError(f"CD4episcore returned nothing for {len(part)} {L}-mers:\n{(r.stderr or r.stdout)[-800:]}")
+            raise ToolError(f"CD4episcore returned nothing for {len(part)} {L}-mers. " + bundle.explain(r))
         return pd.DataFrame({"Peptide": [part[int(i) - 1] for i in t["seq_num"]], "CD4_Episcore": t["score"].astype(float).values})
 
     with ThreadPoolExecutor(max_workers=max(1, min(len(tasks), config.performance()["workers"]))) as ex:

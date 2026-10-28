@@ -9,7 +9,7 @@ import os
 
 import pandas as pd
 
-from . import alleles as allele_lib
+from . import alleles as allele_lib, envclean
 
 
 class ToolError(RuntimeError):
@@ -18,9 +18,7 @@ class ToolError(RuntimeError):
 
 def tool_env(python):
     """Clean environment whose first `python3` is the chosen interpreter (the scripts call python3)."""
-    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
-    env["PATH"] = os.path.dirname(python) + ":/usr/bin:/bin"
-    return env
+    return envclean.clean(os.path.dirname(python))
 
 
 def read_allele_list(path, skip_header=False):

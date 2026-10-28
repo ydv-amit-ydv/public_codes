@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from common import alleles as allele_lib, config, gfeller, iedb_bundle as bundle   # noqa: E402
+from common import alleles as allele_lib, config, gfeller, predcache, iedb_bundle as bundle   # noqa: E402
 
 ToolError = gfeller.ToolError
 VERSIONS = ("4.3", "4.2", "default")
@@ -33,6 +33,36 @@ def method(kind, version):
 
 
 def predict(rows, alleles, lengths, sequences=None, kinds=("el", "ba"), version="4.3", job=None, stage="netmhciipan"):
+    """predict_raw behind the prediction cache (a score is per peptide and allele, whatever protein it came from): only the pairs not
+    computed before are run. All missing: the whole protein goes to the bundle as before; a few missing: just those peptides do."""
+    s = settings()
+    alleles = [allele_lib.canonical_ii(a) for a in alleles]
+    peptides = sorted(set(rows["Peptide"]))
+    notes = []
+
+    def compute(missing, als):
+        if len(missing) == len(peptides):
+            df, n = predict_raw(rows, als, lengths, sequences, kinds, version, job, stage)
+        else:
+            sub = rows[rows["Peptide"].isin(missing)]
+            df, n = predict_raw(sub, als, sorted({len(x) for x in missing}), None, kinds, version, job, stage)
+        notes.extend(x for x in n if x not in notes)
+        if df.empty:
+            return df
+        return df.drop(columns=[c for c in ("Protein", "Start") if c in df.columns]).drop_duplicates(["Peptide", "Allele"])
+    sig = ("netmhciipan", s["home"], version, tuple(kinds))
+    got = predcache.fetch("netmhciipan_" + "".join(kinds), sig, peptides, alleles, compute, allele_lib.canonical_ii, job, stage)
+    if got.empty:
+        return pd.DataFrame(columns=COLS), notes
+    if sequences:
+        got = got.merge(rows[["Protein", "Start", "Peptide"]].drop_duplicates(), on="Peptide", how="inner")
+    missing = [a for a in alleles if a not in set(got["Allele"])]
+    if missing and not any("does not support" in n for n in notes):
+        notes.append(f"NetMHCIIpan does not support: {', '.join(missing)}")
+    return got, notes
+
+
+def predict_raw(rows, alleles, lengths, sequences=None, kinds=("el", "ba"), version="4.3", job=None, stage="netmhciipan"):
     """rows: DataFrame[Protein, Start, Peptide] (the windows wanted). sequences: [(name, seq)] when peptides were cut
     from a protein; None for loose peptides. -> (DataFrame keyed by Protein/Start/Peptide/Allele (scan) or
     Peptide/Allele (loose peptides) with NII_* columns, notes)."""

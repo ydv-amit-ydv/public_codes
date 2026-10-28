@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from common import config, gfeller                       # noqa: E402
+from common import config, envclean, gfeller             # noqa: E402
 from common.jobs import run_cmd                           # noqa: E402
 
 ToolError = gfeller.ToolError
@@ -40,9 +40,7 @@ def settings():
 
 
 def _env(s):
-    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
-    env["PATH"] = os.path.dirname(s["python"]) + ":/usr/bin:/bin"
-    return env
+    return envclean.clean(os.path.dirname(s["python"]))
 
 
 def _fasta(sequences):

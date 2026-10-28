@@ -15,6 +15,7 @@ import pandas as pd
 import consensus
 import funnel
 import report
+from guard import try_model
 
 from common import alleles as allele_lib, config
 import cd4episcore_runner as cd
@@ -135,6 +136,8 @@ def run(params, job):
     scan_keys = ["Protein", "Start", "Peptide", "Allele"]
 
     manual = p["funnel"]["mode"] == "manual"
+    failed = []                                  # models that broke and were skipped (see guard.py)
+    n_selected = (int(m["netmhciipan_el"] or m["netmhciipan_ba"]) + int(m["mixmhc2pred"]) + int(m["cd4episcore"]))
     fstats = []
     nii = mix = chop = None
     if manual:
@@ -145,16 +148,28 @@ def run(params, job):
     else:
         nii = None
         if kinds:
-            nii, n = nn.predict(peps, p["alleles"], p["lengths"] or sorted({len(x) for x in uniq}), seqs, kinds, p["version"], job=job)
-            warns += n
-            if nii.empty:
-                raise RuntimeError("NetMHCIIpan returned no results (see the log).")
-            job.finish_stage("netmhciipan", f"{len(nii):,} predictions")
+            def _nii():
+                df, n = nn.predict(peps, p["alleles"], p["lengths"] or sorted({len(x) for x in uniq}), seqs, kinds, p["version"], job=job)
+                if df.empty:
+                    raise RuntimeError("NetMHCIIpan returned no results (see the log).")
+                return df, n
+            got = try_model("NetMHCIIpan", "netmhciipan", _nii, job, warns, failed)
+            if got is None:
+                m["netmhciipan_el"] = m["netmhciipan_ba"] = False
+                kinds = ()
+            else:
+                nii, n = got
+                warns += n
+                job.finish_stage("netmhciipan", f"{len(nii):,} predictions")
         mix = None
         if m["mixmhc2pred"]:
-            mix, n = m2.predict(peps, p["alleles"], seqs, job=job)
-            warns += n
-            job.finish_stage("mixmhc2pred", f"{len(mix):,} predictions")
+            got = try_model("MixMHC2pred", "mixmhc2pred", lambda: m2.predict(peps, p["alleles"], seqs, job=job), job, warns, failed)
+            if got is None:
+                m["mixmhc2pred"] = False
+            else:
+                mix, n = got
+                warns += n
+                job.finish_stage("mixmhc2pred", f"{len(mix):,} predictions")
 
         if nii is not None:
             base = peps.merge(nii, on=["Protein", "Start", "Peptide"] if seqs else ["Peptide"])
@@ -174,13 +189,18 @@ def run(params, job):
             if gated:
                 job.log(f"chain: {len(use):,} of {n_pep:,} peptides pass the binding filters -> CD4episcore")
             if use:
-                chop = cd.predict(use, job=job)
-                base = base.merge(chop, on="Peptide", how="left")
-                job.finish_stage("cd4episcore", f"{len(chop):,} peptides scored")
+                chop = try_model("CD4episcore", "cd4episcore", lambda: cd.predict(use, job=job), job, warns, failed)
+                if chop is None:
+                    m["cd4episcore"] = False
+                else:
+                    base = base.merge(chop, on="Peptide", how="left")
+                    job.finish_stage("cd4episcore", f"{len(chop):,} peptides scored")
             else:
                 job.finish_stage("cd4episcore", "nothing to score")
                 warns.append("CD4episcore had nothing to score (no peptide passed the binding filters).")
 
+    if failed and len(failed) >= n_selected:
+        raise RuntimeError("Every selected model failed: " + ", ".join(failed) + ". See the log for each reason.")
     job.update("merge", msg="merging", state="running")
     base.insert(3, "Length", base["Peptide"].str.len())
     flags = []
@@ -248,6 +268,6 @@ def run(params, job):
     job.result = {**cons, "pairs_csv": pairs_csv, "summary_csv": summ_csv, "summary": {
         "peptides": n_pep, "pairs": int(len(base)), "pairs_passed": int(base["Pass_All"].sum()),
         "peptides_passed": int((summ["Alleles_passed"] > 0).sum()), "seconds": round(time.time() - t0, 1),
-        "warnings": list(dict.fromkeys(warns)), "chained": bool(m["cd4episcore"] and p["chain"] and (nii is not None or mix is not None))}}
+        "warnings": list(dict.fromkeys(warns)), "failed_models": failed, "chained": bool(m["cd4episcore"] and p["chain"] and (nii is not None or mix is not None))}}
     job.log(f"done in {time.time() - t0:.1f}s: {int(base['Pass_All'].sum()):,} pairs / "
             f"{int((summ['Alleles_passed'] > 0).sum()):,} peptides pass")

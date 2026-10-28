@@ -12,7 +12,7 @@ import json, os, shutil
 
 import pandas as pd
 
-from . import config, gfeller
+from . import config, envclean, gfeller
 from .jobs import run_cmd
 
 ToolError = gfeller.ToolError
@@ -33,9 +33,7 @@ def settings(model_key, entry, label, hint, tools=("tcsh", "gawk")):
 
 
 def env(s):
-    e = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
-    e["PATH"] = os.path.dirname(s["python"]) + ":/usr/bin:/bin"
-    return e
+    return envclean.clean(os.path.dirname(s["python"]))
 
 
 def fasta(records):
@@ -49,6 +47,18 @@ def run(s, spec, workdir, job=None, task=None):
         json.dump(spec, f)
     return run_cmd([s["python"], os.path.join("src", s["entry"]), "-j", path, "-f", "tsv"],
                    env=env(s), job=job, cwd=s["home"], task=task)
+
+
+def explain(r):
+    """Why a bundle run produced no table: the lines of its output that name a problem, and the usual causes."""
+    text = (r.stdout or "") + "\n" + (r.stderr or "")
+    keys = ("error", "fail", "not found", "cannot", "can't", "unable", "no such", "denied", "traceback", "exception", "killed", "rint method")
+    lines = [l.strip() for l in text.splitlines() if any(k in l.lower() for k in keys) and "FutureWarning" not in l and "libtinfo" not in l][-6:]
+    hint = ""
+    if "rint method" in text or "no callable" in text:
+        hint = (" The tool's helper programs (perl NN-align, R) gave no output, so IEDB's own code then failed on an empty table. "
+                "Check that `perl -v` and `R --version` work in a plain terminal, and start the engine from a shell without conda active.")
+    return f"{' | '.join(lines)[:600]}.{hint}"
 
 
 def table(stdout, first_col):

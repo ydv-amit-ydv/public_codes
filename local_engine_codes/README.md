@@ -106,6 +106,15 @@ population file, engine version). Any later run with the same class settings tak
 cancel, press Run again (or *Resume* in Projects) and MHC I is reused in a second; change only the class II alleles and MHC I is still reused. The files are
 hard-linked into the new run, so deleting the old run does not break it. Untick *Reuse finished results* to recompute everything.
 
+**A model that fails does not end the run.** If one tool breaks, hangs or returns nothing, the run logs it (`✗ CD4episcore failed and is skipped: ...`), closes that stage
+with the reason, adds a warning to the results and goes on with the other models. A class that finished with a failed model is not saved for reuse, so a rerun tries the
+failed model again. Only if every selected model fails does the run fail. NetMHCIIpan scores are cached like NetMHCpan's.
+
+**Conda and the shell-based tools.** tcsh, gawk, perl and R (used by the IEDB bundles, MixMHCpred and PRIME) are started with a clean environment: no `LD_LIBRARY_PATH`,
+no conda variables, no perl/R paths. With conda active these programs otherwise load conda's libraries instead of the system's; tcsh prints
+`libtinfo.so.6: no version information available`, and perl or R can fail without a message, which appeared as CD4episcore failing with
+`loop of ufunc does not support argument 0 of type float`. If you still see it: `perl -v` and `R --version` must work in a plain terminal.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's
