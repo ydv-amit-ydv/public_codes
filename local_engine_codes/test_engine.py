@@ -458,6 +458,18 @@ assert d["state"] == "done" and d["summary"]["pairs_passed"] == 0 and any("does 
 # a filter for a model that was not run is reported, not silently dropped
 d = wait_job(c.post("/api/pipeline/run", json={**full, "models": {"prime": True}, "filters": {"mix_rank_max": 1}}).get_json()["id"])
 assert any("Filters ignored" in w and "mix_rank_max" in w for w in d["summary"]["warnings"]), d["summary"]
+# PRIME's C++ program spins forever on some alleles (HLA-C*07:06 for real): that allele is skipped, another that hangs is given up on
+import time as _t
+import prime_runner as _pr                                                    # noqa: E402
+_good = open(f"{PRM}/PRIME").read()
+open(f"{PRM}/PRIME", "w").write("#!/bin/bash\nfor a in \"$@\"; do [ \"$a\" = B0702 ] && sleep 100; done\n" + _good.split("\n", 1)[1])
+open(f"{PRM}/lib/alleles.txt", "w").write("A0201\nB0702\nA0101\nC0706\n")
+_old_t = _pr._timeout; _pr._timeout = lambda n: 3
+_t0 = _t.time()
+_df, _notes = _pr.predict(["GILGFVFTL", "AAAAAAAAA"], ["HLA-A*02:01", "HLA-B*07:02", "HLA-C*07:06"])
+assert set(_df["Allele"]) == {"HLA-A*02:01"} and _t.time() - _t0 < 40, (set(_df["Allele"]), _t.time() - _t0)
+assert any("C*07:06" in n and "never finishes" in n for n in _notes) and any("B*07:02" in n and "time limit" in n for n in _notes), _notes
+_pr._timeout = _old_t; open(f"{PRM}/PRIME", "w").write(_good); open(f"{PRM}/lib/alleles.txt", "w").write("A0201\nB0702\nA0101\n")
 # PRIME without MixMHCpred installed is refused up front
 nomix = json.loads(json.dumps(settings)); nomix["models"]["mixmhcpred"]["home"] = "/nonexistent"
 c.put("/api/config", json={"text": json.dumps(nomix)})
