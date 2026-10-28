@@ -52,7 +52,7 @@ def finish(base, cls, p, job, info, warns, filters_ok):
             "Binder", "Strong", "Bind_Consensus_%Rank", "Agree_Votes", "Agree_Tools", "Agree_Fraction", "Agree_List"]
     master = master[[c for c in lead if c in master] + [c for c in master if c not in lead]]
 
-    jobdir = os.path.join(config.tmp_dir(), "jobs")
+    jobdir = config.run_dir(job.id)
     os.makedirs(jobdir, exist_ok=True)
     out = {}
     for name, df in (("master", master), ("peptides", pep), ("candidates", res["candidates"])):

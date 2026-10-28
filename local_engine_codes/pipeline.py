@@ -345,7 +345,7 @@ def run(params, job):
             "input_peptides": peps["Peptide"].drop_duplicates().tolist() if p["mode"] == "peptides" else None}
     cons = report.finish(base, 1, p, job, info, warns, base["Pass_All"])
 
-    jobdir = os.path.join(config.tmp_dir(), "jobs"); os.makedirs(jobdir, exist_ok=True)
+    jobdir = config.run_dir(job.id)
     pairs_csv, summ_csv = (os.path.join(jobdir, f"{job.id}_{n}.csv") for n in ("pairs", "summary"))
     base.round(6).to_csv(pairs_csv, index=False)
     summ.round(6).to_csv(summ_csv, index=False)

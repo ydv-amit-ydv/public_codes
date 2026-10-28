@@ -153,8 +153,11 @@ class JobManager:
         self._jobs, self._keep = {}, keep
         self._lock = threading.Lock()
 
-    def submit(self, fn, kind="pipeline"):
+    def submit(self, fn, kind="pipeline", on_create=None, on_finish=None):
+        """on_create(job) runs at once (the run is recorded as queued); on_finish(job) after it ends, whatever the outcome."""
         job = Job(kind)
+        if on_create:
+            on_create(job)
         with self._lock:
             self._jobs[job.id] = job
             for old in sorted(self._jobs.values(), key=lambda j: j.created)[:-self._keep]:
@@ -164,6 +167,8 @@ class JobManager:
         def work():
             if job.cancelled:
                 job.state, job.finished, job.started = "cancelled", time.time(), time.time()
+                if on_finish:
+                    on_finish(job)
                 return
             job.state, job.started = "running", time.time()
             try:
@@ -179,6 +184,11 @@ class JobManager:
                 job.log("ERROR " + job.error)
             finally:
                 job.finished = time.time()
+                if on_finish:
+                    try:
+                        on_finish(job)
+                    except Exception as e:                   # noqa: BLE001 - recording a run must never hide its result
+                        job.log(f"could not record the run: {e}")
         self._pool.submit(work)
         return job
 

@@ -12,6 +12,7 @@ REAL_PY, REAL_HOME = os.environ.get("BIGMHC_PYTHON"), os.environ.get("BIGMHC_HOM
 TMP = tempfile.mkdtemp()
 CFG = os.path.join(TMP, "cfg.json")
 os.environ["ENGINE_CONFIG"] = CFG
+os.environ["ENGINE_WORKSPACE"] = os.path.join(TMP, "workspace")
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
@@ -670,6 +671,44 @@ if have_tools:
     d1 = wait_job(c.post("/api/pipeline/run", json={**both, "c2": {"enabled": False}}).get_json()["id"])
     assert d1["state"] == "done" and [x["name"] for x in d1["stages"]][0] == "c1_netmhcpan", d1
 assert c.post("/api/pipeline/run", json={**both, "c1": {"enabled": False}, "c2": {"enabled": False}}).status_code == 400
+
+# ---- workspace: every run is kept and can be reopened after a restart; single-model runs ----------------------------------
+from common.jobs import MANAGER as _MGR                                          # noqa: E402
+from common import runs as _runs                                                  # noqa: E402
+lst = c.get("/api/runs").get_json()
+assert lst["runs"] and lst["workspace"].endswith("workspace") and all(r["state"] in ("done", "failed", "cancelled") for r in lst["runs"]), lst["runs"][:2]
+old = next(r for r in lst["runs"] if r["kind"] == "pipeline" and r["state"] == "done" and (r["summary"] or {}).get("regions") is not None)
+meta = c.get(f"/api/runs/{old['id']}").get_json()
+assert meta["params"]["c1"] and meta["input"]["residues"] > 0 and meta["created"] and meta["engine_version"], meta.keys()
+_MGR._jobs.pop(old["id"], None)                                                   # as after a server restart
+d = c.get(f"/api/jobs/{old['id']}").get_json()
+assert d["state"] == "done" and d["summary"]["regions"] == old["summary"]["regions"], d
+assert c.get(f"/api/jobs/{old['id']}/result?table=regions").get_json()["total"] == old["summary"]["regions"]
+assert c.get(f"/api/jobs/{old['id']}/csv?table=bundle").data[:2] == b"PK" and b"<svg" in c.get(f"/api/jobs/{old['id']}/csv?table=report&inline=1").data
+assert c.get(f"/api/jobs/{old['id']}/detail?cls=1&peptide=GILGFVFTL&start=0").status_code == 200
+assert c.put(f"/api/runs/{old['id']}", json={"name": "my run", "notes": "check", "starred": True}).status_code == 200
+assert [r for r in c.get("/api/runs").get_json()["runs"] if r["id"] == old["id"]][0]["name"] == "my run"
+assert c.delete(f"/api/runs/{old['id']}").status_code == 200 and c.get(f"/api/runs/{old['id']}").status_code == 404
+assert c.delete("/api/runs/../../etc").status_code in (400, 404)
+# an unfinished record is marked interrupted when the server starts
+_runs._write("aaaaaaaaaaaa", {"id": "aaaaaaaaaaaa", "kind": "pipeline", "state": "running", "created": 1.0, "params": {}})
+_runs.mark_interrupted()
+assert _runs.read("aaaaaaaaaaaa")["state"] == "interrupted"; _runs.delete("aaaaaaaaaaaa")
+
+# single model: raw table, sorted by the tool's own score, saved like any run
+sp = {"model": "netmhcpan", "text": ">x\nGILGFVFTLAA", "mode": "scan", "lengths": [9], "alleles": ["HLA-A*02:01"]}
+assert c.post("/api/single/preview", json=sp).get_json()["n_predictions"] == 3
+assert c.post("/api/single/run", json={**sp, "model": "nope"}).status_code == 400
+assert c.post("/api/single/run", json={**sp, "alleles": []}).status_code == 400
+assert c.post("/api/single/run", json={**sp, "model": "netchop", "mode": "peptides"}).status_code == 400
+d = wait_job(c.post("/api/single/run", json=sp).get_json()["id"])
+assert d["state"] == "done" and d["summary"]["model"] == "netmhcpan", d
+t = c.get(f"/api/jobs/{d['id']}/result?table=single").get_json()
+assert t["rows"][0]["Peptide"] == "GILGFVFTL" and "NMP_%Rank_EL" in t["columns"] and t["rows"][0]["NMP_%Rank_EL"] == 0.197 and "Start" in t["columns"], t["rows"][:1]
+assert c.get(f"/api/jobs/{d['id']}/csv?table=single").data.startswith(b"Protein,Start,Peptide")
+assert [r for r in c.get("/api/runs").get_json()["runs"] if r["id"] == d["id"]][0]["model"] == "netmhcpan"
+d = wait_job(c.post("/api/single/run", json={**sp, "model": "iedb_imm"}).get_json()["id"])
+assert d["state"] == "done" and "IEDB_Immunogenicity" in c.get(f"/api/jobs/{d['id']}/result?table=single").get_json()["columns"]
 
 os.environ.pop("PYTHONPATH", None)
 

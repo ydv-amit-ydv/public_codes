@@ -95,7 +95,7 @@ def run(params, job):
         results[c]["peptides"] = lab
         lab.round(6).to_csv(results[c]["result"]["peptides_csv"], index=False)
 
-    jobdir = os.path.join(config.tmp_dir(), "jobs")
+    jobdir = config.run_dir(job.id)
     paths = {"regions_csv": os.path.join(jobdir, f"{job.id}_regions.csv"), "report_html": os.path.join(jobdir, f"{job.id}_report.html"),
              "bundle_zip": os.path.join(jobdir, f"{job.id}_all_outputs.zip")}
     reg.round(6).to_csv(paths["regions_csv"], index=False)

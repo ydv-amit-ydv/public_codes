@@ -22,10 +22,11 @@ sys.path.insert(0, HERE)
 
 from common import alleles as allele_lib, config, population            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
+from common import runs                                      # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
-import pipeline, pipeline_ii, pipeline_dual                                  # noqa: E402
+import pipeline, pipeline_ii, pipeline_dual, pipeline_single                                  # noqa: E402
 import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import pandas as pd                                          # noqa: E402
 
@@ -390,19 +391,93 @@ def pipeline_run():
                 return jsonify(error=f"{name} is not ready: " + "; ".join(f"{c['name']} ({c['detail']})" for c in bad)), 400
     except (ValueError, config.ConfigError) as e:
         return jsonify(error=str(e)), 400
-    job = MANAGER.submit(lambda j, mod=_pipe(params): mod.run(params, j))
+    job = _submit("pipeline", params, lambda j, mod=_pipe(params): mod.run(params, j))
     return jsonify(id=job.id)
+
+
+def _submit(kind, params, fn):
+    """Queue a job and keep a record of it in the workspace (input, settings, dates, outputs)."""
+    return MANAGER.submit(fn, kind, on_create=lambda j: runs.create(j, kind, params), on_finish=runs.finish)
+
+
+def _job(job_id):
+    """A running/recent job, or an old one rebuilt from the workspace (also after a server restart)."""
+    return MANAGER.get(job_id) or runs.load_job(job_id)
+
+
+@main.post("/api/single/preview")
+def single_preview():
+    try:
+        return jsonify(pipeline_single.preview(request.get_json(force=True)))
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(hint=str(e))
+
+
+@main.post("/api/single/run")
+def single_run():
+    params = request.get_json(force=True)
+    try:
+        p = pipeline_single.normalise(params)
+        for name in pipeline_single.needed(p):
+            if not config.model(name).get("enabled", True):
+                return jsonify(error=f"{name} is disabled in Settings."), 400
+            bad = [c for c in HEALTH[name](False) if not c["ok"]]
+            if bad:
+                return jsonify(error=f"{name} is not ready: " + "; ".join(f"{c['name']} ({c['detail']})" for c in bad)), 400
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(error=str(e)), 400
+    job = _submit("single", params, lambda j: pipeline_single.run(params, j))
+    return jsonify(id=job.id)
+
+
+@main.get("/api/runs")
+def runs_list():
+    live = {j: MANAGER.get(j) for j in [r["id"] for r in runs.listing()]}
+    out = runs.listing()
+    for r in out:                                       # a live job knows its progress better than the file
+        j = live.get(r["id"])
+        if j and j.state in ("queued", "running"):
+            r["state"], r["progress"] = j.state, j.snapshot(False)["progress"]
+    return jsonify(runs=out, workspace=config.workspace(), total_size=sum(r["size"] for r in out))
+
+
+@main.get("/api/runs/<run_id>")
+def runs_get(run_id):
+    m = runs.read(run_id) if run_id.isalnum() else None
+    if not m:
+        return jsonify(error="unknown run"), 404
+    m.pop("log", None)
+    return jsonify(m)
+
+
+@main.put("/api/runs/<run_id>")
+def runs_put(run_id):
+    body = request.get_json(force=True)
+    m = runs.update(run_id, **{k: body[k] for k in ("name", "notes", "starred") if k in body}) if run_id.isalnum() else None
+    return (jsonify(ok=True) if m else (jsonify(error="unknown run"), 404))
+
+
+@main.delete("/api/runs/<run_id>")
+def runs_delete(run_id):
+    j = MANAGER.get(run_id)
+    if j and j.state in ("queued", "running"):
+        return jsonify(error="This run is still going: cancel it first."), 400
+    try:
+        runs.delete(run_id)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(ok=True)
 
 
 @main.get("/api/jobs/<job_id>")
 def job_status(job_id):
-    job = MANAGER.get(job_id)
+    job = _job(job_id)
     return (jsonify(job.snapshot()) if job else (jsonify(error="unknown job (server restarted?)"), 404))
 
 
 @main.post("/api/jobs/<job_id>/cancel")
 def job_cancel(job_id):
-    job = MANAGER.get(job_id)
+    job = _job(job_id)
     if not job:
         return jsonify(error="unknown job"), 404
     job.cancel()
@@ -427,13 +502,13 @@ def _table_path(job, table, cls=None):
     r = _res(job, cls)
     if not r:
         return None
-    key = {"summary": "summary_csv", "pairs": "pairs_csv", "details": "details_json"}.get(table, f"{table}_csv")
+    key = {"summary": "summary_csv", "pairs": "pairs_csv", "details": "details_json", "single": "table_csv"}.get(table, f"{table}_csv")
     return r.get(key)
 
 
 @main.get("/api/jobs/<job_id>/result")
 def job_result(job_id):
-    path = _table_path(MANAGER.get(job_id), request.args.get("table", "summary"), request.args.get("cls"))
+    path = _table_path(_job(job_id), request.args.get("table", "summary"), request.args.get("cls"))
     if not path:
         return jsonify(error="no result"), 404
     limit = min(int(request.args.get("limit", 5000)), 20000)
@@ -445,9 +520,11 @@ def job_result(job_id):
 @main.get("/api/jobs/<job_id>/csv")
 def job_csv(job_id):
     table = request.args.get("table", "summary")
-    path = _table_path(MANAGER.get(job_id), table, request.args.get("cls"))
+    path = _table_path(_job(job_id), table, request.args.get("cls"))
     if not path:
         return jsonify(error="no result"), 404
+    if table == "single":
+        return send_file(path, mimetype="text/csv", as_attachment=True, download_name=os.path.basename(path))
     if table == "details":
         return send_file(path, mimetype="application/json", as_attachment=True, download_name="epitope_run_details.json")
     if table == "report":
@@ -460,7 +537,7 @@ def job_csv(job_id):
 @main.get("/api/jobs/<job_id>/detail")
 def job_detail(job_id):
     """Every tool value for one peptide window, per allele (the expandable row in the results)."""
-    r = _res(MANAGER.get(job_id), request.args.get("cls"))
+    r = _res(_job(job_id), request.args.get("cls"))
     if not r:
         return jsonify(error="no result"), 404
     df = pd.read_csv(r["master_csv"], low_memory=False)
@@ -478,7 +555,7 @@ def api_rules():
 
 @main.get("/api/jobs/<job_id>/report")
 def job_report(job_id):
-    job = MANAGER.get(job_id)
+    job = _job(job_id)
     if not job or not job.result:
         return jsonify(error="no result"), 404
     r = job.result
@@ -499,6 +576,7 @@ def index():
         return f.read()
 
 
+runs.mark_interrupted()
 application = DispatcherMiddleware(main, {"/netmhcpan": netmhcpan_app.app, "/bigmhc": bigmhc_app.app})
 
 if __name__ == "__main__":

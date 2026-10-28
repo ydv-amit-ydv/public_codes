@@ -15,6 +15,7 @@ CONFIG_PATH = os.path.expanduser(
 # "auto" = look beside this directory (see common/discover.py). Explicit paths win.
 DEFAULT = {
     "tmp_dir": "auto",
+    "workspace_dir": "auto",
     "population": {"label": "India", "weights_csv": "auto"},
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
@@ -65,8 +66,9 @@ def validate(obj):
     errs = []
     if not isinstance(obj, dict):
         return ["top level must be a JSON object"]
-    if "tmp_dir" in obj and not isinstance(obj["tmp_dir"], str):
-        errs.append("tmp_dir must be a string")
+    for k in ("tmp_dir", "workspace_dir"):
+        if k in obj and not isinstance(obj[k], str):
+            errs.append(f"{k} must be a string")
     models = obj.get("models", {})
     if not isinstance(models, dict):
         return errs + ["'models' must be an object"]
@@ -125,9 +127,25 @@ def tmp_dir():
     return d
 
 
+def workspace():
+    """Where every run is kept (inputs, settings, tables, reports): ENGINE_WORKSPACE, else workspace_dir, else
+    <models folder>/engine_workspace, so it survives replacing the code folder."""
+    v = os.environ.get("ENGINE_WORKSPACE") or load().get("workspace_dir", "auto")
+    d = os.path.join(search_root(), "engine_workspace") if v in ("", "auto") else os.path.expanduser(v)
+    os.makedirs(os.path.join(d, "runs"), exist_ok=True)
+    return d
+
+
+def run_dir(run_id):
+    """Folder of one run; `run_id` may be a job id or a view id like '<job>_c1'."""
+    d = os.path.join(workspace(), "runs", str(run_id).split("_")[0])
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def effective():
     """What the server will actually use right now, for display in Settings."""
-    out = {"search_root": search_root(), "tmp_dir": tmp_dir(), "models": {}}
+    out = {"search_root": search_root(), "tmp_dir": tmp_dir(), "workspace": workspace(), "models": {}}
     for name in load()["models"]:
         m = model(name)
         out["models"][name] = {k: (v if v != "" else None) for k, v in m.items()}

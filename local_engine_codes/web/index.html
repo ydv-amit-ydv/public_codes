@@ -15,6 +15,8 @@ nav button.on{background:var(--acc)}
 .dot.ok{background:#3c3}.dot.bad{background:#e44}
 .pane{flex:1;display:none;min-height:0}.pane.on{display:flex}
 iframe{flex:1;border:0;width:100%}
+.fcol{width:460px;max-width:100%;padding:14px;overflow:auto;background:var(--card);border-right:1px solid var(--line)}
+.ocol{flex:1;padding:14px;overflow:auto;min-width:0}
 #form{width:460px;max-width:100%;padding:14px;overflow:auto;background:var(--card);border-right:1px solid var(--line)}
 #out{flex:1;padding:14px;overflow:auto;min-width:0}
 h3{margin:18px 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
@@ -78,12 +80,15 @@ details>summary{cursor:pointer}
 #cfg{width:100%;height:240px}
 .cardm{border:1px solid var(--line);border-radius:6px;padding:8px;margin:6px 0;background:var(--card)}
 .cardm .c{margin-left:14px}
+.star{cursor:pointer;color:var(--muted);font-size:16px}.star.on{color:#e8a600}
+.st{padding:0 8px;border-radius:10px;font-size:12px;color:#fff;background:var(--muted)}.st.done{background:var(--ok)}.st.failed,.st.interrupted{background:var(--bad)}.st.running,.st.queued{background:var(--acc)}
+#pj_tbl td{white-space:normal;vertical-align:top}#pj_tbl .act button{margin:1px}
 @media (max-width:820px){.pane.on{flex-direction:column}#form{width:100%;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
 <nav><b>Epitope Filter Engine</b>
 <button data-t="pipeline">Pipeline</button>
-<button data-t="netmhcpan">NetMHCpan only</button>
-<button data-t="bigmhc">BigMHC only</button>
+<button data-t="single">Single model</button>
+<button data-t="projects">Projects</button>
 <button data-t="settings">Settings</button></nav>
 <div id="tip"></div>
 
@@ -168,8 +173,58 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
  </div>
 </div>
 
-<div class="pane" id="p_netmhcpan"><iframe src="netmhcpan/"></iframe></div>
-<div class="pane" id="p_bigmhc"><iframe src="bigmhc/"></iframe></div>
+<!-- ============================ SINGLE MODEL ============================ -->
+<div class="pane" id="single">
+ <div id="sform" class="fcol">
+  <h3>Model <span class="q" data-h="single">?</span></h3>
+  <select id="s_model" style="width:100%"></select>
+  <div id="s_help" class="muted sm" style="margin:4px 0"></div>
+  <div class="bad sm" id="s_nr"></div>
+  <h3>Input</h3>
+  <label class="i"><input type="radio" name="smode" value="scan" checked> Cut a protein / FASTA into fragments</label>
+  <label class="i"><input type="radio" name="smode" value="peptides"> Use the peptides exactly as given (one per line)</label>
+  <textarea id="s_text" rows="6" spellcheck="false">&gt;demo
+MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
+  <div style="margin-top:4px"><input type="file" id="s_file" accept=".txt,.fa,.fasta,.pep"> <button class="b" id="s_copy">copy the Pipeline input</button></div>
+  <div id="s_sizeswrap"><div class="sub">Fragment sizes</div><div id="s_sizes"></div></div>
+  <div id="s_alwrap"><div class="sub">Alleles</div><div id="s_al"></div></div>
+  <div id="s_optiedb" class="sm" style="margin-top:8px">Positions to mask <select id="s_iedb_mask"><option value="default">1,2,C Terminal (Default)</option><option value="by_allele">By allele</option><option value="custom">Custom</option></select>
+    <input type="text" id="s_iedb_pos" placeholder="e.g. 2,5,9" style="width:90px;display:none"></div>
+  <div id="s_optnii" class="sm" style="margin-top:8px">NetMHCIIpan version <select id="s_nii"><option value="4.3">4.3 (newest)</option><option value="4.2">4.2</option><option value="default">IEDB default (matches the website)</option></select></div>
+  <div id="s_preview" class="pv"></div>
+  <button class="primary" id="s_run">Run this model</button> <span id="s_runmsg" class="bad"></span>
+ </div>
+ <div id="sout" class="ocol">
+  <div class="card" id="s_progress" style="display:none">
+   <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b id="s_pstate">Starting...</b><span class="muted" id="s_ptime"></span><button class="b" id="s_cancel">Cancel</button></div>
+   <div class="bar" id="s_pbar" style="margin:8px 0"><i></i></div><div id="s_stages"></div>
+   <details><summary class="muted">Log</summary><pre id="s_log"></pre></details>
+  </div>
+  <div class="card" id="s_results" style="display:none">
+   <div id="s_info" style="margin-bottom:6px"></div>
+   <div id="s_warn" class="warn sm"></div>
+   <div style="margin:6px 0"><a class="dl big" id="s_dl" href="#">Download CSV</a></div>
+   <div class="sm" style="margin:6px 0">Show rows where <select id="s_col"></select> <select id="s_cmp"><option value="le">&le;</option><option value="ge">&ge;</option></select>
+     <input type="number" id="s_val" step="any" style="width:100px"> <input type="text" id="s_filter" placeholder="text filter..." style="margin-left:8px;width:150px"></div>
+   <div id="s_note" class="muted sm" style="margin-bottom:4px"></div>
+   <div style="overflow:auto;max-height:70vh"><table id="s_tbl"></table></div>
+  </div>
+  <div id="s_empty" class="muted">Pick a model, give it a protein or peptides and press <b>Run this model</b>. You get exactly what the tool reports, so you can check it against the combined pipeline.</div>
+ </div>
+</div>
+
+<!-- ============================ PROJECTS ============================ -->
+<div class="pane" id="projects" style="padding:14px;flex-direction:column;overflow:auto">
+ <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+  <b style="font-size:16px">Projects</b><span class="muted sm" id="pj_ws"></span>
+  <span style="flex:1"></span>
+  <input type="text" id="pj_q" placeholder="search name, protein, notes..." style="width:230px">
+  <select id="pj_kind"><option value="">all runs</option><option value="pipeline">pipeline</option><option value="single">single model</option><option value="star">starred</option></select>
+  <button class="b" id="pj_refresh">Refresh</button>
+ </div>
+ <div class="muted sm" style="margin:4px 0 10px">Every run is saved here with its input, settings, date and outputs. Open it to see the results again, or use its settings as a template.</div>
+ <div style="overflow:auto"><table id="pj_tbl"></table></div>
+</div>
 
 <!-- ============================ SETTINGS ============================ -->
 <div class="pane" id="settings">
@@ -269,9 +324,9 @@ const FILTERS = {
  2: [["nii_el_rank_max","NetMHCIIpan %Rank EL ≤",0.1,0],["nii_ba_rank_max","NetMHCIIpan %Rank BA ≤",0.1,0],["nii_ic50_max","NetMHCIIpan IC50 ≤ (nM)",50,0],
      ["mix2_rank_max","MixMHC2pred %Rank ≤",0.5,0],["cd4_max","CD4episcore percentile ≤",1,0]]
 };
-const SELS = {1: [], 2: []}, ALL = [], PRES = {1: {}, 2: {}};
+const SELS = {1: [], 2: [], s1: ["HLA-A*02:01", "HLA-B*07:02"], s2: ["HLA-DRB1*01:01", "HLA-DRB1*15:01"]}, ALL = [], PRES = {1: {}, 2: {}};
 let POP = null;
-for (const c of [1, 2]) { const s = store.get("alleles" + c); if (s) { try { SELS[c] = JSON.parse(s) } catch(e){} } }
+for (const c of [1, 2, "s1", "s2"]) { const s = store.get("alleles" + c); if (s) { try { SELS[c] = JSON.parse(s) } catch(e){} } }
 const mode = () => document.querySelector("input[name=mode]:checked").value;
 
 function buildArms(){
@@ -314,9 +369,10 @@ function buildArms(){
 buildArms();
 
 /* alleles */
-const presetKeys = c => Object.keys(PRES[c]).sort((a, b) => (/population/i.test(b) - /population/i.test(a)) || (/^IEDB/.test(b) - /^IEDB/.test(a)) || a.localeCompare(b));
+const presetKeys = c => Object.keys(PRES[cl(c)]).sort((a, b) => (/population/i.test(b) - /population/i.test(a)) || (/^IEDB/.test(b) - /^IEDB/.test(a)) || a.localeCompare(b));
+const cl = c => +String(c).slice(-1);                  // arm 1 / 2, or "s1" / "s2" in the single-model tab
 function renderPresets(c){
-  const P = PRES[c];
+  const P = PRES[cl(c)];
   $("presets" + c).innerHTML = presetKeys(c).map(k => `<button class="b" style="margin:2px 2px 2px 0" data-p="${esc(k)}" title="${esc(P[k].note || "")}">${esc(k)} (${P[k].alleles.length})</button>`).join("");
   document.querySelectorAll(`#presets${c} button`).forEach(b => b.onclick = () => { SELS[c] = P[b.dataset.p].alleles.slice(); drawChips(c); });
 }
@@ -325,7 +381,7 @@ function drawChips(c){
   $("ncount" + c).textContent = `(${A.length} selected)`;
   $("chips" + c).innerHTML = A.map((a, i) => `<span class="chip">${esc(a)}<b data-i="${i}">&times;</b></span>`).join("");
   document.querySelectorAll(`#chips${c} b`).forEach(b => b.onclick = () => { A.splice(+b.dataset.i, 1); drawChips(c); });
-  store.set("alleles" + c, JSON.stringify(A)); queuePreview();
+  store.set("alleles" + c, JSON.stringify(A)); queuePreview(); if (typeof queueSinglePreview == "function") queueSinglePreview();
 }
 const canonAllele = a => { const m = a.trim().match(/^(?:HLA-)?([ABCEFG])\*?(\d{2,3}):(\d{2,3})/i); return m ? `HLA-${m[1].toUpperCase()}*${m[2]}:${m[3]}` : a.trim(); };
 const canonII = a => { a = a.trim(); return /^(DR|DQ|DP)/i.test(a) ? "HLA-" + a.toUpperCase().replace("_", "*") : a; };
@@ -340,17 +396,18 @@ const timers = {};
 function searchAlleles(c){
   const raw = $("as" + c).value.trim(), q = raw.toLowerCase().replace("*", "");
   if (q.length < 2) { $("hits" + c).style.display = "none"; return; }
-  if (c == 1) { showHits(1, ALL.filter(a => a.toLowerCase().replace("*", "").includes(q)), canonAllele(raw)); return; }
+  if (cl(c) == 1) { showHits(c, ALL.filter(a => a.toLowerCase().replace("*", "").includes(q)), canonAllele(raw)); return; }
   clearTimeout(timers[c]);
   timers[c] = setTimeout(async () => {
     const d = await (await fetch("api/alleles/search?q=" + encodeURIComponent(raw))).json();
-    showHits(2, d.hits || [], canonII(raw));
+    showHits(c, d.hits || [], canonII(raw));
   }, 200);
 }
 fetch("api/alleles").then(r => r.json()).then(d => {
   ALL.push(...d.all); PRES[1] = d.presets; PRES[2] = d.presets_ii || {};
   for (const c of [1, 2]) {
     renderPresets(c);
+    if (typeof renderPresets == "function" && $("presetss" + c)) renderPresets("s" + c);
     if (!SELS[c].length) { const first = presetKeys(c)[0]; if (first) SELS[c] = PRES[c][first].alleles.slice(); }   // the population preset comes first when the file exists
     drawChips(c);
   }
@@ -365,7 +422,7 @@ $("text").oninput = queuePreview;
 $("title").oninput = () => {};
 
 /* mode: loose peptides have no protein context */
-const AUTOOFF = {};
+const AUTOOFF = {}, NOTREADY = {};
 function applyModeRules(){
   const pep = mode() == "peptides";
   document.querySelectorAll("input[data-prot]").forEach(box => {
@@ -485,28 +542,32 @@ function startPolling(id){
   clearInterval(poll); tick(); poll = setInterval(tick, 1000);
 }
 const fmtT = s => s == null ? "" : s < 90 ? Math.round(s) + " s" : Math.floor(s / 60) + " min " + Math.round(s % 60) + " s";
-async function tick(){
-  let d;
-  try { const r = await fetch(`api/jobs/${JOB}`); if (!r.ok) { stopPolling("The server no longer knows this job (it was restarted). Run again."); return; } d = await r.json(); }
-  catch(e) { $("pstate").textContent = "Lost contact with the server, retrying..."; return; }
-  const p = Math.round(d.progress * 100);
-  const names = {queued: "Waiting for the previous job to finish...", running: `Running: ${p}%`, done: "Finished", failed: "Failed", cancelled: "Cancelled"};
-  $("pstate").textContent = names[d.state] || d.state;
-  $("pstate").className = d.state == "failed" ? "bad" : d.state == "done" ? "ok" : "";
-  $("ptime").textContent = d.state == "running" ? `${fmtT(d.elapsed)} elapsed` + (d.eta != null ? `, about ${fmtT(d.eta)} left` : "") : d.state == "queued" ? "" : fmtT(d.elapsed);
-  const bar = $("pbar"); bar.classList.toggle("ind", d.state == "running" && d.progress == 0);
+function paintProgress(d, pf){
+  const p = Math.round(d.progress * 100), g = n => $(pf + n);
+  const names = {queued: "Waiting for the previous job to finish...", running: `Running: ${p}%`, done: "Finished", failed: "Failed", cancelled: "Cancelled", interrupted: "Interrupted (the server stopped)"};
+  g("pstate").textContent = names[d.state] || d.state;
+  g("pstate").className = ["failed", "interrupted"].includes(d.state) ? "bad" : d.state == "done" ? "ok" : "";
+  g("ptime").textContent = d.state == "running" ? `${fmtT(d.elapsed)} elapsed` + (d.eta != null ? `, about ${fmtT(d.eta)} left` : "") : d.state == "queued" ? "" : fmtT(d.elapsed);
+  const bar = g("pbar"); bar.classList.toggle("ind", d.state == "running" && d.progress == 0);
   bar.firstElementChild.style.width = p + "%";
-  $("stages").innerHTML = d.stages.map(s => {
+  g("stages").innerHTML = d.stages.map(s => {
     const known = s.total ? Math.min(100, Math.round(100 * s.done / s.total)) : (s.state == "done" ? 100 : 0);
     const ind = s.state == "running" && !s.total;
     const mark = s.state == "done" ? "&#10003; " : s.state == "running" ? "&#9654; " : "&middot; ";
     return `<div class="stage"><span>${mark}${esc(s.label)}</span><div class="bar thin ${ind ? "ind" : ""}"><i style="width:${known}%"></i></div><div class="m">${esc(s.msg)}</div></div>`;
   }).join("");
-  if (d.error) $("stages").innerHTML += `<div class="bad" style="margin-top:8px">${esc(d.error)}</div>`;
-  const lg = $("log"); const atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 20;
+  if (d.error) g("stages").innerHTML += `<div class="bad" style="margin-top:8px">${esc(d.error)}</div>`;
+  const lg = g("log"); const atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 20;
   lg.textContent = d.log.join("\n"); if (atEnd) lg.scrollTop = lg.scrollHeight;
-  $("progress").classList.toggle("fin", d.state == "done");
-  if (["done", "failed", "cancelled"].includes(d.state)) { stopPolling(); if (d.state == "done") loadResults(d); }
+  g("progress").classList.toggle("fin", d.state == "done");
+}
+const TERMINAL = ["done", "failed", "cancelled", "interrupted"];
+async function tick(){
+  let d;
+  try { const r = await fetch(`api/jobs/${JOB}`); if (!r.ok) { stopPolling("The server does not know this job."); return; } d = await r.json(); }
+  catch(e) { $("pstate").textContent = "Lost contact with the server, retrying..."; return; }
+  paintProgress(d, "");
+  if (TERMINAL.includes(d.state)) { stopPolling(); if (d.state == "done") loadResults(d); }
 }
 function stopPolling(msg){
   clearInterval(poll); JOBRUNNING = false; $("run").disabled = false; $("cancel").style.display = "none";
@@ -533,7 +594,7 @@ async function loadResults(d){
     k += kpi(f0(h.regions), `${tag} regions`) + kpi(last ? pct(last.cumulative_coverage) : "-", `${tag} panel coverage (${pan.length} peptides)`);
   }
   $("kpis").innerHTML = k + kpi(fmtT(s.seconds), s.chained ? "run time, chained" : "run time");
-  $("warnings").innerHTML = (s.warnings || []).map(esc).join("<br>");
+  $("warnings").innerHTML = (s.warnings || []).map(esc).join("<br>") + `<div class="muted">Saved in Projects as run ${esc(JOB)}.</div>`;
   $("topdl").innerHTML = `<a class="dl big" href="${dl("report", "&inline=1")}" target="_blank">Open summary page</a><a class="dl" href="${dl("bundle")}">All outputs (zip)</a><a class="dl" href="${dl("regions")}">regions.csv</a>`;
   const tabs = [["regions", "Regions"]].concat(cl.map(c => [c, c == "1" ? "CTL · class I peptides" : "HTL · class II peptides"]), [["insight", "Funnel & suggestions"], ["downloads", "Downloads"]]);
   $("maintabs").innerHTML = tabs.map(([k2, l]) => `<button class="b" data-m="${k2}">${l}</button>`).join("");
@@ -656,6 +717,187 @@ function renderDownloads(){
   $("downloads").innerHTML = h;
 }
 
+/* ---------- single model ---------- */
+const SM = {   // key: [label, class, needs alleles, needs protein, health names, help key]
+  netmhcpan: ["NetMHCpan 4.2", 1, true, false, ["netmhcpan"], "m_netmhcpan"], mixmhcpred: ["MixMHCpred 3.0", 1, true, false, ["mixmhcpred"], "m_mixmhcpred"],
+  mhcflurry: ["MHCflurry 2", 1, true, false, ["mhcflurry"], "m_mhcflurry"], prime: ["PRIME 2.1", 1, true, false, ["mixmhcpred", "prime"], "m_prime"],
+  iedb_imm: ["IEDB immunogenicity (Calis)", 1, true, false, [], "m_iedb_imm"], netctlpan: ["NetCTLpan 1.1", 1, true, true, ["iedb_bundle"], "m_netctlpan"],
+  netchop: ["NetChop 3.1", 1, false, true, ["iedb_bundle"], "m_netchop"], bigmhc_el: ["BigMHC EL", 1, true, false, ["bigmhc"], "m_bigmhc_el"], bigmhc_im: ["BigMHC IM", 1, true, false, ["bigmhc"], "m_bigmhc_im"],
+  netmhciipan: ["NetMHCIIpan (EL + BA)", 2, true, false, ["iedb_bundle_ii"], "m_netmhciipan_el"], mixmhc2pred: ["MixMHC2pred 2.1", 2, true, false, ["mixmhc2pred"], "m_mixmhc2pred"],
+  cd4episcore: ["CD4episcore", 2, false, false, ["iedb_bundle_ii"], "m_cd4episcore"]
+};
+const SSIZES = {1: [8,9,10,11,12,13,14], 2: [11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]};
+HELP.single = "Runs one tool on its own and keeps everything it reports, with the position of each peptide, sorted by the tool's main score. Nothing is combined or filtered, so you can compare a number with what the pipeline used.";
+const smode = () => document.querySelector("input[name=smode]:checked").value;
+function alleleBlock(c){
+  return `<div><span id="ncount${c}" class="muted sm"></span></div><div id="presets${c}"></div>
+    <input type="text" id="as${c}" placeholder="${cl(c) == 1 ? "search alleles, e.g. A*24 or H-2-K" : "search class II, e.g. DRB1*15 or DQA1*05:01/DQB1*02"}" style="width:100%;margin-top:4px">
+    <div class="hits" id="hits${c}"></div><div id="chips${c}" style="margin-top:3px"></div> <button class="b" id="clr${c}">clear</button>`;
+}
+function buildSingle(){
+  $("s_model").innerHTML = '<optgroup label="MHC class I (CTL)">' + Object.entries(SM).filter(([k, v]) => v[1] == 1).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join("") +
+    '</optgroup><optgroup label="MHC class II (HTL)">' + Object.entries(SM).filter(([k, v]) => v[1] == 2).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join("") + "</optgroup>";
+  $("s_al").innerHTML = ["s1", "s2"].map(c => `<div id="alwrap${c}">${alleleBlock(c)}</div>`).join("");
+  for (const c of ["s1", "s2"]) {
+    $("as" + c).oninput = () => searchAlleles(c);
+    $("clr" + c).onclick = () => { SELS[c] = []; drawChips(c); };
+    drawChips(c);
+  }
+  $("s_model").value = store.get("smodel") || "mixmhcpred";
+  $("s_model").onchange = singleModelChanged;
+  document.querySelectorAll("input[name=smode]").forEach(r => r.onchange = singleModelChanged);
+  $("s_text").oninput = queueSinglePreview;
+  $("s_iedb_mask").onchange = () => { $("s_iedb_pos").style.display = $("s_iedb_mask").value == "custom" ? "" : "none"; queueSinglePreview(); };
+  $("s_iedb_pos").oninput = $("s_nii").onchange = queueSinglePreview;
+  $("s_file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { $("s_text").value = t; queueSinglePreview(); }); };
+  $("s_copy").onclick = () => { $("s_text").value = $("text").value; document.querySelector(`input[name=smode][value=${mode()}]`).checked = true; singleModelChanged(); };
+  singleModelChanged();
+}
+function singleModelChanged(){
+  const m = $("s_model").value, [label, cls, needsAl, needsProt] = SM[m]; store.set("smodel", m);
+  $("s_help").innerHTML = HELP[SM[m][5]] || "";
+  const keep = [...document.querySelectorAll(".ssz:checked")].map(x => +x.value);
+  $("s_sizes").innerHTML = SSIZES[cls].map(n => `<label><input type="checkbox" class="ssz" value="${n}" ${(keep.length ? keep.includes(n) : n == (cls == 1 ? 9 : 15)) ? "checked" : ""}> ${n}</label> `).join("") + ' <button class="b" id="s_allsz">all</button>';
+  document.querySelectorAll(".ssz").forEach(b => b.onchange = queueSinglePreview);
+  $("s_allsz").onclick = () => { const bs = [...document.querySelectorAll(".ssz")]; const all = bs.every(b => b.checked); bs.forEach(b => b.checked = !all); queueSinglePreview(); };
+  const pep = smode() == "peptides";
+  $("s_sizeswrap").style.display = pep ? "none" : "";
+  $("s_alwrap").style.display = needsAl ? "" : "none";
+  $("alwraps1").style.display = cls == 1 ? "" : "none"; $("alwraps2").style.display = cls == 2 ? "" : "none";
+  $("s_optiedb").style.display = m == "iedb_imm" ? "" : "none"; $("s_optnii").style.display = m == "netmhciipan" ? "" : "none";
+  const blocked = needsProt && pep;
+  const bad = SM[m][4].filter(h => NOTREADY[h]);
+  $("s_nr").innerHTML = blocked ? `${label} needs the protein: choose "Cut a protein / FASTA into fragments".` : bad.length ? "Not ready: " + bad.map(h => `${h} (${esc(NOTREADY[h])})`).join(", ") + ". See Settings." : "";
+  $("s_run").disabled = blocked || bad.length > 0;
+  queueSinglePreview();
+}
+function singleParams(){
+  const m = $("s_model").value, cls = SM[m][1];
+  return {model: m, text: $("s_text").value, mode: smode(), lengths: [...document.querySelectorAll(".ssz:checked")].map(x => +x.value),
+          alleles: SM[m][2] ? SELS["s" + cls].slice() : [], iedb: {mask_choice: $("s_iedb_mask").value, positions: $("s_iedb_pos").value}, nii: {version: $("s_nii").value}};
+}
+let stimer = null;
+function queueSinglePreview(){ clearTimeout(stimer); stimer = setTimeout(doSinglePreview, 350); }
+async function doSinglePreview(){
+  if (!$("s_preview")) return;
+  const d = await (await fetch("api/single/preview", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(singleParams())})).json();
+  if (d.hint) { $("s_preview").innerHTML = `<span class="muted">${esc(d.hint)}</span>`; return; }
+  const dup = d.n_windows - d.n_peptides;
+  $("s_preview").innerHTML = `<b>${f0(d.n_peptides)}</b> unique peptides` + (dup > 0 ? ` <span class="muted">(${f0(dup)} duplicate windows predicted once)</span>` : "") +
+    (SM[$("s_model").value][2] ? ` &times; <b>${d.n_alleles}</b> alleles` : "") + ` = ${f0(d.n_predictions)} predictions` + (d.too_big ? ' <span class="bad">too many for one run</span>' : "") +
+    (d.warnings || []).map(w => `<div class="warn sm">${esc(w)}</div>`).join("");
+}
+let SJOB = null, spoll = null, SDATA = null;
+$("s_run").onclick = async () => {
+  $("s_runmsg").textContent = "";
+  const r = await fetch("api/single/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(singleParams())});
+  const d = await r.json();
+  if (!r.ok) { $("s_runmsg").textContent = d.error; return; }
+  startSingle(d.id);
+};
+$("s_cancel").onclick = () => { $("s_cancel").disabled = true; fetch(`api/jobs/${SJOB}/cancel`, {method: "POST"}); };
+function startSingle(id){
+  SJOB = id; store.set("sjob", id);
+  $("s_empty").style.display = "none"; $("s_progress").style.display = "block"; $("s_results").style.display = "none";
+  $("s_run").disabled = true; $("s_cancel").disabled = false; $("s_cancel").style.display = "";
+  clearInterval(spoll); stick(); spoll = setInterval(stick, 1000);
+}
+async function stick(){
+  let d;
+  try { const r = await fetch(`api/jobs/${SJOB}`); if (!r.ok) { clearInterval(spoll); return; } d = await r.json(); } catch(e) { return; }
+  paintProgress(d, "s_");
+  if (TERMINAL.includes(d.state)) { clearInterval(spoll); $("s_cancel").style.display = "none"; singleModelChanged(); if (d.state == "done") loadSingle(d); }
+}
+async function loadSingle(d){
+  const s = d.summary || {};
+  $("s_results").style.display = "block";
+  $("s_info").innerHTML = `<b>${esc(s.label || s.model)}</b> &middot; ${f0(s.peptides)} peptides &middot; ${f0(s.pairs)} rows &middot; ${fmtT(s.seconds)} <span class="muted">&middot; saved in Projects as run ${esc(SJOB)}</span>`;
+  $("s_warn").innerHTML = (s.warnings || []).map(esc).join("<br>");
+  $("s_dl").href = `api/jobs/${SJOB}/csv?table=single`;
+  SDATA = await (await fetch(`api/jobs/${SJOB}/result?table=single&limit=20000`)).json();
+  const numeric = SDATA.columns.filter(c => SDATA.rows.some(r => typeof r[c] == "number") && !["Start", "Length"].includes(c));
+  $("s_col").innerHTML = numeric.map(c => `<option>${esc(c)}</option>`).join("");
+  $("s_val").value = ""; $("s_filter").value = ""; SSORT = null; renderSingle();
+}
+let SSORT = null, SDIR = 1;
+["s_col", "s_cmp", "s_val", "s_filter"].forEach(id => $(id).oninput = $(id).onchange = renderSingle);
+function renderSingle(){
+  if (!SDATA) return;
+  let rows = SDATA.rows.slice();
+  const v = $("s_val").value, col = $("s_col").value, q = $("s_filter").value.trim().toLowerCase();
+  if (v !== "" && col) rows = rows.filter(r => r[col] != null && ($("s_cmp").value == "le" ? r[col] <= +v : r[col] >= +v));
+  if (q) rows = rows.filter(r => Object.values(r).some(x => String(x).toLowerCase().includes(q)));
+  if (SSORT) rows.sort((a, b) => (a[SSORT] > b[SSORT] ? 1 : a[SSORT] < b[SSORT] ? -1 : 0) * SDIR);
+  $("s_note").textContent = `${f0(rows.length)} of ${f0(SDATA.total)} rows` + (SDATA.total > SDATA.shown ? ` (the table holds the first ${f0(SDATA.shown)}; download the CSV for all)` : "") + " - sorted by the tool's main score; click a header to sort";
+  $("s_tbl").innerHTML = "<tr>" + SDATA.columns.map(c => `<th data-c="${esc(c)}">${esc(c.replace(/_/g, " "))}</th>`).join("") + "</tr>" +
+    rows.slice(0, 2000).map(r => "<tr>" + SDATA.columns.map(c => `<td>${r[c] == null ? "" : typeof r[c] == "number" ? (Number.isInteger(r[c]) ? r[c] : +r[c].toFixed(5)) : esc(r[c])}</td>`).join("") + "</tr>").join("");
+  document.querySelectorAll("#s_tbl th").forEach(th => th.onclick = () => { SDIR = SSORT == th.dataset.c ? -SDIR : 1; SSORT = th.dataset.c; renderSingle(); });
+}
+
+/* ---------- projects (the workspace) ---------- */
+let RUNS = [], pjTimer = null;
+const when = t => t ? new Date(t * 1000).toLocaleString([], {dateStyle: "medium", timeStyle: "short"}) : "";
+const mb = b => b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " kB";
+async function loadRuns(){
+  const d = await (await fetch("api/runs")).json(); RUNS = d.runs;
+  $("pj_ws").textContent = `${d.workspace} - ${RUNS.length} runs, ${mb(d.total_size)}`;
+  renderRuns();
+  clearTimeout(pjTimer); if (RUNS.some(r => ["queued", "running"].includes(r.state)) && $("projects").classList.contains("on")) pjTimer = setTimeout(loadRuns, 3000);
+}
+function renderRuns(){
+  const q = $("pj_q").value.trim().toLowerCase(), k = $("pj_kind").value;
+  const rows = RUNS.filter(r => (!k || (k == "star" ? r.starred : r.kind == k)) && (!q || JSON.stringify([r.name, r.notes, r.input, r.model]).toLowerCase().includes(q)));
+  $("pj_tbl").innerHTML = "<tr><th></th><th>Name</th><th>Type</th><th>Date</th><th>Input</th><th>Result</th><th>State</th><th>Time</th><th>Size</th><th></th></tr>" + rows.map(r => {
+    const s = r.summary || {}, inp = r.input || {};
+    const type = r.kind == "single" ? `single: ${esc(r.model || "")}` : (r.classes || []).map(c => c == "c1" ? "CTL" : "HTL").join(" + ") || "pipeline";
+    const res = r.kind == "single" ? (s.pairs != null ? `${f0(s.pairs)} rows` : "") : (s.regions != null ? `${s.regions} regions (${s.regions_dual ?? 0} CTL+HTL)` : s.peptides_passed != null ? `${f0(s.peptides)} peptides` : "");
+    return `<tr data-id="${r.id}"><td><span class="star ${r.starred ? "on" : ""}" data-a="star">${r.starred ? "&#9733;" : "&#9734;"}</span></td>
+      <td style="white-space:normal;min-width:180px"><b>${esc(r.name)}</b>${r.notes ? `<div class="muted sm">${esc(r.notes)}</div>` : ""}<div class="muted sm">${esc(r.id)}</div></td>
+      <td>${type}</td><td>${when(r.created)}</td><td>${esc((inp.proteins || [])[0] || (inp.mode == "peptides" ? "peptides" : ""))}${inp.residues ? `<div class="muted sm">${f0(inp.residues)} aa${inp.n_proteins > 1 ? `, ${inp.n_proteins} proteins` : ""}</div>` : ""}</td>
+      <td>${res}</td><td><span class="st ${r.state}">${r.state}${r.progress != null ? " " + Math.round(r.progress * 100) + "%" : ""}</span></td><td>${s.seconds != null ? fmtT(s.seconds) : ""}</td><td>${mb(r.size)}</td>
+      <td class="act"><button class="b" data-a="open">Open</button><button class="b" data-a="tpl" title="Load this run's settings into the form">Use settings</button><button class="b" data-a="dl">Download</button><button class="b" data-a="ren">Rename</button><button class="b" data-a="note">Note</button><button class="b" data-a="del">Delete</button></td></tr>`;
+  }).join("") || '<tr><td colspan="10" class="muted">No runs yet. Run the pipeline or a single model and it appears here.</td></tr>';
+  document.querySelectorAll("#pj_tbl [data-a]").forEach(b => b.onclick = e => { e.stopPropagation(); runAction(b.closest("tr").dataset.id, b.dataset.a); });
+}
+async function putRun(id, body){ await fetch(`api/runs/${id}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}); loadRuns(); }
+async function runAction(id, a){
+  const r = RUNS.find(x => x.id == id); if (!r) return;
+  if (a == "star") return putRun(id, {starred: !r.starred});
+  if (a == "ren") { const n = prompt("Name for this run:", r.name); if (n) putRun(id, {name: n}); return; }
+  if (a == "note") { const n = prompt("Note:", r.notes || ""); if (n != null) putRun(id, {notes: n}); return; }
+  if (a == "del") { if (confirm(`Delete "${r.name}" and all its files? This cannot be undone.`)) { const d = await fetch(`api/runs/${id}`, {method: "DELETE"}); if (!d.ok) alert((await d.json()).error); loadRuns(); } return; }
+  if (a == "dl") { location.href = r.kind == "single" ? `api/jobs/${id}/csv?table=single` : `api/jobs/${id}/csv?table=bundle`; return; }
+  if (a == "tpl") {
+    const m = await (await fetch(`api/runs/${id}`)).json();
+    if (r.kind == "single") { applySingle(m.params); show("single"); } else { applyParams(m.params); show("pipeline"); }
+    return;
+  }
+  if (a == "open") {
+    if (r.kind == "single") { show("single"); startSingle(id); } else {
+      show("pipeline"); JOB = id; store.set("job", id); $("empty").style.display = "none"; $("progress").style.display = "block"; $("results").style.display = "none";
+      if (["running", "queued"].includes(r.state)) startPolling(id); else tick();
+    }
+  }
+}
+function applySingle(p){
+  if (!p || !SM[p.model]) return;
+  $("s_model").value = p.model; if (p.mode) document.querySelector(`input[name=smode][value=${p.mode}]`).checked = true;
+  $("s_text").value = p.text || "";
+  const cls = SM[p.model][1]; if (p.alleles && p.alleles.length) SELS["s" + cls] = p.alleles.slice();
+  singleModelChanged(); drawChips("s" + cls);
+  if (p.lengths) document.querySelectorAll(".ssz").forEach(b => b.checked = p.lengths.includes(+b.value));
+  if (p.iedb) { $("s_iedb_mask").value = p.iedb.mask_choice; $("s_iedb_pos").value = p.iedb.positions || ""; }
+  if (p.nii) $("s_nii").value = p.nii.version;
+  queueSinglePreview();
+}
+$("pj_q").oninput = $("pj_kind").onchange = renderRuns; $("pj_refresh").onclick = loadRuns;
+const _show = show;
+show = function(t){ _show(t); if (t == "projects") loadRuns(); if (t == "single") singleModelChanged(); };
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.t));
+buildSingle();
+(async () => { const id = store.get("sjob"); if (!id) return; const r = await fetch(`api/jobs/${id}`); if (!r.ok) return; const d = await r.json(); SJOB = id;
+  $("s_empty").style.display = "none"; $("s_progress").style.display = "block"; if (["running", "queued"].includes(d.state)) startSingle(id); else stick(); })();
+
 /* resume a job after a page reload */
 (async () => {
   const id = store.get("job"); if (!id) return;
@@ -679,7 +921,6 @@ async function saveCfg(){
   $("msg").innerHTML = r.ok ? '<span class="ok">saved</span>' : `<span class="bad">${esc(d.error)}</span>`;
   if (r.ok) { loadCfg(); checkAll(false); }
 }
-const NOTREADY = {};
 const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2};
 function showReadiness(m, d){
   document.querySelectorAll(`.fdot[data-m="${m}"]`).forEach(e => e.className = "dot fdot " + (d.ok ? "ok" : "bad"));
@@ -694,7 +935,7 @@ function showReadiness(m, d){
     const bad = Object.keys(NOTREADY).filter(k => NOTREADY[k] && CLASS_OF[k] == c);
     $("nr" + c).innerHTML = bad.length ? "Not ready: " + bad.map(k => `${k} (${esc(NOTREADY[k])})`).join(", ") + ". See Settings." : "";
   }
-  queuePreview();
+  queuePreview(); if (typeof singleModelChanged == "function" && $("s_model")) singleModelChanged();
 }
 async function check(m, deep){
   const d = await (await fetch(`api/health/${m}` + (deep ? "?deep=1" : ""), {method: "POST"})).json();
@@ -718,5 +959,5 @@ async function deepTest(m){
 }
 
 loadCfg(); checkAll(false);
-show(store.get("tab") || "pipeline");
+show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 </script></body></html>

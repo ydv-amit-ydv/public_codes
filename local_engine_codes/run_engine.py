@@ -13,6 +13,7 @@ import engine_server                                        # noqa: E402,F401  (
 import pipeline_dual                                        # noqa: E402
 from common import config                                   # noqa: E402
 from common.jobs import Job                                 # noqa: E402
+from common import runs                                     # noqa: E402
 
 
 def main():
@@ -32,6 +33,7 @@ def main():
     if problems:
         sys.exit("\n".join(problems))
     job = Job()
+    runs.create(job, "pipeline", params)
     job.state, job.started = "running", time.time()
     last = [-1]
 
@@ -49,8 +51,11 @@ def main():
         pipeline_dual.run(params, job)
         job.state = "done"
     except Exception as e:                                   # noqa: BLE001
-        job.state = "failed"
+        job.state, job.error, job.finished = "failed", str(e), time.time()
+        runs.finish(job)
         sys.exit(f"\nfailed: {type(e).__name__}: {e}")
+    job.finished = time.time()
+    runs.finish(job)                                         # the run is kept in the workspace too, so the page lists it
     os.makedirs(a.out, exist_ok=True)
     r = job.result
     shutil.copy(r["report_html"], os.path.join(a.out, "report.html"))

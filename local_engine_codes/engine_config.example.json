@@ -1,5 +1,7 @@
 {
   "tmp_dir": "auto",
+  "workspace_dir": "auto",
+  "population": {"label": "India", "weights_csv": "auto"},
   "models": {
     "netmhcpan": {
       "enabled": true,

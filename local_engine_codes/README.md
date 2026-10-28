@@ -49,6 +49,18 @@ binders. Class II chains CD4episcore the same way.
 - Runs over 3,000,000 predictions per class are refused (use fewer alleles or sizes). Stray characters in a FASTA make the windows containing
   them skip, and the page says so.
 
+## Single model and Projects
+
+- **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's
+  main score. Nothing is combined or filtered, and the code path is the one the pipeline uses, so it is the way to double-check a number. The table
+  can be cut by a threshold on any column and downloaded as CSV.
+- **Projects** lists every run (pipeline or single) with its date, input, result, state, time and size. Each run is stored in the workspace with the
+  exact settings and input, so after a restart you can **Open** it (all tabs, report and downloads work again), **Use settings** as a template for a new
+  run, rename it, add a note, star it, download it or delete it. A run that was going when the server stopped is shown as *interrupted*.
+- **Where the files are:** `workspace_dir` in Settings (default `<models folder>/engine_workspace`, beside the tools, so replacing the code folder
+  does not touch it; `ENGINE_WORKSPACE` overrides it). Each run is a folder `runs/<id>/` with `run.json` (input, settings, dates, state, tools used,
+  engine version) and its outputs.
+
 ## Consensus, agreement and population-weighted ranking
 
 Every run ends with a consensus step (`consensus.py`, tested in `test_consensus.py`) that turns the tools' outputs into one ranked answer.
