@@ -16,7 +16,7 @@ import pandas as pd
 from flask import Flask, jsonify, request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from common import config, discover, alleles as allele_lib   # noqa: E402
+from common import config, discover, predcache, alleles as allele_lib   # noqa: E402
 from common.jobs import run_cmd                              # noqa: E402
 
 AA = set("ACDEFGHIKLMNPQRSTVWY")
@@ -123,6 +123,20 @@ def build_peptides(text, mode, lengths, bounds=(8, 14)):
 
 
 def run_netmhcpan(peptides, alleles, p, job=None, stage="netmhcpan"):
+    """run_netmhcpan_raw behind the prediction cache: only peptide-allele predictions not computed before are run.
+    Returns (DataFrame, [log]) exactly like the raw call."""
+    logs = []
+
+    def compute(peps, als):
+        df, lg = run_netmhcpan_raw(peps, als, p, job, stage)
+        logs.extend(lg)
+        return df
+    sig = ("netmhcpan", netmhc_path(), bool(p["ba"]), p["rankS"], p["rankW"], p.get("t"), p.get("raw", ""))
+    df = predcache.fetch("netmhcpan", sig, peptides, list(alleles), compute, allele_lib.canonical, job, stage)
+    return df, logs
+
+
+def run_netmhcpan_raw(peptides, alleles, p, job=None, stage="netmhcpan"):
     """Run NetMHCpan -p. Work is split into tasks of (one peptide length, a few alleles)
     that run in parallel; `job` (optional) gets progress and can cancel. Returns (DataFrame, [log])."""
     cfg = config.model("netmhcpan")

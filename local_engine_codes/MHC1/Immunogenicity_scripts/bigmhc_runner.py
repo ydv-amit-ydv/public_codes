@@ -16,7 +16,7 @@ import argparse, os, re, sys, tempfile
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from common import alleles as allele_lib, config   # noqa: E402
+from common import alleles as allele_lib, config, predcache   # noqa: E402
 from common.jobs import run_cmd                    # noqa: E402
 
 AA = set("ACDEFGHIKLMNPQRSTVWY")
@@ -146,7 +146,11 @@ def predict_pairs(pairs, models=("el", "im"), job=None, **overrides):
     grid["allele"] = [allele_lib.canonical(a) for a in grid["allele"]]
     with tempfile.TemporaryDirectory(dir=config.tmp_dir()) as wd:
         for m in models:
-            grid[f"BigMHC_{m.upper()}"] = run_bigmhc(s, m, grid, wd, job=job, stage=f"bigmhc_{m}")
+            def compute(sub, m=m):
+                return run_bigmhc(s, m, sub, wd, job=job, stage=f"bigmhc_{m}")
+            grid[f"BigMHC_{m.upper()}"] = predcache.fetch_scores(f"bigmhc_{m}", ("bigmhc", m, s["home"]), grid, compute, allele_lib.canonical, job)
+            if job:
+                job.finish_stage(f"bigmhc_{m}", f"{len(grid):,} pairs")
     return grid
 
 

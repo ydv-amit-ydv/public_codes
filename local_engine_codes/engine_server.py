@@ -22,7 +22,7 @@ sys.path.insert(0, HERE)
 
 from common import alleles as allele_lib, config, population            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
-from common import runs                                      # noqa: E402
+from common import runs, predcache                           # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
@@ -576,6 +576,17 @@ def api_funnel():
     cat = [{"key": k, "label": sp.label, "cost": sp.cost, "protein": sp.protein, "alleles": sp.alleles}
            for k, sp in model_registry.SPECS.items() if sp.cls == cls]
     return jsonify(models=sorted(cat, key=lambda x: (x["cost"], x["label"])), templates={k: {"label": v[0], "stages": v[1]} for k, v in funnel.templates(cls).items()})
+
+
+@main.get("/api/cache")
+def api_cache_get():
+    return jsonify(size=predcache.size())
+
+
+@main.delete("/api/cache")
+def api_cache_clear():
+    predcache.clear()
+    return jsonify(ok=True)
 
 
 @main.get("/api/performance")

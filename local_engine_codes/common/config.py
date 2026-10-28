@@ -16,7 +16,7 @@ CONFIG_PATH = os.path.expanduser(
 DEFAULT = {
     "tmp_dir": "auto",
     "workspace_dir": "auto",
-    "performance": {"threads": 0, "nice": 5, "stall_seconds": 900, "timeout_minutes": 0, "parallel_models": 2},
+    "performance": {"threads": 0, "nice": 5, "stall_seconds": 900, "timeout_minutes": 0, "parallel_models": 2, "cache": 1},
     "population": {"label": "India", "weights_csv": "auto"},
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
@@ -139,7 +139,7 @@ def performance():
     cpus = os.cpu_count() or 1
     return {"threads": max(0, int(perf["threads"])), "nice": min(19, max(0, int(perf["nice"]))), "cpus": cpus,
             "stall_seconds": max(0, int(perf["stall_seconds"])), "timeout_seconds": max(0, int(perf["timeout_minutes"])) * 60,
-            "parallel_models": max(1, min(8, int(perf["parallel_models"])))}
+            "parallel_models": max(1, min(8, int(perf["parallel_models"]))), "cache": 1 if perf.get("cache", 1) else 0}
 
 
 def workspace():

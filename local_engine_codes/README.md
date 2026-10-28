@@ -79,6 +79,13 @@ once, sharing the threads), `nice` (process priority, 5 by default so the browse
 activity for this long is stopped and the run says which one; a merely slow tool keeps computing and is never stopped) and `timeout_minutes` (optional hard
 limit per call). Cancel stops every running program. Standard input of every tool is closed, so none can wait for a keypress.
 
+**Prediction cache.** NetMHCpan and BigMHC results are stored per allele and peptide in `<workspace>/cache`. A later run on the same peptides (another
+strategy, one more allele, or a rerun after a failure further down the pipeline) computes only what is new. The key includes the tool path and its options.
+Switch it off with `performance.cache = 0`; clear it under Projects.
+
+**Known tool faults handled:** PRIME 2.1's C++ program never returns for HLA-C*07:06 (it spins at 100 % CPU), so that allele is skipped for PRIME with a note;
+PRIME runs one allele per call with a time limit, so any other allele that hangs is given up on instead of stalling the run.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's

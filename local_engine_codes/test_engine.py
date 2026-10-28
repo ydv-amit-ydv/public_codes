@@ -43,6 +43,7 @@ open(f"{NMP}/netMHCpan", "w").write(textwrap.dedent('''\
     setenv NMHOME /wrong/placeholder
     if [ -n "$EXPECTED_NMHOME" ] && [ "$NMHOME_SEEN" != "$EXPECTED_NMHOME" ]; then echo "bad NMHOME $NMHOME_SEEN" >&2; exit 3; fi
     [ -n "$STUB_SLEEP" ] && [ "$1" != "-listMHC" ] && sleep "$STUB_SLEEP"
+    [ -n "$STUB_CALLS" ] && [ "$1" != "-listMHC" ] && echo run >> "$STUB_CALLS"
     if [ "$1" = "-listMHC" ]; then printf 'HLA-A01:01\\nHLA-A02:01\\nHLA-B07:02\\nH-2-Kb\\n'; exit 0; fi
     cat <<'EOT'
      Pos            MHC           Peptide      Core Of Gp Gl Ip Il             Icore        Identity Score_EL %Rank_EL Score_BA %Rank_BA  Aff(nM) BindLevel
@@ -326,6 +327,8 @@ import bigmhc_runner                             # noqa: E402
 import pandas as pd                              # noqa: E402
 
 # BigMHC progress lines drive the stage (loading 7 networks = 0-40%, batches = 40-100%)
+from common import predcache                    # noqa: E402
+predcache.clear()                                # earlier checks already scored this pair
 j = Job(); j.stage("bigmhc_el", "BigMHC EL")
 seen = []
 orig = j.update
@@ -334,6 +337,12 @@ bigmhc_runner.predict_pairs(pd.DataFrame({"peptide": ["GILGFVFTL"], "allele": ["
 dones = [d_ for d_, _ in seen if d_ is not None]
 assert dones == sorted(dones) and 100 in [t for _, t in seen], seen          # one 0-100 scale, never backwards
 assert j.stages[0]["state"] == "done" and j.stages[0]["total"] == 100, j.stages
+# the second time the score comes from the cache: same number, BigMHC not started again
+n_seen = len(seen)
+again = bigmhc_runner.predict_pairs(pd.DataFrame({"peptide": ["GILGFVFTL"], "allele": ["HLA-A02:01"]}), ["el"], job=j)
+assert len(seen) == n_seen and again["BigMHC_EL"].iloc[0] == 0.45, (len(seen), n_seen, again)
+mixed = bigmhc_runner.predict_pairs(pd.DataFrame({"peptide": ["GILGFVFTL", "AAAAAAAAAA"], "allele": ["HLA-A02:01", "HLA-A02:01"]}), ["el"], job=j)
+assert list(mixed["BigMHC_EL"]) == [0.45, 0.5], mixed                        # only the new pair was computed (the stub scores length/20)
 assert 40 in dones, dones                                                    # 7 networks loaded = 40%
 
 
@@ -796,6 +805,23 @@ if have_tools:
     assert c.get(f"/api/jobs/{dd['id']}/result?table=regions").status_code == 200
     assert c.post(f"/api/runs/{base_run['id']}/rerank", json={"preset": "nonsense"}).status_code in (200, 400)
     assert c.post("/api/runs/000000000000/rerank", json={}).status_code == 400
+# prediction cache: the same peptide-allele pair is never computed twice
+CALLS = os.path.join(TMP, "nmp_calls"); os.environ["STUB_CALLS"] = CALLS
+predcache.clear(); open(CALLS, "w").close()
+one = {"model": "netmhcpan", "text": "GILGFVFTL", "mode": "peptides", "alleles": ["HLA-A*02:01"]}
+wait_job(c.post("/api/single/run", json=one).get_json()["id"])
+n1 = len(open(CALLS).read().split())
+d = wait_job(c.post("/api/single/run", json=one).get_json()["id"])
+assert n1 >= 1 and len(open(CALLS).read().split()) == n1, "second run must not start NetMHCpan"
+row = c.get(f"/api/jobs/{d['id']}/result?table=single").get_json()["rows"][0]
+assert row["NMP_%Rank_EL"] == 0.197 and row["Peptide"] == "GILGFVFTL", row
+assert any("already known" in l for l in d["log"]), d["log"]
+assert predcache.size() > 0 and c.delete("/api/cache").status_code == 200 and predcache.size() == 0
+c.put("/api/performance", json={"cache": 0}); predcache.clear()
+wait_job(c.post("/api/single/run", json=one).get_json()["id"]); n2 = len(open(CALLS).read().split())
+wait_job(c.post("/api/single/run", json=one).get_json()["id"]); assert len(open(CALLS).read().split()) > n2, "cache off: it runs again"
+c.put("/api/performance", json={"cache": 1}); os.environ.pop("STUB_CALLS")
+
 # performance settings are validated and take effect
 assert c.get("/api/performance").get_json()["effective"]["parallel_models"] >= 1
 r = c.put("/api/performance", json={"threads": 2, "nice": 0, "stall_seconds": 600, "parallel_models": 2}); assert r.status_code == 200, r.get_json()

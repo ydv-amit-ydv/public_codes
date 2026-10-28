@@ -222,6 +222,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <input type="text" id="pj_q" placeholder="search name, protein, notes..." style="width:230px">
   <select id="pj_kind"><option value="">all runs</option><option value="pipeline">pipeline</option><option value="single">single model</option><option value="star">starred</option></select>
   <button class="b" id="pj_refresh">Refresh</button>
+  <span class="muted sm" id="pj_cache"></span> <button class="b" id="pj_clearcache" title="Forget stored NetMHCpan and BigMHC predictions">Clear prediction cache</button>
  </div>
  <div class="muted sm" style="margin:4px 0 10px">Every run is saved here with its input, settings, date and outputs. Open it to see the results again, or use its settings as a template.</div>
  <div style="overflow:auto"><table id="pj_tbl"></table></div>
@@ -237,6 +238,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
    <span>Priority: nice level (0-19) <span class="q" data-h="p_nice">?</span></span><input type="number" id="pf_nice" min="0" max="19" step="1">
    <span>Stop a tool after this many silent seconds <span class="q" data-h="p_stall">?</span></span><input type="number" id="pf_stall_seconds" min="0" step="60">
    <span>Hard time limit per tool call, minutes <span class="q" data-h="p_timeout">?</span></span><input type="number" id="pf_timeout_minutes" min="0" step="10">
+   <span>Remember predictions (1 = yes, 0 = no) <span class="q" data-h="p_cache">?</span></span><input type="number" id="pf_cache" min="0" max="1" step="1">
   </div>
   <div style="margin-top:8px"><button class="b" id="pf_save">Save</button> <button class="b" id="pf_fast">Use all cores</button> <button class="b" id="pf_gentle">Keep the machine usable</button> <span id="pf_msg" class="sm"></span></div>
  </div>
@@ -290,6 +292,7 @@ const HELP = {
  p_parallel: "In a funnel stage with several models, how many run at the same time. 1 = one after the other. Each gets an equal share of the threads.",
  p_nice: "Operating-system priority of the tools (0 = normal, 19 = lowest). 5 keeps the browser and other programs smooth while predictions run.",
  p_stall: "If a tool shows no CPU use, no disk activity and no output for this long, it is stopped and the run reports it, instead of waiting forever. 0 = never. A tool that is merely slow keeps computing and is not stopped.",
+ p_cache: "A prediction of NetMHCpan or BigMHC for a peptide and allele is stored, so a later run on the same peptides (another strategy, one more allele, a re-run after a failure) only computes what is new. Clear it under Projects.",
  p_timeout: "Optional hard limit for one tool call. 0 = none.",
  nii_version: "4.3 is the newest NetMHCIIpan; 'IEDB default' reproduces the numbers on the IEDB website.",
  iedb_mask: "Positions of the peptide excluded from the IEDB immunogenicity score (anchor positions): 1,2 and the C-terminus by default.",
@@ -980,9 +983,11 @@ function applySingle(p){
   if (p.nii) $("s_nii").value = p.nii.version;
   queueSinglePreview();
 }
+async function loadCacheSize(){ const d = await (await fetch("api/cache")).json(); $("pj_cache").textContent = "prediction cache " + mb(d.size); }
+$("pj_clearcache").onclick = async () => { if (confirm("Forget all stored predictions? The next run will recompute them.")) { await fetch("api/cache", {method: "DELETE"}); loadCacheSize(); } };
 $("pj_q").oninput = $("pj_kind").onchange = renderRuns; $("pj_refresh").onclick = loadRuns;
 const _show = show;
-show = function(t){ _show(t); if (t == "projects") loadRuns(); if (t == "single") singleModelChanged(); };
+show = function(t){ _show(t); if (t == "projects") { loadRuns(); loadCacheSize(); } if (t == "single") singleModelChanged(); };
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.t));
 buildSingle();
 (async () => { const id = store.get("sjob"); if (!id) return; const r = await fetch(`api/jobs/${id}`); if (!r.ok) return; const d = await r.json(); SJOB = id;
@@ -1011,11 +1016,11 @@ async function saveCfg(){
   $("msg").innerHTML = r.ok ? '<span class="ok">saved</span>' : `<span class="bad">${esc(d.error)}</span>`;
   if (r.ok) { async function loadPerf(){
   const d = await (await fetch("api/performance")).json(), p = d.performance;
-  for (const k of ["threads", "parallel_models", "nice", "stall_seconds", "timeout_minutes"]) $("pf_" + k).value = p[k];
+  for (const k of ["threads", "parallel_models", "nice", "stall_seconds", "timeout_minutes", "cache"]) $("pf_" + k).value = p[k];
   $("perfinfo").textContent = `this machine has ${d.effective.cpus} CPU threads`;
 }
 async function savePerf(vals){
-  const body = vals || Object.fromEntries(["threads", "parallel_models", "nice", "stall_seconds", "timeout_minutes"].map(k => [k, $("pf_" + k).value === "" ? 0 : +$("pf_" + k).value]));
+  const body = vals || Object.fromEntries(["threads", "parallel_models", "nice", "stall_seconds", "timeout_minutes", "cache"].map(k => [k, $("pf_" + k).value === "" ? 0 : +$("pf_" + k).value]));
   const r = await fetch("api/performance", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   const d = await r.json(); $("pf_msg").innerHTML = r.ok ? '<span class="ok">saved, used by the next run</span>' : `<span class="bad">${esc(d.error)}</span>`; loadPerf(); loadCfg();
 }
