@@ -29,7 +29,7 @@ KEYS = ["Protein", "Start", "Peptide"]
 MODEL_TOOLS = {"netmhcpan": ("NMP_EL", "NMP_BA"), "mixmhcpred": ("MIXMHC",), "mhcflurry": ("MHCF",), "prime": ("PRIME",),
                "iedb_imm": ("IEDB_IMM",), "netctlpan": ("CTLPAN",), "netchop": ("NETCHOP",), "bigmhc_el": ("BIGMHC_EL",),
                "bigmhc_im": ("BIGMHC_IM",), "netmhciipan_el": ("NII_EL",), "netmhciipan_ba": ("NII_BA",),
-               "mixmhc2pred": ("MIX2",), "mhcnuggets": ("MHCNUG",), "cd4episcore": ("CD4",)}
+               "mixmhc2pred": ("MIX2",), "cd4episcore": ("CD4",)}
 
 
 def templates(cls):

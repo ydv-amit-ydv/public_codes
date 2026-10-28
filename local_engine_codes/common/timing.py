@@ -11,7 +11,7 @@ from . import config
 # seconds per prediction (or per peptide where a tool scores peptides), a fixed start-up cost, on a small machine
 DEFAULT = {"netmhcpan": (3.4e-3, 5), "mixmhcpred": (2e-5, 2), "prime": (3e-5, 3), "iedb_imm": (1e-5, 1), "mhcflurry": (1.5e-3, 15),
            "netctlpan": (3e-4, 10), "netchop": (1e-4, 15), "bigmhc_el": (2e-2, 30), "bigmhc_im": (2e-2, 30),
-           "netmhciipan": (2e-3, 10), "mixmhc2pred": (2e-5, 2), "mhcnuggets": (5e-4, 25), "cd4episcore": (3e-3, 10), "merge": (2e-6, 5), "regions": (0, 10)}
+           "netmhciipan": (2e-3, 10), "mixmhc2pred": (2e-5, 2), "cd4episcore": (3e-3, 10), "merge": (2e-6, 5), "regions": (0, 10)}
 GATE = 0.03        # share of the pairs BigMHC gets after the funnel (a guess until a run teaches it)
 
 

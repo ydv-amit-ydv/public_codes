@@ -68,7 +68,6 @@ TOOLS = [
     Tool("NII_EL", "NetMHCIIpan-EL", "NII_%Rank_EL", "binding", "abs", "low", True, 2),
     Tool("NII_BA", "NetMHCIIpan-BA", "NII_%Rank_BA", "binding", "abs", "low", True, 2),
     Tool("MIX2", "MixMHC2pred", "MIX2_%Rank", "binding", "abs", "low", True, 2),
-    Tool("MHCNUG", "MHCnuggets", "MHCnuggets_%Rank", "binding", "abs", "low", True, 2),
     Tool("CD4", "CD4episcore", "CD4_Episcore", "immunogenicity", "rel", "low", False, 2),
 ]
 GROUPS = ("binding", "immunogenicity", "processing")

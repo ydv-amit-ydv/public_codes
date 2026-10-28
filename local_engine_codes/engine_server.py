@@ -28,7 +28,7 @@ import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
 import funnel, models as model_registry
 import pipeline, pipeline_ii, pipeline_dual, pipeline_single                                  # noqa: E402
-import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4, mhcnuggets_runner as mn2   # noqa: E402
+import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import pandas as pd                                          # noqa: E402
 
 main = Flask(__name__)
@@ -245,21 +245,7 @@ def health_iedb_bundle_ii(deep):
     return checks
 
 
-def health_mhcnuggets(deep):
-    m = config.model("mhcnuggets")
-    py = m.get("python") or ""
-    checks = [_check("Python with mhcnuggets (TensorFlow)", bool(py) and os.path.isfile(py),
-                     (py or "not found: " + mn2.HINT) + _auto(m, "python"))]
-    if deep and checks[0]["ok"]:
-        try:
-            df, _ = mn2.predict(["PKYVKQNTLKLATGM"], ["HLA-DRB1*01:01"])
-            checks.append(_check("MHCnuggets: PKYVKQNTLKLATGM / DRB1*01:01", len(df) == 1, f"IC50 {float(df['MHCnuggets_IC50_nM'].iloc[0]):.0f} nM" if len(df) else "no result"))
-        except Exception as e:
-            checks.append(_check("MHCnuggets: PKYVKQNTLKLATGM / DRB1*01:01", False, e))
-    return checks
-
-
-HEALTH = {"mhcnuggets": health_mhcnuggets, "netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "mhcflurry": health_mhcflurry,
+HEALTH = {"netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "mhcflurry": health_mhcflurry,
           "prime": health_prime, "iedb_bundle": health_iedb_bundle, "bigmhc": health_bigmhc,
           "mixmhc2pred": health_mixmhc2pred, "iedb_bundle_ii": health_iedb_bundle_ii}
 
@@ -349,7 +335,6 @@ def _needed_models(params):
     if int(params.get("mhc_class", 1)) == 2:
         if m.get("netmhciipan_el") or m.get("netmhciipan_ba") or m.get("cd4episcore"): need.append("iedb_bundle_ii")
         if m.get("mixmhc2pred"): need.append("mixmhc2pred")
-        if m.get("mhcnuggets"): need.append("mhcnuggets")
         return need
     if m.get("netmhcpan"): need.append("netmhcpan")
     if m.get("mixmhcpred") or m.get("prime"): need.append("mixmhcpred")      # PRIME calls MixMHCpred

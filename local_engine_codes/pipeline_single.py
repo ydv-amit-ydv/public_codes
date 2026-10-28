@@ -18,7 +18,6 @@ import calis_immunogenicity as ci
 import cd4episcore_runner as cd
 import iedb_processing as ip
 import mhcflurry_runner as mf
-import mhcnuggets_runner as mn
 import mixmhc2pred_runner as m2
 import mixmhcpred_runner as mx
 import netmhcpan_app as nm
@@ -38,7 +37,6 @@ MODELS = {
     "bigmhc_im": (1, "BigMHC IM", True, False, "BigMHC_IM", False),
     "netmhciipan": (2, "NetMHCIIpan (EL + BA)", True, False, "NII_%Rank_EL", True),
     "mixmhc2pred": (2, "MixMHC2pred 2.1", True, False, "MIX2_%Rank", True),
-    "mhcnuggets": (2, "MHCnuggets", True, False, "MHCnuggets_%Rank", True),
     "cd4episcore": (2, "CD4episcore", False, False, "CD4_Episcore", True),
 }
 
@@ -83,7 +81,7 @@ def needed(p):
     m = p["model"]
     return {"netmhcpan": ["netmhcpan"], "mixmhcpred": ["mixmhcpred"], "mhcflurry": ["mhcflurry"], "prime": ["mixmhcpred", "prime"],
             "iedb_imm": [], "netctlpan": ["iedb_bundle"], "netchop": ["iedb_bundle"], "bigmhc_el": ["bigmhc"], "bigmhc_im": ["bigmhc"],
-            "netmhciipan": ["iedb_bundle_ii"], "mixmhc2pred": ["mixmhc2pred"], "mhcnuggets": ["mhcnuggets"], "cd4episcore": ["iedb_bundle_ii"]}[m]
+            "netmhciipan": ["iedb_bundle_ii"], "mixmhc2pred": ["mixmhc2pred"], "cd4episcore": ["iedb_bundle_ii"]}[m]
 
 
 def preview(params):
@@ -144,8 +142,6 @@ def run(params, job):
         res, n = nn.predict(peps, al, p["lengths"] or sorted({len(x) for x in uniq}), seqs, ("el", "ba"), p["version"], job=job); warns += n
     elif model == "mixmhc2pred":
         res, n = m2.predict(peps, al, seqs, job=job); warns += n
-    elif model == "mhcnuggets":
-        res, n = mn.predict(uniq, al, job=job); warns += n
     else:
         res = cd.predict(uniq, job=job)
     if res is None or res.empty:

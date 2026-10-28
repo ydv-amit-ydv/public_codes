@@ -115,11 +115,6 @@ no conda variables, no perl/R paths. With conda active these programs otherwise 
 `libtinfo.so.6: no version information available`, and perl or R can fail without a message, which appeared as CD4episcore failing with
 `loop of ufunc does not support argument 0 of type float`. If you still see it: `perl -v` and `R --version` must work in a plain terminal.
 
-**MHCnuggets (class II, third binding vote).** Install it in its own environment (it needs TensorFlow) and the engine finds it:
-`conda create -n mhcnuggets python=3.10 -y && conda activate mhcnuggets && pip install mhcnuggets` (or set `models.mhcnuggets.python`). It reports an IC50 and its percentile
-among human-proteome peptides, and covers the HLA-DR, DQ and DP alleles it was trained on; any other allele is skipped with a note (MHCnuggets would silently substitute
-the "closest" allele, so the engine does not let it). It is slow, off by default, and runs only on the peptides the other class II tools leave a chance of binding.
-
 **Class II clusters by binding core.** NetMHCIIpan reports the 9-aa core of each window; candidates whose cores overlap (70 %, anchored on the best one) are one cluster, so the
 many 15-25-mers around one core collapse into one. `cluster_by` in the rules (or "Cluster by" in the advanced rules) switches back to whole-peptide overlap. Peptide tables
 have `Best_Core, Core_Start, Core_End`.

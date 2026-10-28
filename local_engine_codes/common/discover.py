@@ -145,19 +145,6 @@ def find_mhcflurry_python():
     return None
 
 
-def find_mhcnuggets_python():
-    """An interpreter that can import mhcnuggets (TensorFlow/Keras). MHCNUGGETS_PYTHON wins; an env named like 'mhcnuggets' is tried first."""
-    forced = os.environ.get("MHCNUGGETS_PYTHON")
-    if forced:
-        return os.path.expanduser(forced)
-    envs = _conda_pythons()
-    envs.sort(key=lambda p: ("mhcnuggets" not in p.lower(), p))
-    for py in [sys.executable] + envs:
-        if os.path.isfile(py) and _can_import(py, ("mhcnuggets",)):
-            return py
-    return None
-
-
 def find_bigmhc_python():
     """An interpreter that can import torch. BIGMHC_PYTHON wins, then conda envs
     (an env named like 'bigmhc' first), then the interpreter running the server."""

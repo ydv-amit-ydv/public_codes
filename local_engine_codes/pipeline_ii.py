@@ -19,7 +19,6 @@ from guard import try_model
 
 from common import alleles as allele_lib, config
 import cd4episcore_runner as cd
-import mhcnuggets_runner as mn
 import mixmhc2pred_runner as m2
 import netmhcpan_app as nm
 import netmhciipan_runner as nn
@@ -27,7 +26,7 @@ import netmhciipan_runner as nn
 MAX_PAIRS = 3_000_000
 SCAN_LENGTHS = tuple(range(11, 26))
 PEPTIDE_BOUNDS = (9, 30)
-MODEL_KEYS = ("netmhciipan_el", "netmhciipan_ba", "mixmhc2pred", "mhcnuggets", "cd4episcore")
+MODEL_KEYS = ("netmhciipan_el", "netmhciipan_ba", "mixmhc2pred", "cd4episcore")
 FILTER_KEYS = ("nii_el_rank_max", "nii_ba_rank_max", "nii_ic50_max", "mix2_rank_max", "cd4_max")
 
 
@@ -110,8 +109,6 @@ def stage_plan(p, n_pep):
                      "weight": timing.expected_seconds("netmhciipan", pairs * len(kinds))})
     if m["mixmhc2pred"]:
         plan.append({"name": "mixmhc2pred", "label": "MixMHC2pred 2.1", "work": pairs, "weight": timing.expected_seconds("mixmhc2pred", pairs)})
-    if m["mhcnuggets"]:
-        plan.append({"name": "mhcnuggets", "label": "MHCnuggets (affinity, LSTM)", "work": int(pairs * gate), "weight": timing.expected_seconds("mhcnuggets", pairs * gate)})
     if m["cd4episcore"]:
         plan.append({"name": "cd4episcore", "label": "CD4episcore (CD4 immunogenicity)", "work": int(n_pep * gate), "weight": timing.expected_seconds("cd4episcore", n_pep * gate)})
     plan.append({"name": "merge", "label": "Merging and filtering", "work": pairs, "weight": timing.expected_seconds("merge", pairs)})
@@ -140,7 +137,7 @@ def run(params, job):
 
     manual = p["funnel"]["mode"] == "manual"
     failed = []                                  # models that broke and were skipped (see guard.py)
-    n_selected = (int(m["netmhciipan_el"] or m["netmhciipan_ba"]) + int(m["mixmhc2pred"]) + int(m["mhcnuggets"]) + int(m["cd4episcore"]))
+    n_selected = (int(m["netmhciipan_el"] or m["netmhciipan_ba"]) + int(m["mixmhc2pred"]) + int(m["cd4episcore"]))
     fstats = []
     nii = mix = chop = None
     if manual:
@@ -181,21 +178,6 @@ def run(params, job):
         if mix is not None and not mix.empty:
             base = base.merge(mix, on=scan_keys, how="left")
 
-        if m["mhcnuggets"]:                  # slow: only the peptides that can still become binders, for every allele
-            rules_n = consensus.resolve_rules(2, p["preset"], p["rules"])
-            gate_n = consensus.gate_mask(base, 2, rules_n, pending=1) if (p["chain"] and (nii is not None or mix is not None)) else pd.Series(True, index=base.index)
-            use_n = base.loc[gate_n, "Peptide"].drop_duplicates().tolist()
-            job.log(f"chain: {len(use_n):,} of {n_pep:,} peptides -> MHCnuggets" if p["chain"] else f"MHCnuggets on all {n_pep:,} peptides")
-            got = try_model("MHCnuggets", "mhcnuggets", lambda: mn.predict(use_n, p["alleles"], job=job), job, warns, failed) if use_n else None
-            if got is None:
-                if not use_n:
-                    job.finish_stage("mhcnuggets", "nothing to score")
-                m["mhcnuggets"] = False
-            else:
-                nug, n = got
-                warns += n
-                base = base.merge(nug, on=["Peptide", "Allele"], how="left")
-                job.finish_stage("mhcnuggets", f"{len(nug):,} predictions")
 
         chop = None
         if m["cd4episcore"]:
