@@ -893,6 +893,19 @@ assert c.put("/api/performance", json={"threads": "many"}).status_code == 400
 c.put("/api/performance", json={"threads": 0, "nice": 5})
 assert c.get("/api/funnel?mhc_class=1").get_json()["models"][0]["cost"] == 1 and "recommended" in c.get("/api/funnel?mhc_class=2").get_json()["templates"]
 
+# the page itself: every dropdown fills, every tab opens, nothing throws (needs node + playwright; skipped without)
+import shutil as _shu, subprocess as _sp, threading as _th                       # noqa: E402
+if _shu.which("node"):
+    from werkzeug.serving import make_server                                       # noqa: E402
+    _srv = make_server("127.0.0.1", 0, engine_server.application, threaded=True)
+    _th.Thread(target=_srv.serve_forever, daemon=True).start()
+    _r = _sp.run(["node", os.path.join(HERE, "test_ui.js"), f"http://127.0.0.1:{_srv.server_port}/"], capture_output=True, text=True, timeout=120)
+    _srv.shutdown()
+    if "Cannot find module" in (_r.stderr or ""):
+        print("skipped the browser test: playwright is not installed for node")
+    else:
+        assert _r.returncode == 0 and "ui ok" in _r.stdout, (_r.stdout + _r.stderr)[-800:]
+
 os.environ.pop("PYTHONPATH", None)
 
 # ---- optional: real BigMHC ----------------------------------------------------------

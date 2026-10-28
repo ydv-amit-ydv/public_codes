@@ -1037,7 +1037,9 @@ async function saveCfg(){
   const r = await fetch("api/config", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text: $("cfg").value})});
   const d = await r.json();
   $("msg").innerHTML = r.ok ? '<span class="ok">saved</span>' : `<span class="bad">${esc(d.error)}</span>`;
-  if (r.ok) { async function loadPerf(){
+  if (r.ok) { loadCfg(); checkAll(false); }
+}
+async function loadPerf(){
   const d = await (await fetch("api/performance")).json(), p = d.performance;
   PROFILES = d.profiles; const cur = $("profile").value || store.get("profile") || "";
   const names = {auto: `Automatic (here: ${d.effective.profile == "max" ? "Maximum" : "Balanced"})`, max: "Maximum", balanced: "Balanced", gentle: "Gentle"};
@@ -1062,8 +1064,7 @@ async function savePerf(vals){
 $("pf_save").onclick = () => savePerf();
 $("pf_fast").onclick = () => savePerf({profile: "max", threads: 0, parallel_models: 2, nice: 0, stall_seconds: 900, timeout_minutes: 0});
 $("pf_gentle").onclick = () => savePerf({profile: "gentle", threads: 0, parallel_models: 1, nice: 10, stall_seconds: 900, timeout_minutes: 0});
-loadPerf(); loadCfg(); checkAll(false); }
-}
+
 const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2};
 function showReadiness(m, d){
   document.querySelectorAll(`.fdot[data-m="${m}"]`).forEach(e => e.className = "dot fdot " + (d.ok ? "ok" : "bad"));
@@ -1101,6 +1102,6 @@ async function deepTest(m){
   alert(m + (d.ok ? " test run OK" : " test run FAILED") + "\n" + d.checks.map(c => (c.ok ? "ok   " : "FAIL ") + c.name + " " + c.detail).join("\n"));
 }
 
-loadCfg(); checkAll(false);
+loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 </script></body></html>
