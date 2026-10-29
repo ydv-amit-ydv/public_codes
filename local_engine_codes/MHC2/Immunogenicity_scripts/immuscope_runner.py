@@ -1,4 +1,4 @@
-"""ImmuScope-IM (Chen et al. 2025, GPL-3.0): deep-learning CD4 T-cell immunogenicity of a peptide-class II pair, an ensemble
+"""ImmuScope-IM (Shen et al. 2025, Nat Mach Intell; GPL-3.0): deep-learning CD4 T-cell immunogenicity of a peptide-class II pair, an ensemble
 of 10 networks (instance-level probability, 0-1, HIGHER = more immunogenic). Scores DR, DQ and DP; the pseudosequence table
 has ~5,600 alleles. Peptides up to 21 residues.
 

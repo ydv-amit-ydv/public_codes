@@ -86,7 +86,7 @@ details>summary{cursor:pointer}
 #pj_tbl td{white-space:normal;vertical-align:top}#pj_tbl .act button{margin:1px}
 @media (max-width:820px){.pane.on{flex-direction:column}#form{width:100%;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
-<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Guide</a>
+<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Documentation</a>
 <button data-t="pipeline">Pipeline</button>
 <button data-t="single">Single model</button>
 <button data-t="projects">Projects</button>
@@ -120,7 +120,6 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
     <span>Population coverage at least (%) <span class="q" data-h="min_coverage">?</span></span><input type="number" id="r_min_coverage" step="5" min="0" max="100">
     <span>Merge overlapping windows <span class="q" data-h="collapse">?</span></span><select id="r_collapse"><option value="">-</option><option value="1">yes</option><option value="0">no</option></select>
     <span>Cluster by <span class="q" data-h="cluster_by">?</span></span><select id="r_cluster_by"><option value="">-</option><option value="peptide">whole peptide</option><option value="core">binding core (class II)</option></select>
-    <span>Host (self) peptides <span class="q" data-h="host_mode">?</span></span><select id="r_host_mode"><option value="">-</option><option value="off">do not check</option><option value="flag">flag only</option><option value="exclude_identical">remove identical 9-mers</option><option value="exclude_near">remove identical and 1-mismatch</option></select>
     <span>Panel goal (coverage %) <span class="q" data-h="panel_target">?</span></span><input type="number" id="r_panel_target" step="5" min="10" max="100">
    </div></details>
 
@@ -129,6 +128,10 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
 
   <details style="margin-top:14px"><summary class="muted sm">Optional per-tool filters (advanced) <span class="q" data-h="filters">?</span></summary>
    <div id="filters" style="margin-top:6px"></div></details>
+
+  <h3>5 &middot; Host proteome check <span class="q" data-h="host_mode">?</span></h3>
+  <select id="r_host_mode" style="width:100%"><option value="">as the strategy says</option><option value="off">do not check</option><option value="flag">flag only</option><option value="exclude_identical">remove identical 9-mers</option><option value="exclude_near">remove identical and 1-mismatch</option></select>
+  <div id="hostline" class="muted sm" style="margin:4px 0"></div>
 
   <h3>Performance <span class="q" data-h="profile">?</span></h3>
   <select id="profile" style="width:100%"></select>
@@ -335,8 +338,23 @@ const HELP = {
  m_immuscope: "<b>ImmuScope-IM</b>: ensemble of 10 networks scoring CD4 immunogenicity of a peptide-class II pair (0-1, higher = more immunogenic). Runs only on pairs already called binders; peptides up to 21 residues."
 };
 const tip = $("tip");
+let DOCS = {columns: {}, tiles: {}};
+fetch("api/docs").then(r => r.json()).then(d => DOCS = d).catch(() => {});
+function colHelp(c){
+  const m = DOCS.columns || {};
+  if (m[c]) return m[c];
+  for (const [p, f] of [["Vote_", "Vote_*"], ["TopPct_", "TopPct_*"], ["Pass_", "Pass_*"]]) if (c.startsWith(p) && m[f]) return m[f];
+  if (/^S\d+_(In|Pass)$/.test(c)) return m["S*"];
+  const mm = c.match(/^(Coverage_(?:Binder|Candidate))_(.+)$/); if (mm && m[mm[1]]) return m[mm[1]] + ` (${mm[2]} region only)`;
+  return null;
+}
+function tipHtml(k){
+  if (k.startsWith("col:")) { const t = colHelp(k.slice(4)); return t ? `<b>${esc(k.slice(4))}</b><br>${esc(t)}<br><a href="guide#columns" target="_blank">Documentation</a>` : null; }
+  if (k.startsWith("tile:")) { const t = (DOCS.tiles || {})[k.slice(5)]; return t ? `${esc(t)}<br><a href="guide#tiles" target="_blank">Documentation</a>` : null; }
+  return HELP[k];
+}
 function showTip(el){
-  const h = HELP[el.dataset.h]; if (!h) return;
+  const h = tipHtml(el.dataset.h); if (!h) return;
   tip.innerHTML = h; tip.style.display = "block";
   const r = el.getBoundingClientRect(), w = tip.offsetWidth, hgt = tip.offsetHeight;
   let x = Math.min(r.left, innerWidth - w - 10), y = r.bottom + 6;
@@ -699,7 +717,7 @@ function stopPolling(msg){
 let REPORT = null, MAIN = "regions", SUB = "candidates", DATA = null, TABLE = "regions", sortKey = null, sortDir = 1;
 const CACHE = {};
 const CLASSES = () => Object.keys(REPORT.classes);
-const kpi = (v, l) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`;
+const kpi = (v, l, h) => `<div class="kpi"><b>${v}</b><span>${l}${h ? ` <span class="q" data-h="tile:${h}" tabindex="0">?</span>` : ""}</span></div>`;
 const dl = (t, extra = "") => `api/jobs/${JOB}/csv?table=${t}${extra}`;
 async function loadResults(d){
   const s = d.summary;
@@ -707,15 +725,15 @@ async function loadResults(d){
   REPORT = await (await fetch(`api/jobs/${JOB}/report`)).json();
   for (const k in CACHE) delete CACHE[k];
   const cl = CLASSES();
-  let k = kpi(f0(s.peptides), "unique peptides scored");
-  if (REPORT.dual) k += kpi(f0(s.regions), "epitope regions") + kpi(f0(s.regions_dual), "CTL+HTL regions");
+  let k = kpi(f0(s.peptides), "unique peptides scored", "peptides");
+  if (REPORT.dual) k += kpi(f0(s.regions), "epitope regions", "regions") + kpi(f0(s.regions_dual), "CTL+HTL regions", "dual");
   for (const c of cl) {
     const h = REPORT.classes[c].consensus.headline, pan = REPORT.classes[c].consensus.panel, last = pan.length ? pan[pan.length - 1] : null;
     const tag = c == "1" ? "CTL" : "HTL";
-    if (h.host && h.host.checked) k += kpi(`${h.host.identical + h.host.near}/${h.host.checked}`, `${tag} candidates like host proteins (${h.host.identical} identical, ${h.host.near} near)`);
-    k += kpi(f0(h.regions), `${tag} regions`) + kpi(last ? pct(last.cumulative_coverage) : "-", `${tag} panel coverage (${pan.length} peptides)`);
+    if (h.host && h.host.checked) k += kpi(`${h.host.identical + h.host.near}/${h.host.checked}`, `${tag} candidates like host proteins (${h.host.identical} identical, ${h.host.near} near)`, "host");
+    k += kpi(f0(h.regions), `${tag} regions`) + kpi(last ? pct(last.cumulative_coverage) : "-", `${tag} panel coverage (${pan.length} peptides)`, "panel");
   }
-  $("kpis").innerHTML = k + kpi(fmtT(s.seconds), s.chained ? "run time, chained" : "run time");
+  $("kpis").innerHTML = k + kpi(fmtT(s.seconds), s.chained ? "run time, chained" : "run time", "time");
   $("warnings").innerHTML = (s.warnings || []).map(esc).join("<br>") + `<div class="muted">Saved in Projects as run ${esc(JOB)}.</div>`;
   $("topdl").innerHTML = `<a class="dl big" href="${dl("report", "&inline=1")}" target="_blank">Open summary page</a><a class="dl" href="${dl("bundle")}">All outputs (zip)</a><a class="dl" href="${dl("regions")}">regions.csv</a>`;
   $("rerank").innerHTML = `<span class="muted sm">Same predictions, another strategy (takes seconds, saved as a new run):</span> <select id="rr_strat">${Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select> <button class="b" id="rr_go">Re-rank</button> <span id="rr_msg" class="sm bad"></span>`;
@@ -784,9 +802,9 @@ function renderTable(){
   const click = TABLE == "regions" || TABLE == "candidates" || TABLE == "peptides";
   $("tnote").textContent = `${f0(rows.length)} rows shown` + (DATA.total > DATA.shown ? ` (the first ${f0(DATA.shown)} of ${f0(DATA.total)}, best first; download the CSV for all)` : "") +
     (click ? (TABLE == "regions" ? " - click a row for the peptides in the region" : " - click a row for every tool and allele") : "") + " - click a header to sort";
-  $("tbl").innerHTML = "<tr>" + cols.map(c => `<th data-c="${esc(c)}">${esc(c.replace(/_/g, " "))}</th>`).join("") + "</tr>" +
+  $("tbl").innerHTML = "<tr>" + cols.map(c => `<th data-c="${esc(c)}">${esc(c.replace(/_/g, " "))} <span class="q" data-h="col:${esc(c)}" tabindex="0">?</span></th>`).join("") + "</tr>" +
     rows.slice(0, 2000).map((r, i) => `<tr class="${click ? "rowc" : ""} ${passing(r) && (SUB == "master" || MAIN == "regions") ? "pass" : ""}" data-i="${i}">` + cols.map(c => `<td>${cell(c, r[c])}</td>`).join("") + "</tr>").join("");
-  document.querySelectorAll("#tbl th").forEach(th => th.onclick = () => { sortDir = sortKey == th.dataset.c ? -sortDir : 1; sortKey = th.dataset.c; renderTable(); });
+  document.querySelectorAll("#tbl th").forEach(th => th.onclick = ev => { if (ev.target.closest(".q")) return; sortDir = sortKey == th.dataset.c ? -sortDir : 1; sortKey = th.dataset.c; renderTable(); });
   if (click) document.querySelectorAll("#tbl tr.rowc").forEach(tr => tr.onclick = () => toggleDetail(tr, rows[+tr.dataset.i], cols.length));
 }
 async function peptidesOf(c){
@@ -1138,14 +1156,19 @@ fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.versi
 let HOSTPOLL = null;
 async function hostStatus(){
   const d = await (await fetch("api/host")).json();
-  if (d.error) { $("hostinfo").textContent = d.error; return; }
+  if (d.error) { $("hostinfo").textContent = d.error; $("hostline").textContent = d.error; return; }
   $("hostinfo").innerHTML = d.present ? `<span class="ok">ready</span>: ${esc(d.name)}, ${d.size_mb} MB${d.proteins ? `, ${d.proteins.toLocaleString()} proteins` : ""}` : `<span class="warn">not downloaded</span> (${esc(d.name)})`;
+  $("hostline").innerHTML = d.downloading ? `downloading the ${esc(d.name)} proteome: ${(d.bytes / 1e6).toFixed(1)}${d.total ? " / " + (d.total / 1e6).toFixed(1) : ""} MB...`
+    : d.present ? `<span class="ok">&#10003;</span> ${esc(d.name)} proteome ready${d.proteins ? ` (${d.proteins.toLocaleString()} proteins)` : ""}. Each candidate is compared with it (a stage of the run).`
+    : `<span class="warn">The ${esc(d.name)} proteome is not downloaded</span>, so the check is skipped and the rules that remove host-like peptides cannot be used. <button class="b" id="host_dl2" type="button">Download now (about 8 MB, once)</button>`;
+  if ($("host_dl2")) $("host_dl2").onclick = hostDownload;
   $("host_msg").textContent = d.downloading ? `downloading ${(d.bytes / 1e6).toFixed(1)}${d.total ? " / " + (d.total / 1e6).toFixed(1) : ""} MB...` : (d.error ? "failed: " + d.error : "");
   $("host_org").value = d.organism; $("host_dl").disabled = d.downloading;
   if (d.downloading && !HOSTPOLL) HOSTPOLL = setInterval(hostStatus, 1500);
   if (!d.downloading && HOSTPOLL) { clearInterval(HOSTPOLL); HOSTPOLL = null; }
 }
-$("host_dl").onclick = async () => { const r = await fetch("api/host/download", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({organism: $("host_org").value})}); const d = await r.json(); if (d.error) $("host_msg").textContent = d.error; hostStatus(); };
+async function hostDownload(){ const r = await fetch("api/host/download", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({organism: $("host_org").value})}); const d = await r.json(); if (d.error) $("host_msg").textContent = d.error; hostStatus(); }
+$("host_dl").onclick = hostDownload;
 hostStatus();
 $("host_chk").onclick = async () => {
   $("host_chkmsg").textContent = "checking..."; $("host_res").innerHTML = "";

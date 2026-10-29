@@ -1,6 +1,7 @@
 # Epitope Filter Engine (local)
 
-> **GUIDE.md** (also at `/guide` in the running app) explains every term, rule and output column in detail.
+> The documentation page (`/guide` in the running app, or the *Documentation* link in its header; source `docs.py`) describes every model with its inputs, outputs,
+> calculation and references, and explains every term and column. Every table header in the web page has a **?** with the same text.
 
 Local, offline prediction tools that produce the IEDB-style tables the Epitope
 Workbench (`IEDB/HEV/Scripts/epitope_app.py`) filters. Each model is its own tool;
@@ -349,8 +350,8 @@ chaining, filters, per-peptide summary), with its own alleles, models and filter
 | **MixMHC2pred 2.1** | Gfeller lab, GitHub | %Rank per allele (lower = better). Uses the 12-residue context around peptides cut from a protein |
 | **CD4episcore** | IEDB (Dhanda et al. 2018), same standalone | CD4 T-cell immunogenicity percentile of the peptide alone, no HLA needed. **Lower = more immunogenic** |
 
-| **ImmuScope-IM** | Chen et al. 2025 (GPL-3.0; weights CC-BY-4.0), own torch environment | CD4 immunogenicity of a peptide-allele **pair**, 0-1, **higher = more immunogenic**; mean of 10 networks. DR, DQ and DP pairs, peptides up to 21 residues |
-| **TLimmuno2** | Zhang et al. 2024, own TensorFlow 2.15 environment | The same kind of score from a different network (binding-affinity network feeding an immunogenicity network). The raw score is used; the authors' percentile against 90,001 background peptides is not (slow, and the engine ranks within the candidates anyway) |
+| **ImmuScope-IM** | Shen et al. 2025, Nat Mach Intell (GPL-3.0; weights CC-BY-4.0), own torch environment | CD4 immunogenicity of a peptide-allele **pair**, 0-1, **higher = more immunogenic**; mean of 10 networks. DR, DQ and DP pairs, peptides up to 21 residues |
+| **TLimmuno2** | Wang et al. 2023, Brief Bioinform, own TensorFlow 2.15 environment | The same kind of score from a different network (binding-affinity network feeding an immunogenicity network). The raw score is used; the authors' percentile against 90,001 background peptides is not (slow, and the engine ranks within the candidates anyway) |
 
 - **Alleles:** DR (DRB1/3/4/5), DQ and DP as alpha/beta pairs (`HLA-DQA1*05:01/DQB1*02:01`), and mouse I-A / I-E. Presets: the
   IEDB class II reference panel (27 alleles: 15 DR, 6 DQ, 6 DP), DR only, the 7-allele DR set CD4episcore is built on, and mouse. The

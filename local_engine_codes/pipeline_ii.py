@@ -118,6 +118,10 @@ def stage_plan(p, n_pep):
     for key, label, _, _ in PAIR_IMM:
         if m[key]:
             plan.append({"name": key, "label": f"{label} (CD4 immunogenicity)", "work": int(pairs * gate), "weight": timing.expected_seconds(key, pairs * gate)})
+    import report
+    hs = report.host_stage(2, p, n_pep)
+    if hs:
+        plan.append(hs)
     plan.append({"name": "merge", "label": "Merging and filtering", "work": pairs, "weight": timing.expected_seconds("merge", pairs)})
     return plan
 

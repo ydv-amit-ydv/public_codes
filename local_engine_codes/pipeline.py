@@ -154,6 +154,10 @@ def stage_plan(p, n_pep):
             ("netchop", "NetChop 3.1 (proteasome cleavage)", n_pep), ("bigmhc_el", "BigMHC EL", pairs * gate),
             ("bigmhc_im", "BigMHC IM", pairs * gate * 0.5)]
     plan = [{"name": k, "label": label, "work": int(work), "weight": timing.expected_seconds(k, work)} for k, label, work in spec if m[k]]
+    import report
+    hs = report.host_stage(1, p, n_pep)
+    if hs:
+        plan.append(hs)
     plan.append({"name": "merge", "label": "Merging and filtering", "work": pairs, "weight": timing.expected_seconds("merge", pairs)})
     return plan
 

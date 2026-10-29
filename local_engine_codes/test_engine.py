@@ -6,7 +6,7 @@
 NetMHCpan and BigMHC are replaced by stub executables whose output copies the
 real formats (NetMHCpan 4.2d table; BigMHC .prd with mhc,pep,len,BigMHC_* columns).
 """
-import json, os, stat, sys, tempfile, textwrap
+import glob, json, os, stat, sys, tempfile, textwrap
 
 REAL_PY, REAL_HOME = os.environ.get("BIGMHC_PYTHON"), os.environ.get("BIGMHC_HOME")   # optional real BigMHC
 TMP = tempfile.mkdtemp()
@@ -402,7 +402,7 @@ assert c.post("/api/pipeline/run", json={**params, "alleles": []}).status_code =
 r = c.post("/api/pipeline/run", json=params); assert r.status_code == 200, r.get_json()
 d = wait_job(r.get_json()["id"])
 assert d["state"] == "done" and d["progress"] == 1.0, d
-assert [x["name"] for x in d["stages"]] == ["netmhcpan", "bigmhc_el", "bigmhc_im", "merge"]
+assert [x["name"] for x in d["stages"]] == ["netmhcpan", "bigmhc_el", "bigmhc_im", "host", "merge"]
 assert all(x["state"] == "done" for x in d["stages"]), d["stages"]
 sm = d["summary"]
 assert sm["chained"] and sm["pairs"] == 1 and sm["pairs_passed"] == 1 and sm["peptides_passed"] == 1, sm
@@ -469,7 +469,7 @@ assert any("MixMHCpred does not support: H-2-Kb" in w for w in pv["warnings"]) a
 r = c.post("/api/pipeline/run", json=full); assert r.status_code == 200, r.get_json()
 d = wait_job(r.get_json()["id"])
 assert d["state"] == "done", d
-assert [x["name"] for x in d["stages"]] == ["netmhcpan", "mixmhcpred", "prime", "bigmhc_el", "bigmhc_im", "merge"], d["stages"]
+assert [x["name"] for x in d["stages"]] == ["netmhcpan", "mixmhcpred", "prime", "bigmhc_el", "bigmhc_im", "host", "merge"], d["stages"]
 row = c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"][0]
 assert row["MixMHC_%Rank"] == 0.1 and row["PRIME_%Rank"] == 0.2 and row["PRIME_%RankBinding"] == 0.1, row
 assert row["Pass_NMP"] and row["Pass_Mix"] and row["Pass_PRIME"] and row["Pass_BigMHC"] and row["Pass_All"], row
@@ -641,7 +641,7 @@ have_tools = all(_sh.which(t, path="/usr/bin:/bin") for t in ("tcsh", "gawk", "p
 if have_tools:
     d = wait_job(c.post("/api/pipeline/run", json=ii).get_json()["id"])
     assert d["state"] == "done", d
-    assert [x["name"] for x in d["stages"]] == ["netmhciipan", "mixmhc2pred", "cd4episcore", "merge"], d["stages"]
+    assert [x["name"] for x in d["stages"]] == ["netmhciipan", "mixmhc2pred", "cd4episcore", "host", "merge"], d["stages"]
     rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
     g = rows[("PKYVKQNTLKLATGM", "HLA-DRB1*01:01")]
     assert g["NII_Score_EL"] == 0.86 and g["NII_%Rank_EL"] == 0.68 and g["NII_IC50_nM"] == 6.34 and g["MIX2_%Rank"] == 0.5, g
@@ -676,7 +676,7 @@ if have_tools:
     d = wait_job(c.post("/api/pipeline/run", json={**ii, "alleles": ["HLA-DRB1*01:01", "HLA-DRB1*15:01", "DQA1*05:01/DQB1*02:01"],
                                                   "models": {"netmhciipan_el": True, "mixmhc2pred": True, "tlimmuno2": True, "immuscope": True}}).get_json()["id"])
     assert d["state"] == "done", d
-    assert [x["name"] for x in d["stages"]] == ["netmhciipan", "mixmhc2pred", "tlimmuno2", "immuscope", "merge"], d["stages"]
+    assert [x["name"] for x in d["stages"]] == ["netmhciipan", "mixmhc2pred", "tlimmuno2", "immuscope", "host", "merge"], d["stages"]
     rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
     g, g2 = rows[("PKYVKQNTLKLATGM", "HLA-DRB1*01:01")], rows[("PKYVKQNTLKLATGM", "HLA-DRB1*15:01")]
     assert g["TLimmuno2"] == 0.9 and g["ImmuScope_IM"] == 0.9 and g2["ImmuScope_IM"] is None, (g, g2)           # 15:01 is no binder here: not sent
@@ -706,7 +706,17 @@ else:
     print("skipped class II bundle tests: tcsh, gawk, perl and R are not all installed")
 
 # host proteome endpoints; a run that must remove host-like peptides will not start without the proteome
-g = c.get("/guide"); assert g.status_code == 200 and b"Every output file and every column" in g.data and b"Host_Best_Identity" in g.data
+g = c.get("/guide"); assert g.status_code == 200 and b"How it is calculated" in g.data and b"Host_Best_Identity" in g.data and b"Shen L-C" in g.data
+import docs                                                                     # noqa: E402
+assert all(m["key"] in g.get_data(as_text=True) for m in docs.MODELS) and "Glossary and full forms" in g.get_data(as_text=True)
+dj = c.get("/api/docs").get_json(); assert dj["columns"]["Host_Self"] and dj["tiles"]["host"]
+# every column the engine writes has a help text (the '?' on the table headers)
+import csv as _csv                                                              # noqa: E402
+_missing = set()
+for _f in glob.glob(os.path.join(config.workspace(), "runs", "*", "*.csv")):
+    if _f.endswith(("_pairs.csv", "_peptides.csv", "_candidates.csv", "_master.csv", "_summary.csv", "_panel.csv", "_regions.csv")):
+        _missing |= {c for c in next(_csv.reader(open(_f))) if not docs.lookup(c)}
+assert not _missing, f"columns without documentation: {sorted(_missing)}"
 hs = c.get("/api/host").get_json(); assert hs["present"] and hs["organism"] == "human" and hs["path"] == HOSTFA, hs
 assert c.post("/api/host/download", json={"organism": "dog"}).status_code == 400
 hc = c.post("/api/host/check", json={"text": "PKYVKQNTLKLATGM\nAAAAAAAAAAAAAAA\nXX"}).get_json()["rows"]

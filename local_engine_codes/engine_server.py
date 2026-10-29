@@ -667,8 +667,16 @@ def api_version():
 
 @main.get("/guide")
 def guide():
-    """The complete guide (terms, rules, every column) as a text page."""
-    return send_file(os.path.join(HERE, "GUIDE.md"), mimetype="text/plain; charset=utf-8")
+    """The documentation page: models, inputs and outputs, methods, columns, glossary, references."""
+    import docs
+    return docs.page(), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@main.get("/api/docs")
+def api_docs():
+    """The short help texts behind the '?' on table headers and result tiles."""
+    import docs
+    return jsonify(docs.api())
 
 
 @main.get("/api/host")

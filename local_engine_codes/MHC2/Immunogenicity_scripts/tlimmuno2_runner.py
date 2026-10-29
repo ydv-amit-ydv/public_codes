@@ -1,4 +1,4 @@
-"""TLimmuno2 (Zhang et al. 2024): deep-learning CD4 T-cell immunogenicity of a peptide-class II pair. A binding-affinity
+"""TLimmuno2 (Wang et al. 2023, Brief Bioinform): deep-learning CD4 T-cell immunogenicity of a peptide-class II pair. A binding-affinity
 network feeds an immunogenicity network (TensorFlow 2.15 / Keras 2; Keras 3 cannot load these SavedModels). The score is the
 raw network output, 0-1, HIGHER = more immunogenic; the repository's own percentile against 90,001 background peptides is not
 used (it is slow and the engine ranks within the candidates anyway). Peptides up to 21 residues, DR plus DQ/DP pairs.

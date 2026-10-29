@@ -6,7 +6,7 @@ import time
 import pandas as pd
 
 import consensus
-from common import config, population
+from common import config, hostself, population
 
 KEYS = ["Protein", "Start", "Peptide"]
 PEP_ORDER_COLS = ["Priority_Rank", "Candidate", "Is_Representative", "In_Panel"]
@@ -16,12 +16,30 @@ def _round(df):
     return df.round(6)
 
 
+def host_stage(cls, p, n_pep):
+    """The progress-bar stage of the host-proteome check (None when the rule says not to check)."""
+    from common import timing
+    try:
+        rules = consensus.resolve_rules(cls, p.get("preset") or "balanced", p.get("rules"))
+    except ValueError:
+        return None
+    if rules["host_mode"] == "off":
+        return None
+    n = max(1, int(n_pep * 0.05))
+    return {"name": "host", "label": f"Host proteome identity ({hostself.ORGANISMS[hostself.organism()][2]})", "work": n,
+            "weight": timing.expected_seconds("host", n)}
+
+
 def finish(base, cls, p, job, info, warns, filters_ok):
     """base: the pair table (all tool columns). Writes CSVs, returns the dict stored in job.result."""
     pop, msg = population.load(config.load().get("population"), config.search_root())
     if msg:
         warns.append(msg)
     rules = consensus.resolve_rules(cls, p.get("preset", "balanced"), p.get("rules"))
+    if rules["host_mode"] != "off" and hostself.available():
+        job.update("host", msg="loading the host proteome index", state="running")
+        hostself.index()
+        job.update("host", msg="comparing the candidates with the host proteome", state="running")
     res = consensus.analyse(base, cls, rules, pop, filters_ok)
     cur = {"candidates": int(res["peptides"]["Candidate"].sum()), "regions": int(res["peptides"]["Is_Representative"].sum()),
            "panel": len(res["panel"]), "panel_coverage": (res["panel"][-1]["cumulative_coverage"] if res["panel"] else 0.0)}
@@ -30,6 +48,10 @@ def finish(base, cls, p, job, info, warns, filters_ok):
         hs = pp.loc[pp["Candidate"].astype(bool) | pp.get("Host_Excluded", False).astype(bool), "Host_Self"] if "Host_Excluded" in pp else pp.loc[pp["Candidate"].astype(bool), "Host_Self"]
         cur["host"] = {"checked": int((hs != "").sum()), "identical": int((hs == "identical").sum()), "near": int((hs == "near").sum()),
                        "distinct": int((hs == "distinct").sum()), "removed": int(pp["Host_Excluded"].sum()) if "Host_Excluded" in pp else 0}
+    if rules["host_mode"] != "off":
+        h = cur.get("host")
+        job.finish_stage("host", (f"{h['checked']} candidates checked: {h['identical']} identical, {h['near']} near, {h['distinct']} distinct"
+                                  + (f"; {h['removed']} removed" if h["removed"] else "")) if h else "skipped: the host proteome is not downloaded")
     sugg = consensus.suggestions(base, cls, rules, pop, filters_ok, cur)
     if pop:
         alleles = sorted(base["Allele"].unique())
