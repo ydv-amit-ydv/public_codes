@@ -649,6 +649,18 @@ def api_funnel():
     return jsonify(models=sorted(cat, key=lambda x: (x["cost"], x["label"])), templates={k: {"label": v[0], "stages": v[1]} for k, v in funnel.templates(cls).items()})
 
 
+def _version():
+    try:
+        return open(os.path.join(HERE, "VERSION")).read().strip()
+    except OSError:
+        return "unknown"
+
+
+@main.get("/api/version")
+def api_version():
+    return jsonify(version=_version())
+
+
 @main.get("/api/cache")
 def api_cache_get():
     return jsonify(size=predcache.size())

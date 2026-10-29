@@ -85,7 +85,7 @@ details>summary{cursor:pointer}
 #pj_tbl td{white-space:normal;vertical-align:top}#pj_tbl .act button{margin:1px}
 @media (max-width:820px){.pane.on{flex-direction:column}#form{width:100%;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
-<nav><b>Epitope Filter Engine</b>
+<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:10px"></span>
 <button data-t="pipeline">Pipeline</button>
 <button data-t="single">Single model</button>
 <button data-t="projects">Projects</button>
@@ -1120,4 +1120,5 @@ async function deepTest(m){
 
 loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
+fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
 </script></body></html>
