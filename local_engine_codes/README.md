@@ -384,6 +384,15 @@ about 95 s for ImmuScope and 40 s for TLimmuno2 (including about 20 s TensorFlow
 
 Then Settings -> **Test run** on `mixmhc2pred`, `iedb_bundle_ii`, `immuscope` and `tlimmuno2`. Notes from testing the real tools:
 
+- **CD4episcore returns nothing ("loop of ufunc does not support argument 0 of type float")** has two causes in IEDB's v0.2.3-beta bundle, both seen on a
+  Core Ultra 9 / WSL machine:
+  1. `src/imscore.py` line 45 builds the R path from bytes, giving `-R b/usr/bin/R`. Fix:
+     `sed -i 's|R_path = subprocess.check_output("which R", shell=True).rstrip()$|R_path = subprocess.check_output("which R", shell=True).rstrip().decode()|' src/imscore.py`
+     (run it once only; `grep -n "R_path =" src/imscore.py` must show a single `.decode()`).
+  2. NN-align's old statically linked binaries (`src/nnalign/bin/Linux_x86_64/*`, built for kernel 2.6) segfault on very new Intel CPUs
+     ("Segmentation fault" before "Uploaded 0 peptides"). Run them through qemu: `sudo apt install qemu-user`, then replace each ELF file `X` by
+     a wrapper `exec qemu-x86_64 "$(dirname "$0")/X.real" "$@"` and keep the original as `X.real`.
+  Check by hand: `PKYVKQNTLKLATGM` with DRB1*01:01 must give CD4episcore 96.32.
 - **`peptide_list` input fails** in the class II standalone (v0.2.3-beta), even in its own README example, and CD4episcore only
   accepts a protein. The engine sends every loose peptide as its own one-window sequence, grouped by length, which gives
   identical numbers (checked: 120 peptides reproduce IEDB's website CD4episcore scores exactly).
