@@ -36,6 +36,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from common import hostself
+
 from common import peptide_props
 
 KEYS = ["Protein", "Start", "Peptide"]
@@ -78,7 +80,7 @@ GROUP_PREFIX = {"binding": "Bind", "immunogenicity": "Imm", "processing": "Proc"
 # ---------------------------------------------------------------------------------------------- rules
 RULE_FIELDS = ("bind_rank_max", "strong_rank_max", "bigmhc_el_min", "bind_min_agree", "imm_top_q", "imm_abs_rank_max",
                "imm_min_agree", "ctlpan_rank_max", "netchop_min", "require_processing", "min_alleles", "min_coverage",
-               "collapse", "overlap_fraction", "cluster_by", "panel_target", "panel_cap", "rank_by", "rank_weights")
+               "collapse", "overlap_fraction", "cluster_by", "host_mode", "host_near_min", "panel_target", "panel_cap", "rank_by", "rank_weights")
 RANK_BY = ("consensus", "coverage", "promiscuity", "binding", "immunogenicity")
 DEFAULT_WEIGHTS = {"coverage": 0.35, "agreement": 0.25, "binding": 0.20, "immunogenicity": 0.20}
 
@@ -87,7 +89,7 @@ def _rules(cls, **over):
     base = {"bind_rank_max": 2.0 if cls == 1 else 5.0, "strong_rank_max": 0.5 if cls == 1 else 2.0, "bigmhc_el_min": 0.2,
             "bind_min_agree": "majority", "imm_top_q": 0.25, "imm_abs_rank_max": 5.0, "imm_min_agree": "any",
             "ctlpan_rank_max": 1.0, "netchop_min": None, "require_processing": False, "min_alleles": 1,
-            "min_coverage": 0.0, "collapse": True, "overlap_fraction": 0.7, "cluster_by": "core" if cls == 2 else "peptide", "panel_target": 0.95, "panel_cap": 25,
+            "min_coverage": 0.0, "host_mode": "flag", "host_near_min": 8 / 9, "collapse": True, "overlap_fraction": 0.7, "cluster_by": "core" if cls == 2 else "peptide", "panel_target": 0.95, "panel_cap": 25,
             "rank_by": "consensus", "rank_weights": dict(DEFAULT_WEIGHTS)}
     base.update(over)
     return base
@@ -98,7 +100,7 @@ PRESET_INFO = {
     "balanced": ("Balanced", "A sensible default: a peptide must be called a binder by a majority of the binding tools, at least one "
                              "immunogenicity tool must rank it in the top quarter of the binders, and overlapping windows collapse to one."),
     "strict": ("Strict", "A short list for synthesis: binding by every binding tool at a tight cut-off, immunogenicity by most tools "
-                         "in the top tenth, and at least two alleles."),
+                         "in the top tenth, and at least two alleles; peptides with a 9-mer identical to a host protein are removed."),
     "coverage": ("Max coverage", "Broadly presented peptides: a majority of binding tools, no immunogenicity requirement, at least four "
                                  "alleles, ranked by population coverage. For maximising how many people a panel reaches."),
     "iedb": ("IEDB cut-offs", "IEDB's own suggested starting point: percentile <= 1 for class I and <= 10 for class II, any single tool."),
@@ -110,12 +112,12 @@ def preset_rules(cls):
     if cls == 1:
         return {"balanced": _rules(1),
                 "strict": _rules(1, bind_rank_max=0.5, strong_rank_max=0.5, bigmhc_el_min=0.5, bind_min_agree="all", imm_top_q=0.10,
-                                 imm_abs_rank_max=1.0, imm_min_agree="majority", min_alleles=2),
+                                 imm_abs_rank_max=1.0, imm_min_agree="majority", min_alleles=2, host_mode="exclude_identical"),
                 "coverage": _rules(1, imm_min_agree="off", min_alleles=4, rank_by="coverage"),
                 "iedb": _rules(1, bind_rank_max=1.0, bind_min_agree="any", imm_min_agree="off"),
                 "wide": _rules(1, bind_rank_max=5.0, bigmhc_el_min=0.1, bind_min_agree="any", imm_min_agree="off", collapse=False)}
     return {"balanced": _rules(2),
-            "strict": _rules(2, bind_rank_max=2.0, bind_min_agree="all", imm_top_q=0.10, imm_min_agree="majority", min_alleles=2),
+            "strict": _rules(2, bind_rank_max=2.0, bind_min_agree="all", imm_top_q=0.10, imm_min_agree="majority", min_alleles=2, host_mode="exclude_identical"),
             "coverage": _rules(2, imm_min_agree="off", min_alleles=4, rank_by="coverage"),
             "iedb": _rules(2, bind_rank_max=10.0, strong_rank_max=2.0, bind_min_agree="any", imm_min_agree="off"),
             "wide": _rules(2, bind_rank_max=10.0, bind_min_agree="any", imm_min_agree="off", collapse=False)}
@@ -129,6 +131,10 @@ def resolve_rules(cls, preset="balanced", overrides=None):
         if k not in RULE_FIELDS or v in (None, "") and k not in ("netchop_min",):
             continue
         r[k] = ({**r["rank_weights"], **v} if k == "rank_weights" else v)
+    if r.get("host_mode") not in hostself.MODES:
+        raise ValueError(f"host_mode must be one of {hostself.MODES}")
+    if not 0 < float(r.get("host_near_min", 8 / 9)) <= 1:
+        raise ValueError("host_near_min must be a fraction between 0 and 1")
     if r.get("cluster_by") not in ("peptide", "core"):
         raise ValueError("cluster_by must be peptide or core")
     if r["rank_by"] not in RANK_BY:
@@ -349,6 +355,10 @@ def peptide_table(d, tools, rules, pop, cls):
     # candidate rule (peptide level): enough alleles, enough coverage
     out["Candidate"] = ((out["N_Alleles_Candidate"] >= max(1, int(rules["min_alleles"]))) &
                         (out["Coverage_Candidate"] >= float(rules["min_coverage"])))
+
+    # host proteome: flag (and optionally drop) candidates that look like the host's own proteins
+    notes = d.attrs.setdefault("notes", [])
+    out = hostself.annotate(out, rules, notes)
 
     # priority: weighted mean of percentile standing on four components (1 = best of this run)
     def pct(s, higher_better):

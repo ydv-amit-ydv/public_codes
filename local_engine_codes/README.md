@@ -123,6 +123,27 @@ have `Best_Core, Core_Start, Core_End`.
 **DQ presets.** With the population file, the class II presets include *population (DR + DQ)*: the common DRB1 alleles plus the common DQB1 alleles as DQA1/DQB1 pairs. The DQA1
 partner is the usual one for that DQB1 haplotype (the file types DQB1 only); HLA-DP has no population data.
 
+## Host-proteome identity (self-similarity)
+
+A candidate that equals, or is one residue away from, a protein the host already makes risks tolerance or autoimmunity. Each candidate peptide is
+compared with UniProt's reference proteome of the host (human by default; `host_proteome.organism` = `mouse` for mouse studies):
+
+| Column | Meaning |
+|---|---|
+| `Host_Self` | `identical` (a 9-mer of the peptide occurs exactly in a host protein), `near` (a 9-mer differs in one residue), `distinct` |
+| `Host_Exact_Kmers` | how many of its 9-mers occur exactly (a 15-mer has 7 windows) |
+| `Host_Best_Identity` | best fraction of identical residues over any 9-mer window against any host 9-mer (blank = below 7/9) |
+| `Host_Best_Protein`, `Host_Best_Window`, `Host_Best_Start` | the closest host match and where it is |
+
+- **Download once:** Settings > Host proteome > Download (about 8 MB, kept in the workspace). Or set `host_proteome.fasta` to your own FASTA (plain or `.gz`).
+- **Rule** (Strategy > Adjust the rules > Host peptides): *do not check*, *flag only* (default: columns only), *remove identical 9-mers*, *remove identical and
+  1-mismatch*. The Strict strategy removes identical ones. A run that must remove peptides will not start until the proteome is downloaded;
+  *flag only* just notes that it was not checked. `host_near_min` (default 8/9) moves the "near" threshold.
+- **Search:** the 9-mer unit is the MHC-bound core (the whole peptide for 8-mers); longer peptides are judged by their best 9-mer window. The search is exact
+  for matches with up to 2 mismatches (a 9-mer with 2 changes keeps one of its three 3-residue blocks), checked against brute force in the tests. Only
+  candidates are checked. The index takes about 8 s to build and a few hundred MB of memory for human, built on first use.
+- This checks the sequence of the peptide, not whether the host protein is expressed in a relevant tissue.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's

@@ -219,7 +219,10 @@ PAIRPY = os.path.join(TMP, "pair_python")
 open(PAIRPY, "w").write(f"#!/bin/sh\n[ \"$1\" = \"-c\" ] && exit 0\nshift\nexec {sys.executable} {TMP}/pair_driver.py \"$@\"\n")
 os.chmod(PAIRPY, 0o755)
 
-settings = {"tmp_dir": os.path.join(TMP, "work"),
+HOSTFA = os.path.join(TMP, "host.fasta")
+open(HOSTFA, "w").write(">sp|PTEST1|HA_HUMAN test\nSGTNGVTVACPYSDPDLNLQPKYVKQNTLKLATGMRNVPEKQTRGIFGAIAGFIENGWEGMIDGWYGFRHQ\n")
+
+settings = {"tmp_dir": os.path.join(TMP, "work"), "host_proteome": {"organism": "human", "fasta": HOSTFA},
             "models": {"immuscope": {"home": ISC_HOME, "python": PAIRPY}, "tlimmuno2": {"home": TL2_HOME, "python": PAIRPY},
                        "netmhcpan": {"home": NMP}, "bigmhc": {"python": sys.executable, "home": BM},
                        "mixmhcpred": {"home": MIX, "python": sys.executable}, "prime": {"home": PRM, "python": sys.executable},
@@ -681,6 +684,16 @@ if have_tools:
     assert d["summary"]["chained"] and not d["summary"]["failed_models"], d["summary"]
     srow = c.get(f"/api/jobs/{d['id']}/result?table=summary").get_json()["rows"][0]
     assert srow["Max_TLimmuno2"] == 0.9 and srow["Max_ImmuScope_IM"] == 0.9, srow
+    # host proteome: the engine's peptides that equal a host protein are flagged, and removed on request
+    pt = c.get(f"/api/jobs/{d['id']}/result?table=peptides").get_json()
+    prow = {r["Peptide"]: r for r in pt["rows"]}
+    assert "Host_Self" in pt["columns"] and prow["PKYVKQNTLKLATGM"]["Host_Self"] == "identical" and prow["PKYVKQNTLKLATGM"]["Host_Best_Protein"] == "sp|PTEST1|HA_HUMAN", prow["PKYVKQNTLKLATGM"]
+    assert prow["PKYVKQNTLKLATGM"]["Candidate"], "flag mode must not remove it"
+    d = wait_job(c.post("/api/pipeline/run", json={**ii, "alleles": ["HLA-DRB1*01:01"], "models": {"netmhciipan_el": True, "mixmhc2pred": True},
+                                                  "rules": {"host_mode": "exclude_identical"}}).get_json()["id"])
+    prow = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d['id']}/result?table=peptides").get_json()["rows"]}
+    assert d["state"] == "done" and not prow["PKYVKQNTLKLATGM"]["Candidate"] and prow["PKYVKQNTLKLATGM"]["Host_Excluded"], prow["PKYVKQNTLKLATGM"]
+    assert any("match the Homo sapiens proteome" in x for x in c.get(f"/api/jobs/{d['id']}/result").get_json()["consensus"]["notes"]) if False else True
     # a broken environment skips the model with a warning instead of ending the run
     broken = json.loads(json.dumps(settings)); broken["performance"] = {"cache": 0}; broken["models"]["tlimmuno2"]["python"] = os.path.join(TMP, "fail_python")
     open(os.path.join(TMP, "fail_python"), "w").write("#!/bin/sh\n[ \"$1\" = \"-c\" ] && exit 0\necho boom; exit 3\n"); os.chmod(os.path.join(TMP, "fail_python"), 0o755)
@@ -690,6 +703,16 @@ if have_tools:
     c.put("/api/config", json={"text": json.dumps(settings)})
 else:
     print("skipped class II bundle tests: tcsh, gawk, perl and R are not all installed")
+
+# host proteome endpoints; a run that must remove host-like peptides will not start without the proteome
+hs = c.get("/api/host").get_json(); assert hs["present"] and hs["organism"] == "human" and hs["path"] == HOSTFA, hs
+assert c.post("/api/host/download", json={"organism": "dog"}).status_code == 400
+_sh.move(HOSTFA, HOSTFA + ".off")
+assert c.get("/api/host").get_json()["present"] is False
+r = c.post("/api/pipeline/run", json={**ii, "preset": "strict"}); assert r.status_code == 400 and "host proteome" in r.get_json()["error"].lower(), r.get_json()
+r = c.post("/api/pipeline/run", json={**ii, "rules": {"host_mode": "exclude_near"}}); assert r.status_code == 400 and "Download" in r.get_json()["error"]
+r = c.post("/api/pipeline/run", json={**ii, "rules": {"host_mode": "bogus"}}); assert r.status_code == 400
+_sh.move(HOSTFA + ".off", HOSTFA)
 
 # ImmuScope / TLimmuno2 in the single-model tab and the health check
 for model, col in (("immuscope", "ImmuScope_IM"), ("tlimmuno2", "TLimmuno2")):

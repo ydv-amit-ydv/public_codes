@@ -116,7 +116,7 @@ def build(run):
         top = pep[pep["Is_Representative"].astype(bool)].head(25)
         if len(top):
             cols = [c2 for c2 in ["Priority_Rank", "Peptide", "Region_ID", "Region", "Best_Allele", "N_Alleles_Candidate", "Coverage_Candidate",
-                                  "Agree_Fraction_PopW", "Bind_Consensus_Best", "Imm_TopPct_Best", "Cluster_Size", "Cluster_Members", "In_Panel"] if c2 in top.columns]
+                                  "Agree_Fraction_PopW", "Host_Self", "Bind_Consensus_Best", "Imm_TopPct_Best", "Cluster_Size", "Cluster_Members", "In_Panel"] if c2 in top.columns]
             h.append("<h3>Best candidates</h3>" + _table(top, cols, {"Peptide": lambda v: f"<span class='seq'>{E(v)}</span>", "Coverage_Candidate": _pct,
                                                                    "Agree_Fraction_PopW": _pct, "Cluster_Members": lambda v: f"<span class='seq'>{E(v if len(v) < 120 else v[:117] + '...')}</span>", "In_Panel": lambda v: "yes" if v is True or v == "True" else ""}))
         if cons["panel"]:

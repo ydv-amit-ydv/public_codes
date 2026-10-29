@@ -119,6 +119,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
     <span>Population coverage at least (%) <span class="q" data-h="min_coverage">?</span></span><input type="number" id="r_min_coverage" step="5" min="0" max="100">
     <span>Merge overlapping windows <span class="q" data-h="collapse">?</span></span><select id="r_collapse"><option value="">-</option><option value="1">yes</option><option value="0">no</option></select>
     <span>Cluster by <span class="q" data-h="cluster_by">?</span></span><select id="r_cluster_by"><option value="">-</option><option value="peptide">whole peptide</option><option value="core">binding core (class II)</option></select>
+    <span>Host (self) peptides <span class="q" data-h="host_mode">?</span></span><select id="r_host_mode"><option value="">-</option><option value="off">do not check</option><option value="flag">flag only</option><option value="exclude_identical">remove identical 9-mers</option><option value="exclude_near">remove identical and 1-mismatch</option></select>
     <span>Panel goal (coverage %) <span class="q" data-h="panel_target">?</span></span><input type="number" id="r_panel_target" step="5" min="10" max="100">
    </div></details>
 
@@ -236,6 +237,12 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
 
 <!-- ============================ SETTINGS ============================ -->
 <div class="pane" id="settings">
+ <div class="card" id="hostcard">
+  <b>Host proteome</b> <span class="q" data-h="host_mode">?</span> <span class="muted sm" id="hostinfo"></span>
+  <div style="margin-top:8px"><select id="host_org" disabled title="set host_proteome.organism in the settings file"><option value="human">Human (Homo sapiens)</option><option value="mouse">Mouse (Mus musculus)</option></select>
+   <button class="b" id="host_dl">Download</button> <span id="host_msg" class="sm"></span></div>
+  <div class="muted sm" style="margin-top:4px">UniProt reference proteome, one sequence per gene (about 8 MB, downloaded once into the workspace). In the settings file, <code>host_proteome.organism</code> picks human or mouse and <code>host_proteome.fasta</code> uses your own FASTA instead.</div>
+ </div>
  <div class="card" id="perfcard">
   <b>Performance</b> <span class="muted sm" id="perfinfo"></span>
   <div class="grid2" style="margin-top:8px;max-width:620px;grid-template-columns:1fr 110px">
@@ -290,6 +297,7 @@ const HELP = {
  imm_top_q: "An immunogenicity tool votes yes when the pair ranks in this top share of the binders in this run (it needs at least 8 binder pairs).",
  min_alleles: "A peptide is a candidate only if it passes for at least this many alleles.",
  min_coverage: "A peptide is a candidate only if the share of the population presenting it is at least this (needs the population file).",
+ host_mode: "Compares each candidate with the host's own proteins (UniProt reference proteome, downloaded once in Settings). <b>Identical</b>: one of its 9-mers occurs exactly in a host protein. <b>Near</b>: a 9-mer with one mismatch. Such peptides may be tolerated or risk autoimmunity. <b>Flag only</b> adds the columns Host_Self, Host_Best_Identity, Host_Best_Protein; the remove options also take them out of the candidates.",
  cluster_by: "What decides that two candidates are the same epitope. <b>Whole peptide</b>: their windows overlap by 70 %. <b>Binding core</b> (class II default): their predicted 9-aa cores overlap by 70 %, so the many 15-25-mers built around one core become one cluster; falls back to the whole peptide when no core was predicted.",
  collapse: "Windows that overlap the best one by 70 % or more become one region; the best peptide represents it.",
  panel_target: "The minimum panel adds the peptide that gains most population coverage, one at a time, until this share is reached (or 25 peptides).",
@@ -536,7 +544,7 @@ function stratInfo(){
   $("stratwhy").textContent = v.why; const r = v.rules;
   const ph = {r_bind_rank_max: r.bind_rank_max + " (class II: higher)", r_imm_top_q: Math.round(r.imm_top_q * 100), r_min_alleles: r.min_alleles, r_min_coverage: Math.round(r.min_coverage * 100), r_panel_target: Math.round(r.panel_target * 100)};
   for (const [id, val] of Object.entries(ph)) $(id).placeholder = val;
-  for (const [id, k] of [["r_rank_by","rank_by"],["r_bind_min_agree","bind_min_agree"],["r_imm_min_agree","imm_min_agree"]]) $(id).options[0].textContent = String(r[k]);
+  for (const [id, k] of [["r_rank_by","rank_by"],["r_bind_min_agree","bind_min_agree"],["r_imm_min_agree","imm_min_agree"],["r_host_mode","host_mode"]]) $(id).options[0].textContent = String(r[k]);
   $("r_collapse").options[0].textContent = r.collapse ? "yes" : "no";
   $("r_cluster_by").options[0].textContent = "peptide (class I) / core (class II)";
 }
@@ -575,7 +583,7 @@ function applyParams(p){
   const r = p.rules || {}, set = (id, v) => $(id).value = v == null ? "" : v;
   set("r_rank_by", r.rank_by); set("r_bind_min_agree", r.bind_min_agree); set("r_imm_min_agree", r.imm_min_agree); set("r_bind_rank_max", r.bind_rank_max);
   set("r_imm_top_q", r.imm_top_q == null ? null : r.imm_top_q * 100); set("r_min_alleles", r.min_alleles); set("r_min_coverage", r.min_coverage == null ? null : r.min_coverage * 100);
-  set("r_panel_target", r.panel_target == null ? null : r.panel_target * 100); set("r_collapse", r.collapse == null ? "" : (r.collapse ? "1" : "0")); set("r_cluster_by", r.cluster_by);
+  set("r_panel_target", r.panel_target == null ? null : r.panel_target * 100); set("r_collapse", r.collapse == null ? "" : (r.collapse ? "1" : "0")); set("r_cluster_by", r.cluster_by); set("r_host_mode", r.host_mode);
   for (const c of [1, 2]) {
     const a = p["c" + c]; if (!a) { $("en" + c).checked = false; continue; }
     $("en" + c).checked = a.enabled !== false; $("arm" + c).classList.toggle("off", a.enabled === false);
@@ -1121,4 +1129,16 @@ async function deepTest(m){
 loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
+let HOSTPOLL = null;
+async function hostStatus(){
+  const d = await (await fetch("api/host")).json();
+  if (d.error) { $("hostinfo").textContent = d.error; return; }
+  $("hostinfo").innerHTML = d.present ? `<span class="ok">ready</span>: ${esc(d.name)}, ${d.size_mb} MB${d.proteins ? `, ${d.proteins.toLocaleString()} proteins` : ""}` : `<span class="warn">not downloaded</span> (${esc(d.name)})`;
+  $("host_msg").textContent = d.downloading ? `downloading ${(d.bytes / 1e6).toFixed(1)}${d.total ? " / " + (d.total / 1e6).toFixed(1) : ""} MB...` : (d.error ? "failed: " + d.error : "");
+  $("host_org").value = d.organism; $("host_dl").disabled = d.downloading;
+  if (d.downloading && !HOSTPOLL) HOSTPOLL = setInterval(hostStatus, 1500);
+  if (!d.downloading && HOSTPOLL) { clearInterval(HOSTPOLL); HOSTPOLL = null; }
+}
+$("host_dl").onclick = async () => { const r = await fetch("api/host/download", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({organism: $("host_org").value})}); const d = await r.json(); if (d.error) $("host_msg").textContent = d.error; hostStatus(); };
+hostStatus();
 </script></body></html>

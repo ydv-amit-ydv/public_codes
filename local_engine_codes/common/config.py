@@ -18,6 +18,7 @@ DEFAULT = {
     "workspace_dir": "auto",
     "performance": {"profile": "auto", "threads": 0, "nice": 5, "stall_seconds": 900, "timeout_minutes": 0, "parallel_models": 2, "cache": 1},
     "population": {"label": "India", "weights_csv": "auto"},
+    "host_proteome": {"organism": "human", "fasta": "auto", "url": ""},
     "models": {
         "netmhcpan": {"enabled": True, "home": "auto", "workers": 0, "alleles_per_call": 3},
         "bigmhc": {"enabled": True, "python": "auto", "home": "auto", "device": "cpu", "jobs": 0},
@@ -80,6 +81,9 @@ def validate(obj):
     if not isinstance(perf, dict) or any(k != "profile" and (isinstance(v, bool) or not isinstance(v, (int, float))) for k, v in perf.items()) \
             or perf.get("profile", "auto") not in ("auto", "gentle", "balanced", "max"):
         errs.append("performance must be an object of numbers (threads, nice, stall_seconds, timeout_minutes, parallel_models)")
+    hp = obj.get("host_proteome", {})
+    if not isinstance(hp, dict) or any(not isinstance(v, str) for v in hp.values()) or hp.get("organism", "human") not in ("human", "mouse"):
+        errs.append("host_proteome must be an object of strings: organism (human or mouse), fasta, url")
     models = obj.get("models", {})
     if not isinstance(models, dict):
         return errs + ["'models' must be an object"]

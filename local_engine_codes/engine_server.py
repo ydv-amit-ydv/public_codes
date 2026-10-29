@@ -22,11 +22,11 @@ sys.path.insert(0, HERE)
 
 from common import alleles as allele_lib, config, population            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
-from common import runs, predcache                           # noqa: E402
+from common import runs, predcache, hostself                           # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
-import funnel, models as model_registry
+import consensus, funnel, models as model_registry
 import pipeline, pipeline_ii, pipeline_dual, pipeline_single                                  # noqa: E402
 import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import immuscope_runner as isc_run, tlimmuno2_runner as tl2_run   # noqa: E402
@@ -425,6 +425,8 @@ def pipeline_run():
     params = request.get_json(force=True)
     try:
         _pipe(params).normalise(params)
+        if _host_error(params):
+            return jsonify(error=_host_error(params)), 400
         for name in _needed_models(params):
             if not config.model(name).get("enabled", True):
                 return jsonify(error=f"{name} is disabled in Settings."), 400
@@ -527,6 +529,8 @@ def runs_resume(run_id):
         return jsonify(id=job.id)
     try:
         pipeline_dual.normalise(params)
+        if _host_error(params):
+            return jsonify(error=_host_error(params)), 400
         for name in _needed_models(params):
             bad = [c for c in HEALTH[name](False) if not c["ok"]]
             if bad:
@@ -661,6 +665,38 @@ def api_version():
     return jsonify(version=_version())
 
 
+@main.get("/api/host")
+def api_host():
+    try:
+        return jsonify(hostself.status())
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(error=str(e)), 400
+
+
+@main.post("/api/host/download")
+def api_host_download():
+    try:
+        org = (request.get_json(silent=True) or {}).get("organism")
+        if org and org not in hostself.ORGANISMS:
+            return jsonify(error="organism must be " + " or ".join(hostself.ORGANISMS)), 400
+        started = hostself.start_download(org)
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(started=started, **hostself.status())
+
+
+def _host_error(params):
+    """Validates the rules; a run that must drop host-like peptides cannot start without the proteome (flag mode only warns)."""
+    classes = (1, 2) if _is_dual(params) else (int(params.get("mhc_class", 1)),)
+    for c in classes:
+        sub = (params.get(f"c{c}") if _is_dual(params) else params) or params
+        r = consensus.resolve_rules(c, sub.get("preset") or params.get("preset") or "balanced", sub.get("rules") or params.get("rules"))
+        if r["host_mode"] in ("exclude_identical", "exclude_near") and not hostself.available():
+            return ("The host proteome is not downloaded, and this run is set to remove peptides that match it (strategy or rules). "
+                    "Settings > Host proteome > Download first.")
+    return None
+
+
 @main.get("/api/cache")
 def api_cache_get():
     return jsonify(size=predcache.size())
@@ -734,6 +770,10 @@ def index():
 
 
 runs.mark_interrupted()
+try:
+    hostself.warm()                                  # build the host-proteome index in the background when it is already downloaded
+except Exception:                                    # noqa: BLE001 - a broken config is reported where it is used
+    pass
 application = DispatcherMiddleware(main, {"/netmhcpan": netmhcpan_app.app, "/bigmhc": bigmhc_app.app})
 
 if __name__ == "__main__":
