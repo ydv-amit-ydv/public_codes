@@ -1,5 +1,7 @@
 # Epitope Filter Engine (local)
 
+> **GUIDE.md** (also at `/guide` in the running app) explains every term, rule and output column in detail.
+
 Local, offline prediction tools that produce the IEDB-style tables the Epitope
 Workbench (`IEDB/HEV/Scripts/epitope_app.py`) filters. Each model is its own tool;
 `engine_server.py` hosts them side by side and will become the combined pipeline.

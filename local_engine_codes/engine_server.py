@@ -665,6 +665,12 @@ def api_version():
     return jsonify(version=_version())
 
 
+@main.get("/guide")
+def guide():
+    """The complete guide (terms, rules, every column) as a text page."""
+    return send_file(os.path.join(HERE, "GUIDE.md"), mimetype="text/plain; charset=utf-8")
+
+
 @main.get("/api/host")
 def api_host():
     try:
@@ -683,6 +689,21 @@ def api_host_download():
     except (ValueError, config.ConfigError) as e:
         return jsonify(error=str(e)), 400
     return jsonify(started=started, **hostself.status())
+
+
+@main.post("/api/host/check")
+def api_host_check():
+    """Compare pasted peptides (one per line, 5-40 residues) with the host proteome: the same columns a run adds."""
+    if not hostself.available():
+        return jsonify(error="The host proteome is not downloaded: Settings > Host proteome > Download."), 400
+    text = (request.get_json(force=True) or {}).get("text", "")
+    peps = list(dict.fromkeys(l.strip().upper() for l in text.splitlines() if l.strip() and not l.startswith(">")))[:5000]
+    ix = hostself.index()
+    rows = []
+    for p in peps:
+        r = hostself.check(p, ix) if 5 <= len(p) <= 40 else None
+        rows.append({"Peptide": p, **(r or {"Host_Self": "not checked (5-40 standard residues)"})})
+    return jsonify(rows=rows, organism=hostself.status()["name"])
 
 
 def _host_error(params):

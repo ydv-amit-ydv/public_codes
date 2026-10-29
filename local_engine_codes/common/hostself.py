@@ -330,6 +330,10 @@ def annotate(pep, rules, notes=None):
         for k, v in r.items():
             pep.at[i, k] = v
     pep["Host_Excluded"] = False
+    if notes is not None and len(sel):
+        vc = pep.loc[sel, "Host_Self"].value_counts()
+        notes.append(f"Host check ({ORGANISMS[organism()][2]}): of {len(sel)} candidate peptide(s), {int(vc.get('identical', 0))} identical, "
+                     f"{int(vc.get('near', 0))} near (1 mismatch), {int(vc.get('distinct', 0))} distinct. Columns Host_Self, Host_Best_Identity, Host_Best_Protein.")
     if mode in ("exclude_identical", "exclude_near"):
         bad = {"exclude_identical": ("identical",), "exclude_near": ("identical", "near")}[mode]
         flagged = pep["Host_Self"].isin(bad)

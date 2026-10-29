@@ -25,6 +25,11 @@ def finish(base, cls, p, job, info, warns, filters_ok):
     res = consensus.analyse(base, cls, rules, pop, filters_ok)
     cur = {"candidates": int(res["peptides"]["Candidate"].sum()), "regions": int(res["peptides"]["Is_Representative"].sum()),
            "panel": len(res["panel"]), "panel_coverage": (res["panel"][-1]["cumulative_coverage"] if res["panel"] else 0.0)}
+    pp = res["peptides"]
+    if "Host_Self" in pp:
+        hs = pp.loc[pp["Candidate"].astype(bool) | pp.get("Host_Excluded", False).astype(bool), "Host_Self"] if "Host_Excluded" in pp else pp.loc[pp["Candidate"].astype(bool), "Host_Self"]
+        cur["host"] = {"checked": int((hs != "").sum()), "identical": int((hs == "identical").sum()), "near": int((hs == "near").sum()),
+                       "distinct": int((hs == "distinct").sum()), "removed": int(pp["Host_Excluded"].sum()) if "Host_Excluded" in pp else 0}
     sugg = consensus.suggestions(base, cls, rules, pop, filters_ok, cur)
     if pop:
         alleles = sorted(base["Allele"].unique())

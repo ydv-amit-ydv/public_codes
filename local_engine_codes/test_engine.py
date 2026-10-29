@@ -693,7 +693,8 @@ if have_tools:
                                                   "rules": {"host_mode": "exclude_identical"}}).get_json()["id"])
     prow = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d['id']}/result?table=peptides").get_json()["rows"]}
     assert d["state"] == "done" and not prow["PKYVKQNTLKLATGM"]["Candidate"] and prow["PKYVKQNTLKLATGM"]["Host_Excluded"], prow["PKYVKQNTLKLATGM"]
-    assert any("match the Homo sapiens proteome" in x for x in c.get(f"/api/jobs/{d['id']}/result").get_json()["consensus"]["notes"]) if False else True
+    assert d["summary"]["warnings"] and any("Host check (Homo sapiens)" in x for x in d["summary"]["warnings"]), d["summary"]["warnings"]
+    assert any("were removed" in x or "was removed" in x or "removed because" in x for x in d["summary"]["warnings"]), d["summary"]["warnings"]
     # a broken environment skips the model with a warning instead of ending the run
     broken = json.loads(json.dumps(settings)); broken["performance"] = {"cache": 0}; broken["models"]["tlimmuno2"]["python"] = os.path.join(TMP, "fail_python")
     open(os.path.join(TMP, "fail_python"), "w").write("#!/bin/sh\n[ \"$1\" = \"-c\" ] && exit 0\necho boom; exit 3\n"); os.chmod(os.path.join(TMP, "fail_python"), 0o755)
@@ -705,13 +706,17 @@ else:
     print("skipped class II bundle tests: tcsh, gawk, perl and R are not all installed")
 
 # host proteome endpoints; a run that must remove host-like peptides will not start without the proteome
+g = c.get("/guide"); assert g.status_code == 200 and b"Every output file and every column" in g.data and b"Host_Best_Identity" in g.data
 hs = c.get("/api/host").get_json(); assert hs["present"] and hs["organism"] == "human" and hs["path"] == HOSTFA, hs
 assert c.post("/api/host/download", json={"organism": "dog"}).status_code == 400
+hc = c.post("/api/host/check", json={"text": "PKYVKQNTLKLATGM\nAAAAAAAAAAAAAAA\nXX"}).get_json()["rows"]
+assert hc[0]["Host_Self"] == "identical" and hc[0]["Host_Best_Protein"] == "sp|PTEST1|HA_HUMAN" and hc[1]["Host_Self"] == "distinct" and "not checked" in hc[2]["Host_Self"], hc
 _sh.move(HOSTFA, HOSTFA + ".off")
 assert c.get("/api/host").get_json()["present"] is False
 r = c.post("/api/pipeline/run", json={**ii, "preset": "strict"}); assert r.status_code == 400 and "host proteome" in r.get_json()["error"].lower(), r.get_json()
 r = c.post("/api/pipeline/run", json={**ii, "rules": {"host_mode": "exclude_near"}}); assert r.status_code == 400 and "Download" in r.get_json()["error"]
 r = c.post("/api/pipeline/run", json={**ii, "rules": {"host_mode": "bogus"}}); assert r.status_code == 400
+assert c.post("/api/host/check", json={"text": "PKYVKQNTLKLATGM"}).status_code == 400
 _sh.move(HOSTFA + ".off", HOSTFA)
 
 # ImmuScope / TLimmuno2 in the single-model tab and the health check

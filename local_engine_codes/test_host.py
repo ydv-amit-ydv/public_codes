@@ -71,9 +71,9 @@ for t in range(40):
 pep = pd.DataFrame({"Peptide": [p9, mutate(p9, [4]), "WWWWWWWWW"], "Candidate": [True, True, True]})
 notes = []
 a = h.annotate(pep.copy(), {"host_mode": "flag"}, notes)
-assert list(a["Host_Self"]) == ["identical", "near", "distinct"] and a["Candidate"].all() and not a["Host_Excluded"].any() and not notes, a
+assert list(a["Host_Self"]) == ["identical", "near", "distinct"] and a["Candidate"].all() and not a["Host_Excluded"].any() and len(notes) == 1 and "1 identical, 1 near (1 mismatch), 1 distinct" in notes[0], (a, notes)
 a = h.annotate(pep.copy(), {"host_mode": "exclude_identical"}, notes)
-assert list(a["Candidate"]) == [False, True, True] and list(a["Host_Excluded"]) == [True, False, False] and "removed" in notes[-1], (a, notes)
+assert list(a["Candidate"]) == [False, True, True] and list(a["Host_Excluded"]) == [True, False, False] and "removed" in notes[-1] and "Host check" in notes[-2], (a, notes)
 a = h.annotate(pep.copy(), {"host_mode": "exclude_near"}, notes)
 assert list(a["Candidate"]) == [False, False, True], a
 a = h.annotate(pep.copy(), {"host_mode": "exclude_near", "host_near_min": 1.0}, notes)

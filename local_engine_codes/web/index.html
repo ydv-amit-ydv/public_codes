@@ -60,6 +60,7 @@ th,td{border:1px solid var(--line);padding:2px 7px;white-space:nowrap}
 th{background:var(--card);cursor:pointer;position:sticky;top:0;z-index:1}
 tr.pass{background:var(--pass)}
 .tabs button{margin-right:4px}.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tag.hostbad{background:#c0392b}.tag.hostwarn{background:#d9822b}.tag.hostok{background:#1e8a4c}
 .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 .kpi{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:120px}
 .kpi b{display:block;font-size:22px;line-height:1.1}.kpi span{color:var(--muted);font-size:12px}
@@ -85,7 +86,7 @@ details>summary{cursor:pointer}
 #pj_tbl td{white-space:normal;vertical-align:top}#pj_tbl .act button{margin:1px}
 @media (max-width:820px){.pane.on{flex-direction:column}#form{width:100%;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
-<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:10px"></span>
+<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Guide</a>
 <button data-t="pipeline">Pipeline</button>
 <button data-t="single">Single model</button>
 <button data-t="projects">Projects</button>
@@ -241,6 +242,9 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <b>Host proteome</b> <span class="q" data-h="host_mode">?</span> <span class="muted sm" id="hostinfo"></span>
   <div style="margin-top:8px"><select id="host_org" disabled title="set host_proteome.organism in the settings file"><option value="human">Human (Homo sapiens)</option><option value="mouse">Mouse (Mus musculus)</option></select>
    <button class="b" id="host_dl">Download</button> <span id="host_msg" class="sm"></span></div>
+  <div style="margin-top:10px"><b class="sm">Check peptides now</b> <span class="muted sm">(one per line; the same comparison a run does)</span><br>
+   <textarea id="host_txt" rows="3" spellcheck="false" style="width:100%;max-width:520px" placeholder="PKYVKQNTLKLATGM"></textarea><br>
+   <button class="b" id="host_chk">Check</button> <span id="host_chkmsg" class="sm"></span><div id="host_res" style="overflow:auto;max-height:260px"></div></div>
   <div class="muted sm" style="margin-top:4px">UniProt reference proteome, one sequence per gene (about 8 MB, downloaded once into the workspace). In the settings file, <code>host_proteome.organism</code> picks human or mouse and <code>host_proteome.fasta</code> uses your own FASTA instead.</div>
  </div>
  <div class="card" id="perfcard">
@@ -708,6 +712,7 @@ async function loadResults(d){
   for (const c of cl) {
     const h = REPORT.classes[c].consensus.headline, pan = REPORT.classes[c].consensus.panel, last = pan.length ? pan[pan.length - 1] : null;
     const tag = c == "1" ? "CTL" : "HTL";
+    if (h.host && h.host.checked) k += kpi(`${h.host.identical + h.host.near}/${h.host.checked}`, `${tag} candidates like host proteins (${h.host.identical} identical, ${h.host.near} near)`);
     k += kpi(f0(h.regions), `${tag} regions`) + kpi(last ? pct(last.cumulative_coverage) : "-", `${tag} panel coverage (${pan.length} peptides)`);
   }
   $("kpis").innerHTML = k + kpi(fmtT(s.seconds), s.chained ? "run time, chained" : "run time");
@@ -754,8 +759,8 @@ function passing(r){
 }
 const SHOW = {
   regions: ["Region_Rank","Region_ID","Type","Protein","Start","End","Sequence","Region_Score","CTL_Best_Peptide","CTL_Coverage","HTL_Best_Peptide","HTL_Coverage","In_Panel","Synthesis_Notes"],
-  candidates: ["Priority_Rank","Peptide","Region_ID","Region_Type","Region","Length","Best_Allele","N_Alleles_Candidate","Coverage_Candidate","Agree_Fraction_PopW","Bind_Consensus_Best","Imm_TopPct_Best","Cluster_Size","In_Panel","Synthesis_Notes"],
-  peptides: ["Priority_Rank","Peptide","Region_ID","Start","Length","Candidate","Best_Allele","N_Alleles_Binder","Coverage_Binder","Agree_Fraction_PopW","Bind_Consensus_PopW","Imm_TopPct_Best","Priority_Score","In_Panel"]
+  candidates: ["Priority_Rank","Peptide","Region_ID","Region_Type","Region","Length","Best_Allele","N_Alleles_Candidate","Coverage_Candidate","Agree_Fraction_PopW","Host_Self","Host_Best_Identity","Host_Best_Protein","Bind_Consensus_Best","Imm_TopPct_Best","Cluster_Size","In_Panel","Synthesis_Notes"],
+  peptides: ["Priority_Rank","Peptide","Region_ID","Start","Length","Candidate","Best_Allele","N_Alleles_Binder","Coverage_Binder","Agree_Fraction_PopW","Bind_Consensus_PopW","Imm_TopPct_Best","Host_Self","Host_Best_Identity","Priority_Score","In_Panel"]
 };
 function cell(c, v){
   if (v == null) return "";
@@ -764,6 +769,7 @@ function cell(c, v){
   if (c.includes("Coverage_") || c == "CTL_Coverage" || c == "HTL_Coverage") return typeof v == "number" ? `<span class="cov"><i style="width:${Math.round(100 * v)}%"></i></span>${pct(v)}` : esc(v);
   if (c == "Agree_Fraction_PopW" || c == "Agree_Fraction" || c == "Allele_Freq") return pct(v);
   if (c == "In_Panel") return isT(v) ? "yes" : "";
+  if (c == "Host_Self") return v ? `<span class="tag ${v == "identical" ? "hostbad" : v == "near" ? "hostwarn" : "hostok"}">${esc(v)}</span>` : "";
   if (typeof v == "number") return Number.isInteger(v) ? v : Math.abs(v) >= 100 ? v.toFixed(1) : +v.toFixed(4);
   return esc(v);
 }
@@ -1141,4 +1147,12 @@ async function hostStatus(){
 }
 $("host_dl").onclick = async () => { const r = await fetch("api/host/download", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({organism: $("host_org").value})}); const d = await r.json(); if (d.error) $("host_msg").textContent = d.error; hostStatus(); };
 hostStatus();
+$("host_chk").onclick = async () => {
+  $("host_chkmsg").textContent = "checking..."; $("host_res").innerHTML = "";
+  const r = await fetch("api/host/check", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text: $("host_txt").value})}); const d = await r.json();
+  if (d.error) { $("host_chkmsg").textContent = d.error; return; }
+  $("host_chkmsg").textContent = `${d.rows.length} peptide(s) against ${d.organism}`;
+  const cols = ["Peptide", "Host_Self", "Host_Exact_Kmers", "Host_Best_Identity", "Host_Best_Protein", "Host_Best_Window", "Host_Best_Start"];
+  $("host_res").innerHTML = "<table><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr>" + d.rows.map(r => "<tr>" + cols.map(c => `<td>${cell(c, r[c])}</td>`).join("") + "</tr>").join("") + "</table>";
+};
 </script></body></html>
