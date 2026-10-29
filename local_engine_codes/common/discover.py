@@ -68,6 +68,51 @@ def find_mixmhc2pred(root):
     return min(hits, key=lambda p: p.count(os.sep)) if hits else None
 
 
+def find_immuscope(root):
+    """ImmuScope clone with its weights and pseudosequence table: ImmuScope/models/ImmuScope.py, weights/IM/, data/raw/pseudosequence.2023.dat."""
+    hits = [dp for dp, dns, fns in _walk_all(root)
+            if os.path.isfile(os.path.join(dp, "ImmuScope", "models", "ImmuScope.py"))]
+    return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
+def find_tlimmuno2(root):
+    """TLimmuno2 clone: Python/TLimmuno2.py beside Python/model/TLimmuno2."""
+    hits = [dp for dp, dns, fns in _walk_all(root)
+            if os.path.isfile(os.path.join(dp, "Python", "TLimmuno2.py")) and os.path.isdir(os.path.join(dp, "Python", "model", "TLimmuno2"))]
+    return min(hits, key=lambda p: p.count(os.sep)) if hits else None
+
+
+def _walk_all(root):
+    """Like _walk but also enters folders named data/models (they are part of these two repositories); virtualenvs are not entered."""
+    root = os.path.abspath(root)
+    base = root.count(os.sep)
+    skip = _SKIP - {"data", "models"} | {"site-packages", "envs", "env"}
+    for dp, dns, fns in os.walk(root):
+        if dp.count(os.sep) - base >= 4:
+            dns[:] = []
+        dns[:] = sorted(d for d in dns if d not in skip and not d.startswith("."))
+        yield dp, dns, fns
+
+
+def find_env_python(home, forced_var, mods, hint):
+    """Interpreter for a tool that has its own environment: <VAR> wins, then a venv inside/beside the clone or a conda env named
+    like the tool, then the server's own interpreter, that can import `mods`."""
+    forced = os.environ.get(forced_var)
+    if forced:
+        return os.path.expanduser(forced)
+    cands = []
+    if home:
+        for base in (home, os.path.dirname(home)):
+            for sub in (".venv", "venv", "env"):
+                cands.append(os.path.join(base, sub, "bin", "python"))
+    envs = _conda_pythons()
+    envs.sort(key=lambda p: (hint not in p.lower(), p))
+    for py in cands + envs + [sys.executable]:
+        if os.path.isfile(py) and _can_import(py, mods):
+            return py
+    return None
+
+
 def find_iedb_bundle_ii(root):
     """IEDB next-generation T Cell Class II standalone: src/tcell_mhcii.py beside pyproject.toml."""
     hits = [dp for dp, dns, fns in _walk(root)

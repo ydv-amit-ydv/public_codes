@@ -15,6 +15,7 @@ from common import alleles as allele_lib
 import bigmhc_runner as bm
 import calis_immunogenicity as ci
 import cd4episcore_runner as cd
+import immuscope_runner as isc
 import iedb_processing as ip
 import mhcflurry_runner as mf
 import mixmhc2pred_runner as m2
@@ -22,6 +23,7 @@ import mixmhcpred_runner as mx
 import netmhcpan_app as nm
 import netmhciipan_runner as nn
 import prime_runner as pr
+import tlimmuno2_runner as tl2
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,8 @@ SPECS = {s.key: s for s in [
     Spec("netmhciipan_el", 2, "NetMHCIIpan (EL)", True, False, 3, "NII_%Rank_EL", True, ("iedb_bundle_ii",), 1.0),
     Spec("netmhciipan_ba", 2, "NetMHCIIpan (BA)", True, False, 3, "NII_%Rank_BA", True, ("iedb_bundle_ii",), 1.0),
     Spec("cd4episcore", 2, "CD4episcore", False, False, 3, "CD4_Episcore", True, ("iedb_bundle_ii",), 0.5),
+    Spec("tlimmuno2", 2, "TLimmuno2", True, False, 4, "TLimmuno2", False, ("tlimmuno2",), 1.0),
+    Spec("immuscope", 2, "ImmuScope-IM", True, False, 4, "ImmuScope_IM", False, ("immuscope",), 1.0),
 ]}
 ORDER = {1: [k for k, s in SPECS.items() if s.cls == 1], 2: [k for k, s in SPECS.items() if s.cls == 2]}
 
@@ -82,6 +86,9 @@ def run(keys, rows, ctx, job=None):
             df, n = m2.predict(peps, als, seqs, job=job)
         elif key == "cd4episcore":
             df, n = cd.predict(uniq, job=job), []
+        elif key in ("tlimmuno2", "immuscope"):
+            runner = tl2 if key == "tlimmuno2" else isc
+            df, n = runner.predict(rows[["Peptide", "Allele"]].drop_duplicates(), job=job)
         elif key == "netmhcpan":
             known = set(nm.list_alleles())
             ok = [a for a in als if not known or allele_lib.netmhcpan_name(a) in known]

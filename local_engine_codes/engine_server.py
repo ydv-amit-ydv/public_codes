@@ -29,6 +29,7 @@ import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
 import funnel, models as model_registry
 import pipeline, pipeline_ii, pipeline_dual, pipeline_single                                  # noqa: E402
 import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
+import immuscope_runner as isc_run, tlimmuno2_runner as tl2_run   # noqa: E402
 import pandas as pd                                          # noqa: E402
 
 main = Flask(__name__)
@@ -216,6 +217,40 @@ def health_mixmhc2pred(deep):
     return checks
 
 
+def _health_pair_tool(name, label, files, mods, runner, deep):
+    m = config.model(name)
+    home, py = m.get("home") or "", m.get("python") or ""
+    checks = [_check(f"{label} folder", bool(home) and all(os.path.isfile(os.path.join(home, *f)) for f in files),
+                     (home or f"not found under {config.search_root()} ({runner.HINT})") + _auto(m, "home"))]
+    if not checks[0]["ok"]:
+        return checks
+    checks.append(_check("python environment", bool(py) and os.path.isfile(py), (py or f"no environment with {mods[0]} found; {runner.HINT}") + _auto(m, "python")))
+    if not checks[-1]["ok"]:
+        return checks
+    ok, msg = _py_imports(py, mods)
+    checks.append(_check("imports (" + ", ".join(mods) + ")", ok, msg))
+    if deep and ok:
+        try:
+            import pandas as _pd
+            df, _ = runner.predict(_pd.DataFrame({"Peptide": ["PKYVKQNTLKLATGM", "AAAAAAAAAAAAAAA"], "Allele": ["HLA-DRB1*01:01"] * 2}))
+            hi, lo = float(df.iloc[0, 2]), float(df.iloc[1, 2])
+            checks.append(_check("PKYVKQNTLKLATGM scores above poly-A (DRB1*01:01)", hi > lo, f"{hi:.3f} vs {lo:.3f}"))
+        except Exception as e:
+            checks.append(_check("test prediction", False, e))
+    return checks
+
+
+def health_immuscope(deep):
+    return _health_pair_tool("immuscope", "ImmuScope", [("ImmuScope", "models", "ImmuScope.py"), ("weights", "IM", "ImmuScope-IM-0.pt"),
+                                                        ("data", "raw", "pseudosequence.2023.dat")],
+                             ("torch", "numpy", "pandas", "h5py", "sklearn", "ruamel.yaml"), isc_run, deep)
+
+
+def health_tlimmuno2(deep):
+    return _health_pair_tool("tlimmuno2", "TLimmuno2", [("Python", "TLimmuno2.py"), ("Python", "data", "pseudosequence.2016.all.X.dat")],
+                             ("tensorflow", "numpy", "pandas"), tl2_run, deep)
+
+
 def health_iedb_bundle_ii(deep):
     import shutil
     m = config.model("iedb_bundle_ii")
@@ -247,7 +282,8 @@ def health_iedb_bundle_ii(deep):
 
 HEALTH = {"netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "mhcflurry": health_mhcflurry,
           "prime": health_prime, "iedb_bundle": health_iedb_bundle, "bigmhc": health_bigmhc,
-          "mixmhc2pred": health_mixmhc2pred, "iedb_bundle_ii": health_iedb_bundle_ii}
+          "mixmhc2pred": health_mixmhc2pred, "iedb_bundle_ii": health_iedb_bundle_ii,
+          "immuscope": health_immuscope, "tlimmuno2": health_tlimmuno2}
 
 
 @main.get("/api/config")
@@ -335,6 +371,8 @@ def _needed_models(params):
     if int(params.get("mhc_class", 1)) == 2:
         if m.get("netmhciipan_el") or m.get("netmhciipan_ba") or m.get("cd4episcore"): need.append("iedb_bundle_ii")
         if m.get("mixmhc2pred"): need.append("mixmhc2pred")
+        if m.get("immuscope"): need.append("immuscope")
+        if m.get("tlimmuno2"): need.append("tlimmuno2")
         return need
     if m.get("netmhcpan"): need.append("netmhcpan")
     if m.get("mixmhcpred") or m.get("prime"): need.append("mixmhcpred")      # PRIME calls MixMHCpred

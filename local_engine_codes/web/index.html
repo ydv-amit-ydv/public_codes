@@ -318,7 +318,9 @@ const HELP = {
  m_netmhciipan_el: "<b>NetMHCIIpan</b>: eluted-ligand prediction for class II (percentile rank).",
  m_netmhciipan_ba: "<b>NetMHCIIpan</b>: binding-affinity prediction for class II (percentile and IC50).",
  m_mixmhc2pred: "<b>MixMHC2pred 2.1</b> (Gfeller lab): class II ligand predictor, any peptide length.",
- m_cd4episcore: "<b>CD4episcore</b> (IEDB): CD4 T-cell immunogenicity; the lower the percentile, the more immunogenic."
+ m_cd4episcore: "<b>CD4episcore</b> (IEDB): CD4 T-cell immunogenicity; the lower the percentile, the more immunogenic.",
+ m_tlimmuno2: "<b>TLimmuno2</b>: deep-learning CD4 immunogenicity for a peptide-class II pair (0-1, higher = more immunogenic). Runs only on pairs already called binders; peptides up to 21 residues.",
+ m_immuscope: "<b>ImmuScope-IM</b>: ensemble of 10 networks scoring CD4 immunogenicity of a peptide-class II pair (0-1, higher = more immunogenic). Runs only on pairs already called binders; peptides up to 21 residues."
 };
 const tip = $("tip");
 function showTip(el){
@@ -345,7 +347,8 @@ const ARMS = {
       ["netchop", "NetChop 3.1", "proteasome cleavage", "iedb_bundle", true], ["bigmhc_el", "BigMHC EL", "presentation", "bigmhc"], ["bigmhc_im", "BigMHC IM", "immunogenicity", "bigmhc"]]},
  2: {title: "MHC class II", tag: "HTL", who: "CD4 T cells", sizes: [11,12,13,14,15,16,17,18,19,20,21,22,23,24,25], models: [
       ["netmhciipan_el", "NetMHCIIpan", "eluted ligand (EL)", "iedb_bundle_ii"], ["netmhciipan_ba", "NetMHCIIpan", "binding affinity (BA)", "iedb_bundle_ii"],
-      ["mixmhc2pred", "MixMHC2pred 2.1", "ligand prediction", "mixmhc2pred"], ["cd4episcore", "CD4episcore", "CD4 immunogenicity", "iedb_bundle_ii"]]}
+      ["mixmhc2pred", "MixMHC2pred 2.1", "ligand prediction", "mixmhc2pred"], ["cd4episcore", "CD4episcore", "CD4 immunogenicity", "iedb_bundle_ii"],
+      ["tlimmuno2", "TLimmuno2", "CD4 immunogenicity (pair)", "tlimmuno2"], ["immuscope", "ImmuScope-IM", "CD4 immunogenicity (pair)", "immuscope"]]}
 };
 const FILTERS = {
  1: [["rank_el_max","NetMHCpan %Rank EL ≤",0.1,0],["rank_ba_max","NetMHCpan %Rank BA ≤",0.1,0],["aff_max","NetMHCpan affinity ≤ (nM)",50,0],["mix_rank_max","MixMHCpred %Rank ≤",0.1,0],
@@ -846,7 +849,8 @@ const SM = {   // key: [label, class, needs alleles, needs protein, health names
   iedb_imm: ["IEDB immunogenicity (Calis)", 1, true, false, [], "m_iedb_imm"], netctlpan: ["NetCTLpan 1.1", 1, true, true, ["iedb_bundle"], "m_netctlpan"],
   netchop: ["NetChop 3.1", 1, false, true, ["iedb_bundle"], "m_netchop"], bigmhc_el: ["BigMHC EL", 1, true, false, ["bigmhc"], "m_bigmhc_el"], bigmhc_im: ["BigMHC IM", 1, true, false, ["bigmhc"], "m_bigmhc_im"],
   netmhciipan: ["NetMHCIIpan (EL + BA)", 2, true, false, ["iedb_bundle_ii"], "m_netmhciipan_el"], mixmhc2pred: ["MixMHC2pred 2.1", 2, true, false, ["mixmhc2pred"], "m_mixmhc2pred"],
-  cd4episcore: ["CD4episcore", 2, false, false, ["iedb_bundle_ii"], "m_cd4episcore"]
+  cd4episcore: ["CD4episcore", 2, false, false, ["iedb_bundle_ii"], "m_cd4episcore"],
+  tlimmuno2: ["TLimmuno2", 2, true, false, ["tlimmuno2"], "m_tlimmuno2"], immuscope: ["ImmuScope-IM", 2, true, false, ["immuscope"], "m_immuscope"]
 };
 const SSIZES = {1: [8,9,10,11,12,13,14], 2: [11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]};
 HELP.single = "Runs one tool on its own and keeps everything it reports, with the position of each peptide, sorted by the tool's main score. Nothing is combined or filtered, so you can compare a number with what the pipeline used.";
@@ -1038,7 +1042,7 @@ buildSingle();
 })();
 
 /* ---------- settings ---------- */
-const MODELS = ["netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_bundle", "bigmhc", "mixmhc2pred", "iedb_bundle_ii"];
+const MODELS = ["netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_bundle", "bigmhc", "mixmhc2pred", "iedb_bundle_ii", "immuscope", "tlimmuno2"];
 async function loadCfg(){
   const d = await (await fetch("api/config")).json();
   $("path").textContent = d.path; $("cfg").value = d.text;
@@ -1077,7 +1081,7 @@ $("pf_save").onclick = () => savePerf();
 $("pf_fast").onclick = () => savePerf({profile: "max", threads: 0, parallel_models: 2, nice: 0, stall_seconds: 900, timeout_minutes: 0});
 $("pf_gentle").onclick = () => savePerf({profile: "gentle", threads: 0, parallel_models: 1, nice: 10, stall_seconds: 900, timeout_minutes: 0});
 
-const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2};
+const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2, immuscope: 2, tlimmuno2: 2};
 function showReadiness(m, d){
   document.querySelectorAll(`.fdot[data-m="${m}"]`).forEach(e => e.className = "dot fdot " + (d.ok ? "ok" : "bad"));
   const why = d.ok ? "" : ((d.checks.find(c => !c.ok) || {}).name || "not ready");

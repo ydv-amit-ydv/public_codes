@@ -1,10 +1,11 @@
 """MHC class II: one form in, one table out.
 
-    NetMHCIIpan (EL + BA)  ->  MixMHC2pred  ->  CD4episcore
+    NetMHCIIpan (EL + BA)  ->  MixMHC2pred  ->  CD4episcore  ->  TLimmuno2  ->  ImmuScope
 
 NetMHCIIpan and MixMHC2pred score every peptide-allele pair. CD4episcore scores the peptide on its own (no HLA
 typing; lower percentile = more immunogenic), so with `chain` on it only runs for peptides that pass the binding
-filters for at least one allele.
+filters for at least one allele. TLimmuno2 and ImmuScope score peptide-allele pairs (higher = more immunogenic); with
+`chain` on they only score the pairs already called binders.
 
 Import after engine_server has put the tool folders on sys.path.
 """
@@ -19,14 +20,17 @@ from guard import try_model
 
 from common import alleles as allele_lib, config
 import cd4episcore_runner as cd
+import immuscope_runner as isc
 import mixmhc2pred_runner as m2
 import netmhcpan_app as nm
 import netmhciipan_runner as nn
+import tlimmuno2_runner as tl2
 
 MAX_PAIRS = 3_000_000
 SCAN_LENGTHS = tuple(range(11, 26))
 PEPTIDE_BOUNDS = (9, 30)
-MODEL_KEYS = ("netmhciipan_el", "netmhciipan_ba", "mixmhc2pred", "cd4episcore")
+MODEL_KEYS = ("netmhciipan_el", "netmhciipan_ba", "mixmhc2pred", "cd4episcore", "tlimmuno2", "immuscope")
+PAIR_IMM = (("tlimmuno2", "TLimmuno2", tl2, "TLimmuno2"), ("immuscope", "ImmuScope-IM", isc, "ImmuScope_IM"))
 FILTER_KEYS = ("nii_el_rank_max", "nii_ba_rank_max", "nii_ic50_max", "mix2_rank_max", "cd4_max")
 
 
@@ -79,7 +83,7 @@ def preview(params):
     out = {"n_peptides": n_pep, "n_windows": n_win, "n_alleles": len(p["alleles"]), "warnings": warns + notes,
            "n_pairs_netmhcpan": n_pep * len(p["alleles"]) if nii else 0,
            "n_pairs_fast": n_pep * len(p["alleles"]) if m["mixmhc2pred"] else 0, "n_pairs_bigmhc": 0,
-           "chained": bool(p["chain"] and m["cd4episcore"] and (nii or m["mixmhc2pred"]))}
+           "chained": bool(p["chain"] and (m["cd4episcore"] or m["tlimmuno2"] or m["immuscope"]) and (nii or m["mixmhc2pred"]))}
     out["too_big"] = max(out["n_pairs_netmhcpan"], out["n_pairs_fast"]) > MAX_PAIRS
     return out
 
@@ -111,6 +115,9 @@ def stage_plan(p, n_pep):
         plan.append({"name": "mixmhc2pred", "label": "MixMHC2pred 2.1", "work": pairs, "weight": timing.expected_seconds("mixmhc2pred", pairs)})
     if m["cd4episcore"]:
         plan.append({"name": "cd4episcore", "label": "CD4episcore (CD4 immunogenicity)", "work": int(n_pep * gate), "weight": timing.expected_seconds("cd4episcore", n_pep * gate)})
+    for key, label, _, _ in PAIR_IMM:
+        if m[key]:
+            plan.append({"name": key, "label": f"{label} (CD4 immunogenicity)", "work": int(pairs * gate), "weight": timing.expected_seconds(key, pairs * gate)})
     plan.append({"name": "merge", "label": "Merging and filtering", "work": pairs, "weight": timing.expected_seconds("merge", pairs)})
     return plan
 
@@ -137,14 +144,16 @@ def run(params, job):
 
     manual = p["funnel"]["mode"] == "manual"
     failed = []                                  # models that broke and were skipped (see guard.py)
-    n_selected = (int(m["netmhciipan_el"] or m["netmhciipan_ba"]) + int(m["mixmhc2pred"]) + int(m["cd4episcore"]))
+    n_selected = (int(m["netmhciipan_el"] or m["netmhciipan_ba"]) + int(m["mixmhc2pred"]) + int(m["cd4episcore"]) + int(m["tlimmuno2"]) + int(m["immuscope"]))
     fstats = []
     nii = mix = chop = None
+    pair_ran = []                                # pair-wise immunogenicity tools that produced scores
     if manual:
         base, ran, fstats = funnel.run_manual(2, p, peps, seqs, job, warns)
         nii = base if ran & {"netmhciipan_el", "netmhciipan_ba"} else None
         mix = base if "mixmhc2pred" in ran else None
         chop = base if "cd4episcore" in ran else None
+        pair_ran = [(k, c) for k, _, _, c in PAIR_IMM if k in ran]
     else:
         nii = None
         if kinds:
@@ -200,6 +209,32 @@ def run(params, job):
                 job.finish_stage("cd4episcore", "nothing to score")
                 warns.append("CD4episcore had nothing to score (no peptide passed the binding filters).")
 
+        for key, label, runner, col in PAIR_IMM:
+            if not m[key]:
+                continue
+            gated = p["chain"] and (nii is not None or mix is not None)
+            if gated:
+                rules = consensus.resolve_rules(2, p["preset"], p["rules"])
+                keep = consensus.binder_mask(base, 2, rules) & _binding_pass(base, f) & consensus.gate_mask(base, 2, rules)
+                pairs = base.loc[keep, ["Peptide", "Allele"]].drop_duplicates()
+                job.log(f"chain: {len(pairs):,} pairs -> {label}")
+            else:
+                pairs = base[["Peptide", "Allele"]].drop_duplicates()
+            if pairs.empty:
+                job.finish_stage(key, "nothing to score")
+                warns.append(f"{label} had nothing to score (no pair passed the binding filters).")
+                m[key] = False
+                continue
+            got = try_model(label, key, lambda: runner.predict(pairs, job=job), job, warns, failed)
+            if got is None:
+                m[key] = False
+                continue
+            sc, n = got
+            warns += n
+            base = base.merge(sc, on=["Peptide", "Allele"], how="left")
+            pair_ran.append((key, col))
+            job.finish_stage(key, f"{int(sc[col].notna().sum()):,} pairs scored")
+
     if failed and len(failed) >= n_selected:
         raise RuntimeError("Every selected model failed: " + ", ".join(failed) + ". See the log for each reason.")
     job.update("merge", msg="merging", state="running")
@@ -246,7 +281,7 @@ def run(params, job):
     summ["Alleles_passed_list"] = summ["Alleles_passed_list"].fillna("")
     for col, fn, name in (("NII_%Rank_EL", "min", "Best_NII_%Rank_EL"), ("NII_%Rank_BA", "min", "Best_NII_%Rank_BA"),
                           ("NII_IC50_nM", "min", "Best_NII_IC50_nM"), ("MIX2_%Rank", "min", "Best_MIX2_%Rank"),
-                          ("CD4_Episcore", "min", "CD4_Episcore")):
+                          ("CD4_Episcore", "min", "CD4_Episcore"), ("ImmuScope_IM", "max", "Max_ImmuScope_IM"), ("TLimmuno2", "max", "Max_TLimmuno2")):
         if col in base:
             summ = summ.merge(getattr(g[col], fn)().rename(name).reset_index(), on=keys, how="left")
     order, asc = ["Alleles_passed"], [False]
@@ -269,6 +304,6 @@ def run(params, job):
     job.result = {**cons, "pairs_csv": pairs_csv, "summary_csv": summ_csv, "summary": {
         "peptides": n_pep, "pairs": int(len(base)), "pairs_passed": int(base["Pass_All"].sum()),
         "peptides_passed": int((summ["Alleles_passed"] > 0).sum()), "seconds": round(time.time() - t0, 1),
-        "warnings": list(dict.fromkeys(warns)), "failed_models": failed, "chained": bool(m["cd4episcore"] and p["chain"] and (nii is not None or mix is not None))}}
+        "warnings": list(dict.fromkeys(warns)), "failed_models": failed, "chained": bool((m["cd4episcore"] or m["tlimmuno2"] or m["immuscope"]) and p["chain"] and (nii is not None or mix is not None))}}
     job.log(f"done in {time.time() - t0:.1f}s: {int(base['Pass_All'].sum()):,} pairs / "
             f"{int((summ['Alleles_passed'] > 0).sum()):,} peptides pass")

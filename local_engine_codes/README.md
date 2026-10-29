@@ -15,6 +15,7 @@ Workbench (`IEDB/HEV/Scripts/epitope_app.py`) filters. Each model is its own too
 | BigMHC EL + IM (`MHC1/Immunogenicity_scripts/`) | working |
 | NetCTLpan 1.1 + NetChop 3.1 antigen processing, via IEDB's bundle (`MHC1/Processing_scripts/`) | working (real tools checked) |
 | MHC class II: NetMHCIIpan EL + BA (4.3 / 4.2 / IEDB default), MixMHC2pred 2.1, CD4episcore (`MHC2/`) | working (real tools checked) |
+| MHC class II immunogenicity, per peptide-allele pair: ImmuScope-IM (10-network ensemble), TLimmuno2 (`MHC2/Immunogenicity_scripts/`) | working (TLimmuno2 reproduces the authors' script exactly) |
 
 Third-party predictors are licensed separately and are not stored here.
 
@@ -140,7 +141,7 @@ Every run ends with a consensus step (`consensus.py`, tested in `test_consensus.
 
 - **Votes.** Each tool casts one vote per peptide-allele pair. Tools with a percentile against random human peptides (NetMHCpan, MixMHCpred,
   MHCflurry, NetMHCIIpan, MixMHC2pred, PRIME, NetCTLpan) vote at an absolute cut-off (binding %Rank <= 2 for class I, 5 for class II by default).
-  BigMHC-EL votes at score >= 0.2. Tools with no absolute scale for immunogenicity (BigMHC-IM, IEDB/Calis, CD4episcore) vote relatively: top q %
+  BigMHC-EL votes at score >= 0.2. Tools with no absolute scale for immunogenicity (BigMHC-IM, IEDB/Calis, CD4episcore, ImmuScope, TLimmuno2) vote relatively: top q %
   among the plausible binders of the run (needs >= 8 of them, otherwise the tool gives no vote and says so).
 - **Agreement** = votes / tools that scored the pair, in total and per group (binding, immunogenicity, processing). A pair is a **binder** when
   enough binding tools agree (strict majority by default); the binding consensus is the **median** %Rank of the percentile tools.
@@ -325,11 +326,17 @@ chaining, filters, per-peptide summary), with its own alleles, models and filter
 | **MixMHC2pred 2.1** | Gfeller lab, GitHub | %Rank per allele (lower = better). Uses the 12-residue context around peptides cut from a protein |
 | **CD4episcore** | IEDB (Dhanda et al. 2018), same standalone | CD4 T-cell immunogenicity percentile of the peptide alone, no HLA needed. **Lower = more immunogenic** |
 
+| **ImmuScope-IM** | Chen et al. 2025 (GPL-3.0; weights CC-BY-4.0), own torch environment | CD4 immunogenicity of a peptide-allele **pair**, 0-1, **higher = more immunogenic**; mean of 10 networks. DR, DQ and DP pairs, peptides up to 21 residues |
+| **TLimmuno2** | Zhang et al. 2024, own TensorFlow 2.15 environment | The same kind of score from a different network (binding-affinity network feeding an immunogenicity network). The raw score is used; the authors' percentile against 90,001 background peptides is not (slow, and the engine ranks within the candidates anyway) |
+
 - **Alleles:** DR (DRB1/3/4/5), DQ and DP as alpha/beta pairs (`HLA-DQA1*05:01/DQB1*02:01`), and mouse I-A / I-E. Presets: the
   IEDB class II reference panel (27 alleles: 15 DR, 6 DQ, 6 DP), DR only, the 7-allele DR set CD4episcore is built on, and mouse. The
   search box looks through MixMHC2pred's full allele table on the server.
 - **Lengths:** 11-25 (default 15). Loose peptides may be 9-30 residues.
-- **Chain:** CD4episcore only runs for peptides that pass the binding filters for at least one allele.
+- **Chain:** CD4episcore only runs for peptides that pass the binding filters for at least one allele; ImmuScope and TLimmuno2 only score the
+  pairs already called binders (they cost 1-5 ms a pair). Each votes in the consensus like the other relative immunogenicity tools: top q %
+  of the binders of that allele. Pairs longer than 21 residues, single DQ/DP chains and alleles outside the tools' pseudosequence tables
+  (about 5,600 names) are left unscored and the run says so.
 - A pair passes when every ticked model scored it and met its filter; an allele a tool does not know cannot pass, and the page
   names it. Class I and class II selections are remembered separately.
 
@@ -351,7 +358,31 @@ wget https://downloads.iedb.org/nextgen-tools/tcell_mhcii/LATEST/IEDB_NG_TC2-v0.
 tar -xzf IEDB_NG_TC2-v0.2.3-beta.tar.gz && cd ng_tc2-v0.2.3-beta && uv sync
 ```
 
-Then Settings -> **Test run** on `mixmhc2pred` and `iedb_bundle_ii`. Notes from testing the real tools:
+ImmuScope and TLimmuno2 each keep their own Python environment (the server never imports torch or TensorFlow). Clone them anywhere under
+`~/local_engines/` and make the environments next to them (`.venv` inside the clone is found automatically; `IMMUSCOPE_PYTHON` /
+`TLIMMUNO2_PYTHON` or Settings -> `models.immuscope.python` / `models.tlimmuno2.python` override):
+
+```bash
+cd ~/local_engines
+# ImmuScope-IM: code + weights (149.8 MB) + the pseudosequence table, from the authors' Zenodo record 14810445
+git clone --depth 1 https://github.com/shenlongchen/ImmuScope.git && cd ImmuScope
+curl -L -o w.tgz https://zenodo.org/api/records/14810445/files/ImmuScope-weights.tar.gz/content && tar -xzf w.tgz && rm w.tgz     # -> weights/IM, EL, CD4
+mkdir -p data/raw    # only data/raw/pseudosequence.2023.dat is needed from ImmuScope-data.tar.gz (3 GB): stream it instead of keeping the archive
+curl -sL https://zenodo.org/api/records/14810445/files/ImmuScope-data.tar.gz/content | tar -xz --wildcards '*pseudosequence.2023.dat'
+find . -name pseudosequence.2023.dat       # if it landed in data/data/raw, move it to data/raw/
+python3 -m venv .venv && .venv/bin/pip install torch numpy pandas h5py scikit-learn ruamel.yaml tqdm click   # CPU torch is enough
+cd ..
+# TLimmuno2: the models are in the repository
+git clone --depth 1 https://github.com/XSLiuLab/TLimmuno2.git && cd TLimmuno2
+python3 -m venv .venv && .venv/bin/pip install "tensorflow-cpu==2.15.1" "numpy<2" pandas        # TF 2.15 (Keras 2): Keras 3 cannot load these models
+```
+
+Their drivers (`MHC2/Immunogenicity_scripts/*_driver.py`) are what the engine runs inside those environments: the repositories only ship
+training or file-mode scripts. TLimmuno2's driver gives exactly the numbers of the repository's own script (checked); ImmuScope's builds the
+tensors the way its data pipeline does and averages the 10 IM networks like its test script. A 20,000-pair benchmark on 4 threads took
+about 95 s for ImmuScope and 40 s for TLimmuno2 (including about 20 s TensorFlow start-up).
+
+Then Settings -> **Test run** on `mixmhc2pred`, `iedb_bundle_ii`, `immuscope` and `tlimmuno2`. Notes from testing the real tools:
 
 - **`peptide_list` input fails** in the class II standalone (v0.2.3-beta), even in its own README example, and CD4episcore only
   accepts a protein. The engine sends every loose peptide as its own one-window sequence, grouped by length, which gives

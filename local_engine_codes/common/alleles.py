@@ -89,6 +89,21 @@ _REF27 = ["HLA-DRB1*01:01", "HLA-DRB1*03:01", "HLA-DRB1*04:01", "HLA-DRB1*04:05"
 _DR7 = ["HLA-DRB1*03:01", "HLA-DRB1*07:01", "HLA-DRB1*15:01", "HLA-DRB3*01:01", "HLA-DRB3*02:02",
         "HLA-DRB4*01:01", "HLA-DRB5*01:01"]
 
+def pseudo_name(a):
+    """Name in the NetMHCIIpan pseudosequence tables used by TLimmuno2 and ImmuScope: DRB1_0101, HLA-DQA10501-DQB10201,
+    HLA-DPA10103-DPB10401, H-2-IAb. None when the allele is not a DR chain or a DQ/DP pair (the tables have no single DQ/DP chain)."""
+    c = canonical_ii(a)
+    m = re.match(r"^HLA-(DRB[1345])\*(\d{2,3}):(\d{2,3})$", c)
+    if m:
+        return f"{m.group(1)}_{m.group(2)}{m.group(3)}"
+    m = _II_PAIR.match(c)
+    if m:
+        return f"HLA-{m.group(1).upper()}{m.group(2)}{m.group(3)}-{m.group(4).upper()}{m.group(5)}{m.group(6)}"
+    if c.startswith("H2-I"):
+        return "H-2-" + c[3:]
+    return None
+
+
 PRESETS_II = {
     "IEDB class II reference panel 27": {"human": True, "alleles": _REF27},
     "DR only (15 of the 27)": {"human": True, "alleles": [a for a in _REF27 if "DRB" in a]},

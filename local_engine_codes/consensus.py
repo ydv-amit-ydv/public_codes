@@ -14,7 +14,7 @@ processed. Each tool casts one vote per peptide-allele pair:
     usual weak-binder line, unless a preset says otherwise).
   * BigMHC EL has no percentile; it votes at a score cut-off (default 0.2, which sits at about the top 2 % of random
     human 9-mers for A*02:01 and B*07:02 when measured).
-  * Tools with no absolute scale for immunogenicity (BigMHC IM, the IEDB/Calis score, CD4episcore) vote RELATIVELY:
+  * Tools with no absolute scale for immunogenicity (BigMHC IM, the IEDB/Calis score, CD4episcore, ImmuScope, TLimmuno2) vote RELATIVELY:
     top q % among the binder pairs of this run (as the Workbench does: immunogenicity matters only for peptides
     that are presented). PRIME also has a relative rank for the consensus mean, besides its absolute vote.
 
@@ -69,6 +69,8 @@ TOOLS = [
     Tool("NII_BA", "NetMHCIIpan-BA", "NII_%Rank_BA", "binding", "abs", "low", True, 2),
     Tool("MIX2", "MixMHC2pred", "MIX2_%Rank", "binding", "abs", "low", True, 2),
     Tool("CD4", "CD4episcore", "CD4_Episcore", "immunogenicity", "rel", "low", False, 2),
+    Tool("IMMUSCOPE", "ImmuScope-IM", "ImmuScope_IM", "immunogenicity", "rel", "high", True, 2),
+    Tool("TLIMMUNO2", "TLimmuno2", "TLimmuno2", "immunogenicity", "rel", "high", True, 2),
 ]
 GROUPS = ("binding", "immunogenicity", "processing")
 GROUP_PREFIX = {"binding": "Bind", "immunogenicity": "Imm", "processing": "Proc"}

@@ -29,7 +29,8 @@ KEYS = ["Protein", "Start", "Peptide"]
 MODEL_TOOLS = {"netmhcpan": ("NMP_EL", "NMP_BA"), "mixmhcpred": ("MIXMHC",), "mhcflurry": ("MHCF",), "prime": ("PRIME",),
                "iedb_imm": ("IEDB_IMM",), "netctlpan": ("CTLPAN",), "netchop": ("NETCHOP",), "bigmhc_el": ("BIGMHC_EL",),
                "bigmhc_im": ("BIGMHC_IM",), "netmhciipan_el": ("NII_EL",), "netmhciipan_ba": ("NII_BA",),
-               "mixmhc2pred": ("MIX2",), "cd4episcore": ("CD4",)}
+               "mixmhc2pred": ("MIX2",), "cd4episcore": ("CD4",),
+               "tlimmuno2": ("TLIMMUNO2",), "immuscope": ("IMMUSCOPE",)}
 
 
 def templates(cls):
@@ -51,10 +52,10 @@ def templates(cls):
         "recommended": ("Cheap first, slow tools on the survivors",
                         [{"models": ["mixmhc2pred"], "pass": {"rule": "agree", "need": "any", "cutoff": 10}},
                          {"models": ["netmhciipan_el", "netmhciipan_ba"], "pass": {"rule": "agree", "need": "any"}},
-                         {"models": ["cd4episcore"], "pass": {"rule": "all"}}]),
+                         {"models": ["cd4episcore", "tlimmuno2", "immuscope"], "pass": {"rule": "all"}}]),
         "two": ("NetMHCIIpan screen, then the rest",
                 [{"models": ["netmhciipan_el"], "pass": {"rule": "agree", "need": "any", "cutoff": 10}},
-                 {"models": ["netmhciipan_ba", "mixmhc2pred", "cd4episcore"], "pass": {"rule": "all"}}])}
+                 {"models": ["netmhciipan_ba", "mixmhc2pred", "cd4episcore", "tlimmuno2", "immuscope"], "pass": {"rule": "all"}}])}
 
 
 def normalise(spec, cls, mode):

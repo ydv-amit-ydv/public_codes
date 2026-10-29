@@ -196,8 +196,32 @@ open(f"{BUN2}/src/tcell_mhcii.py", "w").write(textwrap.dedent('''\
                     print(f"{al}\\t{i}\\t{st + 1}\\t{st + L}\\t{L}\\t{pep[:9]}\\t{pep}\\t{val}\\t{0.68 if hit else 60.0}")
     '''))
 
+# ImmuScope / TLimmuno2: stand-in homes and a stand-in interpreter (the real ones need torch / TensorFlow, see README)
+ISC_HOME, TL2_HOME = os.path.join(TMP, "immuscope"), os.path.join(TMP, "tlimmuno2")
+for _d in (("ImmuScope", "models"), ("weights", "IM"), ("data", "raw")):
+    os.makedirs(os.path.join(ISC_HOME, *_d), exist_ok=True)
+for _f in (("ImmuScope", "models", "ImmuScope.py"), ("weights", "IM", "ImmuScope-IM-0.pt"), ("data", "raw", "pseudosequence.2023.dat")):
+    open(os.path.join(ISC_HOME, *_f), "w").write("x")
+os.makedirs(os.path.join(TL2_HOME, "Python", "model", "TLimmuno2"), exist_ok=True)
+for _f in (("Python", "TLimmuno2.py"), ("Python", "data", "pseudosequence.2016.all.X.dat")):
+    os.makedirs(os.path.dirname(os.path.join(TL2_HOME, *_f)), exist_ok=True); open(os.path.join(TL2_HOME, *_f), "w").write("x")
+open(os.path.join(TMP, "pair_driver.py"), "w").write(textwrap.dedent('''
+    import argparse, csv, sys
+    ap = argparse.ArgumentParser(); ap.add_argument("--home"); ap.add_argument("--pairs"); ap.add_argument("--out"); ap.add_argument("--threads"); a = ap.parse_args()
+    col = "ImmuScope_IM" if "immuscope" in a.home else "TLimmuno2"
+    rows = list(csv.DictReader(open(a.pairs)))
+    w = csv.writer(open(a.out, "w", newline="")); w.writerow(["Peptide", "Allele", col])
+    for r in rows:
+        w.writerow([r["Peptide"], r["Allele"], "" if len(r["Peptide"]) > 21 else (0.9 if r["Peptide"] == "PKYVKQNTLKLATGM" else 0.1) - (0.3 if r["Allele"] == "DRB1_1501" else 0)])
+    print("1/1")
+'''))
+PAIRPY = os.path.join(TMP, "pair_python")
+open(PAIRPY, "w").write(f"#!/bin/sh\n[ \"$1\" = \"-c\" ] && exit 0\nshift\nexec {sys.executable} {TMP}/pair_driver.py \"$@\"\n")
+os.chmod(PAIRPY, 0o755)
+
 settings = {"tmp_dir": os.path.join(TMP, "work"),
-            "models": {"netmhcpan": {"home": NMP}, "bigmhc": {"python": sys.executable, "home": BM},
+            "models": {"immuscope": {"home": ISC_HOME, "python": PAIRPY}, "tlimmuno2": {"home": TL2_HOME, "python": PAIRPY},
+                       "netmhcpan": {"home": NMP}, "bigmhc": {"python": sys.executable, "home": BM},
                        "mixmhcpred": {"home": MIX, "python": sys.executable}, "prime": {"home": PRM, "python": sys.executable},
                        "mhcflurry": {"python": sys.executable, "command": f"{MFD}/mhcflurry-predict"},
                        "iedb_bundle": {"home": BUN, "python": f"{BUN}/.venv/bin/python"},
@@ -645,8 +669,47 @@ if have_tools:
     assert d["state"] == "done" and d["summary"]["pairs_passed"] > 0, d["summary"]
     for name in ("mixmhc2pred", "iedb_bundle_ii"):
         h = c.post(f"/api/health/{name}?deep=1").get_json(); assert h["ok"], h
+    # ImmuScope and TLimmuno2 score the pairs already called binders (chain), higher = more immunogenic
+    d = wait_job(c.post("/api/pipeline/run", json={**ii, "alleles": ["HLA-DRB1*01:01", "HLA-DRB1*15:01", "DQA1*05:01/DQB1*02:01"],
+                                                  "models": {"netmhciipan_el": True, "mixmhc2pred": True, "tlimmuno2": True, "immuscope": True}}).get_json()["id"])
+    assert d["state"] == "done", d
+    assert [x["name"] for x in d["stages"]] == ["netmhciipan", "mixmhc2pred", "tlimmuno2", "immuscope", "merge"], d["stages"]
+    rows = {(r["Peptide"], r["Allele"]): r for r in c.get(f"/api/jobs/{d['id']}/result?table=pairs").get_json()["rows"]}
+    g, g2 = rows[("PKYVKQNTLKLATGM", "HLA-DRB1*01:01")], rows[("PKYVKQNTLKLATGM", "HLA-DRB1*15:01")]
+    assert g["TLimmuno2"] == 0.9 and g["ImmuScope_IM"] == 0.9 and g2["ImmuScope_IM"] is None, (g, g2)           # 15:01 is no binder here: not sent
+    assert rows[("QPKYVKQNTLKLATG", "HLA-DRB1*01:01")]["TLimmuno2"] is None                                  # not a binder: never sent to the tool
+    assert d["summary"]["chained"] and not d["summary"]["failed_models"], d["summary"]
+    srow = c.get(f"/api/jobs/{d['id']}/result?table=summary").get_json()["rows"][0]
+    assert srow["Max_TLimmuno2"] == 0.9 and srow["Max_ImmuScope_IM"] == 0.9, srow
+    # a broken environment skips the model with a warning instead of ending the run
+    broken = json.loads(json.dumps(settings)); broken["performance"] = {"cache": 0}; broken["models"]["tlimmuno2"]["python"] = os.path.join(TMP, "fail_python")
+    open(os.path.join(TMP, "fail_python"), "w").write("#!/bin/sh\n[ \"$1\" = \"-c\" ] && exit 0\necho boom; exit 3\n"); os.chmod(os.path.join(TMP, "fail_python"), 0o755)
+    c.put("/api/config", json={"text": json.dumps(broken)})
+    d = wait_job(c.post("/api/pipeline/run", json={**ii, "alleles": ["HLA-DRB1*01:01"], "models": {"netmhciipan_el": True, "tlimmuno2": True, "immuscope": True}}).get_json()["id"])
+    assert d["state"] == "done" and d["summary"]["failed_models"] == ["TLimmuno2"] and any("TLimmuno2 failed" in x for x in d["summary"]["warnings"]), d["summary"]
+    c.put("/api/config", json={"text": json.dumps(settings)})
 else:
     print("skipped class II bundle tests: tcsh, gawk, perl and R are not all installed")
+
+# ImmuScope / TLimmuno2 in the single-model tab and the health check
+for model, col in (("immuscope", "ImmuScope_IM"), ("tlimmuno2", "TLimmuno2")):
+    r = c.post("/api/single/run", json={"model": model, "mode": "peptides", "text": "PKYVKQNTLKLATGM\nAAAAAAAAAAAAAAA", "alleles": ["HLA-DRB1*01:01", "HLA-DRB1*15:01", "HLA-DQA1*05:01/DQB1*02:01"]})
+    assert r.status_code == 200, r.get_json()
+    d = wait_job(r.get_json()["id"])
+    assert d["state"] == "done", d
+    rows = c.get(f"/api/jobs/{d['id']}/result?table=table").get_json()["rows"]
+    best = rows[0]
+    assert best["Peptide"] == "PKYVKQNTLKLATGM" and best[col] == 0.9 and len(rows) == 6, rows            
+    assert abs({r["Allele"]: r[col] for r in rows if r["Peptide"] == "PKYVKQNTLKLATGM"}["HLA-DRB1*15:01"] - 0.6) < 1e-6   # name mapped to DRB1_1501
+    h = c.post(f"/api/health/{model}?deep=1").get_json(); assert h["ok"], h
+shutil_ok = _sh.move(f"{ISC_HOME}/weights/IM/ImmuScope-IM-0.pt", f"{ISC_HOME}/weights/IM/off.pt")
+h = c.post("/api/health/immuscope").get_json(); assert not h["ok"], h
+_sh.move(f"{ISC_HOME}/weights/IM/off.pt", f"{ISC_HOME}/weights/IM/ImmuScope-IM-0.pt")
+# the two tools sit in the model registry and the manual funnel offers them
+assert {"tlimmuno2", "immuscope"} <= {m["key"] for m in c.get("/api/funnel?mhc_class=2").get_json()["models"]}
+from common import alleles as _al                                               # noqa: E402
+assert _al.pseudo_name("HLA-DRB1*15:01") == "DRB1_1501" and _al.pseudo_name("DQA1*05:01/DQB1*02:01") == "HLA-DQA10501-DQB10201"
+assert _al.pseudo_name("HLA-DPA1*01:07/DPB1*98:01") == "HLA-DPA10107-DPB19801" and _al.pseudo_name("HLA-DQB1*02:01") is None
 
 # MixMHC2pred alone, and its missing-definitions state is explained, not crashed on
 d = wait_job(c.post("/api/pipeline/run", json={**ii, "models": {"mixmhc2pred": True}, "filters": {"mix2_rank_max": 2}}).get_json()["id"])
