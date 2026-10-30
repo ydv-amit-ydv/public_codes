@@ -168,6 +168,11 @@ class Params:
         return asdict(self)
 
     def validate(self) -> None:
+        if not self.protein and (self.cds_start is None or self.cds_end is None):
+            raise ValueError(
+                "Cannot locate the CDS: give the protein (amino-acid sequence), or give both "
+                "cds_start and cds_end (0-based, end exclusive). The protein is also what "
+                "guarantees the redesign stays synonymous, so prefer it when you have it.")
         if self.primary_species not in SPECIES or self.secondary_species not in SPECIES:
             raise ValueError(f"species must be in {SPECIES}")
         if self.primary_species == self.secondary_species:

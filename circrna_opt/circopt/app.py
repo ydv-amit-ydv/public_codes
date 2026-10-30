@@ -59,8 +59,17 @@ ViennaRNA folding in the loop.</div>
 </div>
 <form method="post" action="{{ url_for('start') }}"><div class="card">
  <label>Run name</label><input name="name" value="{{ p.name }}">
- <label>Protein (amino acids)</label><textarea name="protein">{{ p.protein }}</textarea>
+ <label>Protein (amino acids) — locates the CDS and guarantees the redesign stays synonymous</label>
+ <textarea name="protein">{{ p.protein }}</textarea>
  <label>Full circular RNA</label><textarea name="rna">{{ p.rna }}</textarea>
+ <div class="grid">
+  <div><label>CDS start (optional)</label>
+   <input name="cds_start" value="{{ '' if p.cds_start is none else p.cds_start }}"></div>
+  <div><label>CDS end (optional, exclusive)</label>
+   <input name="cds_end" value="{{ '' if p.cds_end is none else p.cds_end }}"></div>
+ </div>
+ <div class="sub" style="font-size:12px;margin-top:4px">Leave the coordinates blank to locate the
+ CDS from the protein. Fill them in only if you have no protein sequence to hand.</div>
  <label>Protected regions (one per line: <code>name,start,end</code> — 0-based, end exclusive)</label>
  <textarea name="protected">{{ protected_text }}</textarea>
 </div><div class="card">
@@ -169,7 +178,7 @@ def _parse_protected(text: str) -> list[dict]:
 
 
 def _form_to_params(form) -> Params:
-    ints = {"gc_window", "max_poly_u", "max_homopolymer", "stem_target", "stem_cap", "dsrna_min_bp",
+    ints = {"cds_start", "cds_end", "gc_window", "max_poly_u", "max_homopolymer", "stem_target", "stem_cap", "dsrna_min_bp",
             "rounds", "generations_per_round", "population", "top_n", "polish_codons", "workers",
             "seed", "inner_span", "elite_k", "ir_kmer", "access_window", "access_span",
             "early_orf_nt", "start_upstream", "start_downstream"}
@@ -198,6 +207,34 @@ def _form_to_params(form) -> Params:
     d["protein"] = "".join(d.get("protein", "").split()).upper()
     d["rna"] = "".join(d.get("rna", "").split()).upper().replace("T", "U")
     return Params.from_dict(d)
+
+
+def _suggest_orf(rna: str) -> str:
+    """Find the longest AUG..stop ORF in the pasted RNA, to put real numbers in the error page.
+
+    This only ever *suggests*: silently guessing a vaccine CDS would be a bad idea, so the
+    user still has to confirm it by pasting the protein or the coordinates.
+    """
+    from .codon import CODON_TO_AA, translate
+    rna = "".join((rna or "").split()).upper().replace("T", "U")
+    if len(rna) < 6 or set(rna) - set("ACGU"):
+        return ""
+    best = None
+    for i in range(len(rna) - 2):
+        if rna[i:i + 3] != "AUG":
+            continue
+        for j in range(i + 3, len(rna) - 2, 3):
+            if CODON_TO_AA.get(rna[j:j + 3]) == "*":
+                if best is None or (j + 3 - i) > (best[1] - best[0]):
+                    best = (i, j + 3)
+                break
+    if not best or (best[1] - best[0]) < 30:
+        return ""
+    prot = translate(rna[best[0]:best[1]]).rstrip("*")
+    return (f"The longest ORF in the RNA you pasted runs {best[0]}..{best[1]} "
+            f"({len(prot)} aa). If that is your CDS, either paste its protein "
+            f"<code>{prot[:40]}{'...' if len(prot) > 40 else ''}</code> or enter "
+            f"cds_start={best[0]} and cds_end={best[1]}.")
 
 
 def _worker(rid: str, p: Params) -> None:
@@ -237,9 +274,18 @@ def index():
 def start():
     try:
         p = _form_to_params(request.form)
+        # Build the Design here, not in the worker: it is what checks that the protein matches
+        # the CDS, that the CDS is in frame and that the protected regions are sane. Doing it
+        # up front turns those into a readable page instead of a traceback in a run log.
+        from .design import Design
+        Design(p)
     except Exception as e:
-        body = f"<div class='card err'><b>Bad input</b><pre>{e}</pre>" \
-               f"<a href='{url_for('index')}'>back</a></div>"
+        hint = ""
+        if "locate the CDS" in str(e) or "could not locate" in str(e):
+            hint = _suggest_orf(request.form.get("rna", ""))
+        body = (f"<div class='card err'><b>Bad input</b><p>{e}</p>"
+                + (f"<p class='note'>{hint}</p>" if hint else "")
+                + f"<p><a href='{url_for('index')}'>back to the form</a></p></div>")
         return render_template_string(PAGE, body=body), 400
     rid = uuid.uuid4().hex
     rdir = os.path.join(RUNS_DIR, rid)

@@ -213,6 +213,30 @@ def test_bad_rna_rejected():
         Design(make_params(rna="AUGCNNNUAA", protein="M", cds_start=0, cds_end=6))
 
 
+def test_cds_must_be_locatable():
+    """The web form used to accept a blank protein and then crash inside the worker thread."""
+    cds = "".join(sorted(AA_TO_CODONS[a])[0] for a in PROTEIN) + "UAA"
+    rna = "GGGAGACCCAAGCUGGCUAGC" + cds
+    with pytest.raises(ValueError, match="locate the CDS"):
+        Params.from_dict({"name": "t", "rna": rna})          # no protein, no coordinates
+    # coordinates alone are enough
+    p = Params.from_dict({"name": "t", "rna": rna, "cds_start": 21, "cds_end": 21 + len(cds)})
+    d = Design(p)
+    assert d.protein.rstrip("*") == PROTEIN
+    # protein alone is enough
+    assert Design(Params.from_dict({"name": "t", "rna": rna, "protein": PROTEIN})).cds[0] == 21
+
+
+def test_orf_suggestion_reports_real_coordinates():
+    from circopt.app import _suggest_orf
+    cds = "".join(sorted(AA_TO_CODONS[a])[0] for a in PROTEIN) + "UAA"
+    rna = "GGGAGACCCAAGCUGGCUAGC" + cds
+    msg = _suggest_orf(rna)
+    assert "cds_start=21" in msg and f"cds_end={21 + len(cds)}" in msg
+    assert _suggest_orf("not a sequence") == ""
+    assert _suggest_orf("ACGUACGU") == ""                    # no ORF -> no bogus suggestion
+
+
 def test_config_validation():
     with pytest.raises(ValueError):
         Params.from_dict({"primary_species": "rat", "secondary_species": "human"})
