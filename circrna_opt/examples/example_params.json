@@ -1,0 +1,55 @@
+{
+  "name": "circ_demo",
+  "protein": "MVSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTLTYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNS",
+  "rna": "GGGAGACCCAAGCUGGCUAGCGUUUAAACUUAAGCUUGGUACCGAGCUCGGAUCCACUAGUCCAGUGUGGUGGAAUUCUGCAGAUAUCCAGCACAGUGGCGGCCGCUCGAGUCUAGAGGGCCCGUUUAAACCCGCUGAUCAGCCUAAACAAACAAAAUGGUAUCGAAAGGUGAAGAACUAUUCACCGGUGUAGUCCCUAUACUAGUAGAACUAGAUGGUGAUGUAAAUGGUCAUAAAUUUUCGGUAUCGGGUGAAGGUGAAGGUGAUGCGACGUAUGGUAAACUAACGCUAAAAUUUAUAUGUACGACGGGUAAACUACCGGUACCGUGGCCGACGCUCGUAACCACAUUAACUUAUGGCGUUCAAUGCUUCUCGCGUUAUCCGGAUCAUAUGAAACAACAUGAUUUUUUUAAAUCGGCGAUGCCGGAAGGUUAUGUACAAGAACGUACGAUAUUUUUUAAAGAUGAUGGUAAUUAUAAAACGCGUGCGGAAGUAAAAUUUGAAGGUGAUACGCUAGUAAAUCGUAUAGAACUAAAAGGUAUAGAUUUUAAAGAAGAUGGUAAUAUACUAGGUCAUAAACUAGAAUAUAAUUAUAAUUCGUAAAAAGAAACAAAUAAA",
+  "protected": [
+    {
+      "name": "IRES_PLACEHOLDER",
+      "start": 0,
+      "end": 145
+    },
+    {
+      "name": "spacer5",
+      "start": 145,
+      "end": 156
+    },
+    {
+      "name": "spacer3",
+      "start": 603,
+      "end": 618
+    }
+  ],
+  "primary_species": "mouse",
+  "secondary_species": "human",
+  "primary_weight": 0.6,
+  "cai_floor": 0.78,
+  "structure_goal": "minimize_pairing",
+  "dsrna_min_bp": 30,
+  "gc_min": 0.4,
+  "gc_max": 0.58,
+  "gc_window": 60,
+  "gc_window_min": 0.3,
+  "gc_window_max": 0.65,
+  "max_poly_u": 4,
+  "avoid_slippery": true,
+  "avoid_g4": true,
+  "avoid_cryptic_splice": true,
+  "avoid_re_sites": true,
+  "min_codon_freq": 0.08,
+  "population": 48,
+  "generations_per_round": 10,
+  "rounds": 4,
+  "elite_k": 6,
+  "top_n": 6,
+  "polish_codons": 6,
+  "inner_span": 200,
+  "stress_test": true,
+  "linear_compare": true,
+  "use_derna": false,
+  "derna_lambdas": [
+    0.0,
+    0.3
+  ],
+  "seed": 1,
+  "workers": 0
+}

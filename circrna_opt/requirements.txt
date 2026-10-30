@@ -1,0 +1,7 @@
+viennarna>=2.6
+flask>=3.0
+numpy>=1.26
+pandas>=2.0
+matplotlib>=3.8
+python_codon_tables>=0.1.12
+pytest>=8
