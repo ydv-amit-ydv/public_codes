@@ -40,6 +40,18 @@ DEFAULT_WEIGHTS = {
 @dataclass
 class Params:
     name: str = "circ_design"
+
+    # --- the simple way in: one box that takes protein, DNA or RNA ---
+    sequence: str = ""                # protein / DNA / RNA; FASTA headers are stripped
+    sequence_type: str = "auto"       # auto | protein | dna | rna
+    sequence_role: str = "auto"       # auto | payload (CDS only) | molecule (whole circle)
+    scaffold_5: str = ""              # e.g. the IRES, placed 5' of the CDS and held fixed
+    scaffold_3: str = ""              # e.g. a spacer, placed 3' of the CDS and held fixed
+    add_stop: bool = True             # append UAA if the payload has no stop (off = infinite ORF)
+    auto: bool = True                 # fill in every parameter left at its default
+    time_budget_min: float = 20.0     # how long the run may take; sizes the search
+
+    # --- the explicit way in: give the molecule yourself ---
     protein: str = ""                 # amino acids (optional if cds_start/cds_end given)
     rna: str = ""                     # full circular molecule as given (IRES, UTRs, spacers, CDS)
     cds_start: int | None = None      # 0-based; auto-detected from `protein` when None
@@ -131,6 +143,7 @@ class Params:
     repair: bool = True               # directed repair of GC-window / motif violations
     seed: int = 1
     workers: int = 0                  # 0 = all cores
+    protein_was_given: bool = True    # set by the pipeline; False when the CDS came from a protein
     seed_sequences: list = field(default_factory=list)  # extra full-RNA seeds (e.g. from mRNAid)
 
     # DERNA (bioconda `derna`): Pareto MFE/CAI designer, used as a seed + comparison arm.
@@ -168,7 +181,18 @@ class Params:
         return asdict(self)
 
     def validate(self) -> None:
-        if not self.protein and (self.cds_start is None or self.cds_end is None):
+        if self.sequence_type not in ("auto", "protein", "dna", "rna"):
+            raise ValueError("sequence_type must be auto | protein | dna | rna")
+        if self.sequence_role not in ("auto", "payload", "molecule"):
+            raise ValueError("sequence_role must be auto | payload | molecule")
+        if self.time_budget_min <= 0:
+            raise ValueError("time_budget_min must be > 0")
+        if (not self.sequence and not self.rna
+                and not (self.protein or (self.cds_start is not None and self.cds_end is not None))):
+            raise ValueError(
+                "No sequence given. Paste a protein, DNA or RNA sequence into `sequence` "
+                "(the simple way), or give `rna` plus either `protein` or cds_start/cds_end.")
+        if self.rna and not self.protein and (self.cds_start is None or self.cds_end is None):
             raise ValueError(
                 "Cannot locate the CDS: give the protein (amino-acid sequence), or give both "
                 "cds_start and cds_end (0-based, end exclusive). The protein is also what "

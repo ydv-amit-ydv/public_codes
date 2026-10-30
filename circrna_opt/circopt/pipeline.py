@@ -5,16 +5,44 @@ import os
 import time
 
 from . import derna as derna_mod
+from . import seqio
+from .auto import autofill
+from .codon import CodonModel
 from .config import Params
 from .design import Design
 from .optimize import Optimizer
 from .report import write_outputs
 
 
+def resolve_inputs(p: Params, log=lambda *a: None) -> Params:
+    """Turn whatever was pasted into `rna` + CDS bounds. Safe to call on a throwaway copy
+    to validate a form before a run is started."""
+    if p.sequence and not p.rna:
+        model = CodonModel(species=(p.primary_species, p.secondary_species),
+                           metric=p.codon_metric, trna_file=p.trna_copy_file)
+        resolved = seqio.resolve(p, model)
+        for note in resolved.pop("notes"):
+            log(f"input: {note}")
+        for k, v in resolved.items():
+            setattr(p, k, v)
+        p.validate()
+    return p
+
+
 def run_design(p: Params, outdir: str, log=print) -> dict:
     p.validate()
     t0 = time.time()
+    p.protein_was_given = bool(p.protein or p.rna)
+
+    # 1. turn whatever was pasted into a molecule + CDS, saying what was assumed
+    resolve_inputs(p, log)
     design = Design(p)
+
+    # 2. fill in everything the user left alone, sized to the time budget
+    if p.auto:
+        workers = p.workers or (os.cpu_count() or 1)
+        autofill(p, design, workers, log=log)
+        design = Design(p)        # min_codon_freq can change the codon options
     log(f"molecule: {design.n} nt, CDS {design.cds}, "
         f"{len(design.slots)}/{(design.cds_end - design.cds_start) // 3} codons designable, "
         f"protein {len(design.protein.rstrip('*'))} aa")
@@ -47,7 +75,9 @@ def run_design(p: Params, outdir: str, log=print) -> dict:
     b = result["best"]
     o = result["original"]
     log("")
-    log("== original -> best ==")
+    # when the input was a protein there is no "original" construct -- only our seed
+    label = "reverse-translated seed" if (p.sequence and not p.protein_was_given) else "original"
+    log(f"== {label} -> best ==")
     log(f"  CAI {p.primary_species}:  {o.cai[p.primary_species]:.3f} -> {b.cai[p.primary_species]:.3f}")
     log(f"  CAI {p.secondary_species}: {o.cai[p.secondary_species]:.3f} -> {b.cai[p.secondary_species]:.3f}")
     log(f"  MFE/nt:        {o.metrics.mfe_per_nt:+.3f} -> {b.metrics.mfe_per_nt:+.3f}")

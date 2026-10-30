@@ -30,6 +30,60 @@ The protein sequence is never changed: that is checked, not assumed.
   a cheap objective and ranked on the exact one, so the GA never saw start-codon accessibility
   and could not fix it. The screen now includes it, benchmarked against the exact PF.
 
+## The short version
+
+Paste a sequence, press Optimise. It accepts **protein, DNA or RNA**, and either the **CDS
+payload alone** or the **whole circular molecule** — it works out which and says so:
+
+| you paste | what happens |
+|---|---|
+| a protein | the CDS is built by reverse translation (best dual-species codon per residue) and optimised from there |
+| the CDS payload (DNA or RNA) | optimised as given; add the IRES/spacers in the optional scaffold boxes if you have them |
+| the whole circular molecule | the longest ORF is taken as the CDS and optimised; **everything outside it is held fixed** |
+
+FASTA headers, line numbers, spaces and case are stripped. `T`/`U` are both fine. Nothing is
+guessed silently: each inference is printed in the run log (`input: ...`), and you can override
+it with the *It is* / *Which part* dropdowns.
+
+**Auto-fill** does the rest. Every parameter in this package is the same trade-off wearing a
+different hat — codon adaptation against secondary structure — so auto sets:
+
+* the **GC band** to what *your* sequence can actually reach at the target CAI (see below);
+* the **structure thresholds** that have a mechanism behind them (30 bp duplex for PKR, an
+  accessible AUG for initiation);
+* the **size of the search**, from a time budget you give in minutes.
+
+Anything you edit by hand in *Advanced* is respected — auto only fills what you left alone.
+
+### Why the GC band is computed, not fixed
+
+Asking for "40–55% GC" is meaningless until you know the sequence: the GC-poorest synonymous
+form of one payload may still be 58%. Auto therefore starts from the codon-optimal sequence and
+gives GC away one codon at a time, cheapest-in-CAI first, stopping at `cai_target`. That gives
+the lowest GC still compatible with translating well. The ceiling is then put **halfway between
+that extreme and the codon-optimal GC** — a real compromise point a multi-objective search can
+actually land on. A band drawn tight against the extreme is unsatisfiable in practice, which is
+exactly what happened before this was fixed.
+
+### Sizing a run to a budget
+
+Measured on this build: a fast candidate evaluation is **O(n)** at ~1.22 ms/nt, and an exact
+circular partition function is **O(n^2.7)**. The run is calibrated against your machine with one
+real fold, then the largest search that fits your budget is chosen. Typical picks at 8 workers:
+
+| molecule | 10 min | 60 min | 180 min |
+|---|---|---|---|
+| 600 nt | 5 cycles x 16 gen x 48 | 8 x 25 x 96 | 10 x 30 x 128 |
+| 1500 nt | 4 x 10 x 32 | 6 x 20 x 64 | 10 x 30 x 128 |
+| 3000 nt | 2 x 4 x 12 | 4 x 12 x 40 | 6 x 20 x 64 |
+
+### If you only have the payload
+
+Give just the CDS and it works, but the circle folded is then the CDS alone. The real construct
+contains the IRES and spacers, which change the fold — the run log says so, and you should
+re-run with the full molecule (or paste the IRES into the 5' scaffold box) before committing to
+a sequence.
+
 ## Install
 
 See [INSTALL.md](INSTALL.md). Short version:

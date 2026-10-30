@@ -368,6 +368,110 @@ def test_repair_pulls_gc_windows_into_band_and_respects_the_cai_floor():
     assert translate(d.build(g1)[d.cds_start:d.cds_end]) == d.protein
 
 
+# ---- sequence input: protein / DNA / RNA, payload or whole molecule ---------
+def test_detect_sequence_kinds():
+    from circopt.seqio import clean, detect
+    assert detect(clean(">hdr\nMKVLA AGIV"))[0] == "protein"
+    assert detect(clean("atg aaa gtt taa"))[0] == "dna"
+    assert detect(clean("AUGAAAGUUUAA"))[0] == "rna"
+    assert detect(clean("MKV*"))[0] == "protein"
+    with pytest.raises(ValueError, match="mixes T and U"):
+        detect(clean("AUGTTT"))
+    with pytest.raises(ValueError):
+        detect(clean("MKVLAXZ"))
+    # ACGT letters are valid amino acids too; nucleotide wins but the caller is warned
+    kind, note = detect(clean("ACGT"))
+    assert kind == "dna" and "amino acids" in note
+
+
+def test_clean_strips_fasta_numbers_and_whitespace():
+    from circopt.seqio import clean
+    assert clean(">x desc\n  1 augaaa  \n 7 guuuaa\n") == "AUGAAAGUUUAA"
+
+
+def test_payload_detection():
+    from circopt.seqio import looks_like_payload
+    assert looks_like_payload("AUGAAAGUUUAA")
+    assert not looks_like_payload("GGGAUGAAAGUU")        # does not start with AUG
+    assert not looks_like_payload("AUGAAAGUUUA")         # not in frame
+    assert not looks_like_payload("AUGUAAAAAGUU")        # internal stop
+
+
+def test_resolve_protein_builds_a_cds_and_keeps_it():
+    from circopt.pipeline import resolve_inputs
+    p = Params.from_dict({"name": "t", "sequence": PROTEIN, "auto": False})
+    resolve_inputs(p)
+    d = Design(p)
+    assert d.protein.rstrip("*") == PROTEIN
+    assert d.rna[:3] == "AUG" and d.rna[-3:] == "UAA"
+    assert len(d.rna) == 3 * len(PROTEIN) + 3
+
+
+def test_resolve_payload_and_scaffolds_are_protected():
+    from circopt.pipeline import resolve_inputs
+    cds = "".join(sorted(AA_TO_CODONS[a])[0] for a in PROTEIN)
+    ires = "GGGAGACCCAAGCUGGCUAGC"
+    p = Params.from_dict({"name": "t", "sequence": cds.replace("U", "T"),
+                          "scaffold_5": ires, "auto": False})
+    resolve_inputs(p)
+    d = Design(p)
+    assert d.cds_start == len(ires)
+    assert all(d.locked[i] for i in range(len(ires)))     # the scaffold never changes
+    assert d.protein.rstrip("*") == PROTEIN
+
+
+def test_resolve_whole_molecule_picks_the_longest_orf():
+    from circopt.pipeline import resolve_inputs
+    cds = "".join(sorted(AA_TO_CODONS[a])[0] for a in PROTEIN) + "UAA"
+    rna = "GGGAGACCCAAGCUGGCUAGCAAACAAA" + cds + "AAAGAAA"
+    p = Params.from_dict({"name": "t", "sequence": rna, "auto": False})
+    resolve_inputs(p)
+    assert p.cds_start == 28 and p.cds_end == 28 + len(cds)
+    assert Design(p).protein.rstrip("*") == PROTEIN
+
+
+def test_infinite_orf_option_skips_the_stop():
+    from circopt.pipeline import resolve_inputs
+    p = Params.from_dict({"name": "t", "sequence": PROTEIN, "add_stop": False, "auto": False})
+    resolve_inputs(p)
+    assert len(p.rna) == 3 * len(PROTEIN)
+
+
+# ---- auto configuration ----------------------------------------------------
+def test_budget_sizes_the_search_monotonically():
+    from circopt.auto import choose_search, estimate_seconds
+    small = choose_search(1500, 8, 5 * 60)
+    big = choose_search(1500, 8, 120 * 60)
+    assert estimate_seconds(small, 1500, 8) <= estimate_seconds(big, 1500, 8)
+    assert big[0] >= small[0] and big[2] >= small[2]
+    # a longer molecule gets a smaller search for the same budget
+    assert estimate_seconds(choose_search(3000, 8, 20 * 60), 3000, 8) <= 20 * 60 * 1.05
+
+
+def test_auto_gc_band_is_reachable_at_the_target_cai():
+    """The band must sit where a real run can land, not on the extreme greedy point."""
+    from circopt.auto import achievable_gc, autofill
+    p = make_params()
+    d = Design(p)
+    info = achievable_gc(d, p.cai_target)
+    assert info["gc_lo_feasible"] <= info["gc_at_max_cai"] + 1e-9
+    p2 = Params.from_dict({"name": "t", "protein": PROTEIN, "rna": p.rna,
+                           "protected": [dict(r) for r in p.protected], "workers": 1})
+    autofill(p2, Design(p2), 1, log=lambda *a: None)
+    assert p2.gc_min < p2.gc_max
+    assert p2.gc_max >= info["gc_lo_feasible"]            # not below what is reachable
+    assert p2.gc_max <= info["gc_at_max_cai"] + 1e-9      # not a free pass either
+
+
+def test_auto_respects_values_the_user_set():
+    from circopt.auto import autofill
+    p = Params.from_dict({"name": "t", "protein": PROTEIN,
+                          "rna": make_params().rna, "gc_max": 0.99, "rounds": 7,
+                          "dsrna_min_bp": 44, "workers": 1})
+    autofill(p, Design(p), 1, log=lambda *a: None)
+    assert p.gc_max == 0.99 and p.rounds == 7 and p.dsrna_min_bp == 44
+
+
 # ---- end to end -----------------------------------------------------------
 def test_full_run_end_to_end(tmp_path):
     from circopt.pipeline import run_design

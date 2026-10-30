@@ -110,8 +110,11 @@ def repair(design, genome: list[int], rules: Rules, max_iter: int = 600) -> list
         return min(model.index(design.cds_codons(seq), sp) for sp in species)
 
     def cost(seq):
+        st = gc_stats(seq, p.gc_window, design.free_mask)
+        total_dev = max(0.0, st["gc"] - p.gc_max) + max(0.0, p.gc_min - st["gc"])
+        # total GC and the windows are both repairable; motifs dominate either way
         return (sum(rules.fixable(seq, design.free_mask).values()),
-                gc_excess(seq, p, design.free_mask))
+                round(gc_excess(seq, p, design.free_mask) + 20.0 * total_dev, 9))
 
     slot_at = {}
     for k, pos in enumerate(design.slots):
@@ -150,10 +153,20 @@ def repair(design, genome: list[int], rules: Rules, max_iter: int = 600) -> list
                 v = max(over, under)
                 if v > 0 and (best_v is None or v > best_v):
                     best_i, best_v, high = i, v, over >= under
-            if best_i is None:
+            if best_i is not None:
+                prefer_low_gc = high
+                targets = [x for x in ((best_i + k) % n for k in range(w)) if x in slot_at]
+        if not targets:
+            # no single window is out of band, but the molecule's overall GC can still be:
+            # then any designable codon is a candidate
+            st = gc_stats(seq, p.gc_window, design.free_mask)
+            if st["gc"] > p.gc_max:
+                prefer_low_gc = True
+            elif st["gc"] < p.gc_min:
+                prefer_low_gc = False
+            else:
                 break
-            prefer_low_gc = high
-            targets = [x for x in ((best_i + k) % n for k in range(w)) if x in slot_at]
+            targets = list(slot_at.keys())
 
         improved = False
         for k in sorted({slot_at[i] for i in targets}):
