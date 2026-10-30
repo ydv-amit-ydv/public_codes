@@ -84,6 +84,23 @@ contains the IRES and spacers, which change the fold — the run log says so, an
 re-run with the full molecule (or paste the IRES into the 5' scaffold box) before committing to
 a sequence.
 
+## One-command setup (WSL / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ydv-amit-ydv/public_codes/main/circrna_opt/setup_and_run.sh -o ~/circopt.sh
+bash ~/circopt.sh
+```
+
+It works out what is on the machine and does the right thing: clones if there is no clone,
+removes a redundant nested copy, updates, creates the conda env and installs dependencies,
+runs the self-test, then serves on http://localhost:5000 with results written to
+`~/circopt_runs` (outside the repo). Re-run it any time to update and start.
+
+It refuses to delete anything holding unsaved work -- uncommitted changes, unpushed commits,
+or a nested copy that is actually tracked are moved to `~/circopt_backup-<timestamp>` instead.
+`--dry-run` shows the plan and changes nothing; `--yes` skips the prompt; `--no-server` sets up
+only; `--port N` serves elsewhere.
+
 ## Install
 
 See [INSTALL.md](INSTALL.md). Short version:
