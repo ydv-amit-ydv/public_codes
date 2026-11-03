@@ -12,6 +12,7 @@ import { compile, recompute } from './formulas.js';
 import { accountDialog, authScreen, signOut, unlockScreen } from './account.js';
 import { TABLE_PLAIN, exampleTable, recommend } from './learn.js';
 import { exampleList, loadExample, startTour, tourDone } from './tour.js';
+import { watchAnnouncements } from './announce.js';
 import { decryptWithKey, encryptWithKey } from './crypto.js';
 import {
   checkQuota, downloadEncrypted, downloadPlain, flushSave, initPersist, openFile, openServerProject, projectBrowser,
@@ -836,7 +837,7 @@ function shortcutsHelp() {
 }
 function about() {
   modal({ title: 'About OpenPrism', body: h('div', {},
-    h('p', {}, h('b', {}, 'OpenPrism 1.1'), ' — an open source scientific graphing and statistics workbench (MIT license).'),
+    h('p', {}, h('b', {}, 'OpenPrism 1.2'), ' — an open source scientific graphing and statistics workbench (MIT license).'),
     h('p', {}, 'Statistics are computed on the server with SciPy, NumPy, pandas and statsmodels; graphs are drawn with Plotly.js.'),
     h('p', {}, 'Accuracy is validated against NIST certified values, R and Monte-Carlo calibration: ', h('a', { href: '/static/help/validation.html', target: '_blank', rel: 'noopener' }, 'validation report'), '.'),
     h('p', { class: 'hint' }, 'OpenPrism is an independent project and is not affiliated with or endorsed by GraphPad Software. Always verify important results.')),
@@ -913,6 +914,7 @@ setAuthLostHandler(() => {
   await signedIn(me.username);
   state.localEncrypt = (v) => encryptWithKey(v, state.dataKey);
   try { await loadCatalog(); } catch (e) { toast(`Could not load the analysis catalog: ${e.message}`, 'err'); }
+  watchAnnouncements(() => api('/api/status'));
   setTimeout(() => { if (!tourDone() && !P().tables.length && !state.current?.kind) startTour(); }, 1200);
   initPersist({ setProject, refresh: () => { drawNav(); drawMenus(); }, newProject: newProjectAction });
   on('encryption-changed', () => { drawLock(); drawMenus(); drawRibbon(); });

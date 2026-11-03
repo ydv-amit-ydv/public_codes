@@ -3,7 +3,8 @@
 
     python3 start.py              install what is needed (first run only) and start the server
     python3 start.py --reset      delete ALL server data (accounts, projects, certificate, logs) and start fresh
-    python3 start.py --update     pull the latest version from git and update the requirements
+    python3 start.py --update --preserve   download the latest version, keep all accounts and projects (backup first)
+    python3 start.py --update --reset      download the latest version and start with no accounts or projects
     python3 start.py --port 8443  any other option is passed to the server (see python3 run.py --help)
 
 The first run creates a private Python environment in .venv/ next to this file and installs the
@@ -95,11 +96,48 @@ def reset(assume_yes: bool):
     say("  All server data deleted. The next start runs the first-time setup again.\n")
 
 
-def update():
+def backup():
+    """Copy the database (accounts, encrypted projects, shares) to projects/backups/ before updating."""
+    db = DATA / "openprism.db"
+    if not db.exists():
+        say("  No existing server data to back up.")
+        return
+    import datetime
+    import sqlite3
+    dest_dir = DATA / "backups"
+    dest_dir.mkdir(exist_ok=True)
+    dest = dest_dir / f"openprism-{datetime.datetime.now():%Y%m%d-%H%M%S}.db"
+    src = sqlite3.connect(str(db))
+    try:
+        out = sqlite3.connect(str(dest))
+        with out:
+            src.backup(out)          # consistent copy even if the database is in WAL mode
+        out.close()
+    finally:
+        src.close()
+    old = sorted(dest_dir.glob("openprism-*.db"))
+    for f in old[:-10]:              # keep the 10 most recent backups
+        f.unlink()
+    say(f"  Backup of all accounts and projects: {dest}")
+
+
+def git_pull():
     if not (HERE.parent / ".git").exists() and not (HERE / ".git").exists():
-        sys.exit("  This copy was not cloned with git; download the new version instead.")
-    say("  Updating from git …")
-    subprocess.run(["git", "-C", str(HERE), "pull", "--ff-only"], check=True)
+        sys.exit("  This copy was not cloned with git, so it cannot update itself. Clone the repository again and copy the\n"
+                 f"  folder  {DATA}  into the new copy (that folder holds all accounts and projects).")
+    say("  Downloading the latest version (git pull) …")
+    r = subprocess.run(["git", "-C", str(HERE), "pull", "--ff-only"])
+    if r.returncode != 0:
+        sys.exit("\n  git pull failed (see above). Your data were not changed. If you edited files in this folder, run\n"
+                 "      git -C . status\n  to see them, or clone a fresh copy and copy the projects/ folder into it.")
+
+
+UPDATE_HELP = """
+  Choose what happens to the existing accounts and projects when updating:
+
+      python3 start.py --update --preserve    keep all accounts and projects (a backup is made first)
+      python3 start.py --update --reset       delete all accounts and projects and start fresh
+"""
 
 
 def main():
@@ -109,16 +147,40 @@ def main():
     if args[:1] in (["-h"], ["--help"]):
         say(__doc__)
         return
+    preserve, wipe, updating, updated = "--preserve" in args, "--reset" in args, "--update" in args, "--updated" in args
+    if preserve and wipe:
+        sys.exit("  Use either --preserve or --reset, not both." + UPDATE_HELP)
+    if updating and not (preserve or wipe):
+        sys.exit("  --update needs --preserve or --reset." + UPDATE_HELP)
     yes = "--yes" in args
-    if "--reset" in args:
+    if updating and not updated:
+        if server_running():
+            sys.exit("  OpenPrism seems to be running on this computer. Stop it first (Ctrl+C in its window), then update.")
+        if wipe and not yes:
+            say(f"\n  After updating, ALL accounts and projects in {DATA} will be deleted.")
+            try:
+                ans = input("  Type RESET to confirm: ").strip()
+            except EOFError:
+                ans = ""
+            if ans != "RESET":
+                sys.exit("  Cancelled — nothing was downloaded or deleted.")
+            yes = True
+        if preserve:
+            backup()
+        git_pull()
+        # continue with the freshly downloaded launcher
+        rest = [a for a in args if a not in ("--update", "--yes")] + ["--updated"] + (["--yes"] if yes else [])
+        cmd = [sys.executable, str(HERE / "start.py"), *rest]
+        if WIN:
+            sys.exit(subprocess.call(cmd))
+        os.execv(cmd[0], cmd)
+    if wipe:
         reset(yes)
-        args = [a for a in args if a not in ("--reset", "--yes")]
         if "--no-start" in args:
             return
-    if "--update" in args:
-        update()
-        args = [a for a in args if a != "--update"]
-    args = [a for a in args if a != "--no-start"]
+    elif preserve:
+        say(f"  Keeping all accounts and projects in {DATA}.")
+    args = [a for a in args if a not in ("--reset", "--preserve", "--update", "--updated", "--yes", "--no-start")]
     if not venv_python().exists():
         create_venv()
     install_requirements()

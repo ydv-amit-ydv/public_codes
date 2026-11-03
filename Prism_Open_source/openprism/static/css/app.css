@@ -505,3 +505,15 @@ table.grid td.calc { background: color-mix(in srgb, var(--accent) 7%, transparen
 .tour-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 body.drop-hint::after { content: 'Drop the file to import it'; position: fixed; inset: 12px; border: 3px dashed var(--accent); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--accent); background: rgba(255, 255, 255, .6); z-index: 950; pointer-events: none; }
 @media (max-width: 700px) { .type-cards { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- administrator announcement */
+.announce { display: flex; align-items: flex-start; gap: 10px; padding: 8px 14px; font-size: 13px; line-height: 1.4; border-bottom: 1px solid var(--border); background: var(--accent-soft); color: var(--text); }
+.announce.warning { background: #fff4d6; border-color: #e8c35a; }
+.announce.urgent { background: #fde2e1; border-color: #e08a86; font-weight: 500; }
+.announce .an-text { flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
+.announce .an-close { border: 0; background: none; font-size: 18px; line-height: 1; cursor: pointer; color: inherit; padding: 0 4px; }
+.announce.in-card { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0 14px; }
+.announce.in-card b { display: block; margin-bottom: 2px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .announce.warning { background: #3d3214; } :root:not([data-theme="light"]) .announce.urgent { background: #3f1d1c; } }
+:root[data-theme="dark"] .announce.warning { background: #3d3214; }
+:root[data-theme="dark"] .announce.urgent { background: #3f1d1c; }

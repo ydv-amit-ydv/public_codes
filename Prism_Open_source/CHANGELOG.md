@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0
+
+* **Safe updates**: `python3 start.py --update --preserve` downloads the latest version and keeps every account and
+  project (a consistent backup of the database is written to `projects/backups/` first); `--update --reset` downloads
+  it and starts with no data (after typing `RESET`). `--update` on its own refuses to run, so data are never kept or
+  deleted by accident. The launcher continues with the freshly downloaded version of itself.
+* **Announcements**: the administrator can publish a message to all users (information, warning or urgent) in
+  Server settings. It is shown on the sign-in screen and as a banner at the top of the app (open apps pick it up within
+  three minutes). Users can hide information/warning messages until the text changes; urgent ones stay visible.
+
 ## 1.1.0 — made for newcomers
 
 * **Smart import**: Import (or drag a CSV/Excel file onto the window) recognises how the data are arranged and proposes the

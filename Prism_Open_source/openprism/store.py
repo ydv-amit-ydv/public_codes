@@ -264,6 +264,31 @@ class Store:
         with self.conn() as c:
             return c.execute("SELECT COUNT(*) n FROM admins").fetchone()["n"] > 0
 
+    ANNOUNCE_LEVELS = ("info", "warning", "urgent")
+
+    def announcement(self):
+        """The administrator's message to all users (shown on the sign-in screen and in the app), or None."""
+        import json as _json
+        try:
+            a = _json.loads(self.setting("announcement", "") or "null")
+        except ValueError:
+            return None
+        return a if isinstance(a, dict) and a.get("text") else None
+
+    def set_announcement(self, text, level="info"):
+        import json as _json
+        text = str(text or "").strip()
+        if len(text) > 2000:
+            raise StoreError("The announcement is too long (2000 characters at most).", 400)
+        if level not in self.ANNOUNCE_LEVELS:
+            raise StoreError("Unknown announcement level.", 400)
+        if not text:
+            self.set_setting("announcement", "")
+            return None
+        a = {"text": text, "level": level, "id": secrets.token_hex(6), "updated": int(time.time())}
+        self.set_setting("announcement", _json.dumps(a))
+        return a
+
     def registration_open(self):
         return self.setting("allow_registration", "1") == "1"
 
@@ -835,6 +860,7 @@ class Store:
                 "defaults": self.default_limits(), "bounds": LIMIT_BOUNDS, "dbSize": db_size,
                 "totalUsage": sum(u["usage"] for u in out), "allowRegistration": self.registration_open(),
                 "allowSharing": self.sharing_enabled(), "pendingShares": self._count_shares(),
+                "announcement": self.announcement(),
                 "admins": self.list_admins()}
 
     def _count_shares(self):

@@ -8,6 +8,7 @@ import {
 } from './crypto.js';
 import { helpIcon, openManual } from './help.js';
 import { clearLocalData, state } from './state.js';
+import { announcementBox } from './announce.js';
 import { api, download, h, modal, toast } from './ui.js';
 
 const ITER = 600000;
@@ -136,6 +137,7 @@ export async function authScreen({ message = '' } = {}) {
     try { st = await api('/api/status'); } catch (e) { st = { setup: true, registration: true }; }
     if (!st.setup) { await setupPending(); continue; }
     if (!cryptoAvailable()) { insecureNotice(); await new Promise(() => {}); }
+    loginAnnouncement = st.announcement || null;
     return loginCard(st.registration, message);
   }
 }
@@ -159,6 +161,8 @@ function setupPending() {
   });
 }
 
+let loginAnnouncement = null;
+
 function loginCard(registration, message) {
   return new Promise((resolve) => {
     let mode = 'login';
@@ -169,7 +173,7 @@ function loginCard(registration, message) {
       const err = h('div', { class: 'auth-err', role: 'alert' }, message);
       message = '';
       const btn = h('button', { class: 'btn primary', type: 'submit', style: { width: '100%', padding: '9px' } }, mode === 'login' ? 'Sign in' : 'Create account');
-      card(brand(),
+      card(brand(), announcementBox(loginAnnouncement),
         registration ? h('div', { class: 'seg auth-tabs' },
           h('button', { class: mode === 'login' ? 'on' : '', type: 'button', onclick: () => { mode = 'login'; draw(); } }, 'Sign in'),
           h('button', { class: mode === 'register' ? 'on' : '', type: 'button', onclick: () => { mode = 'register'; draw(); } }, 'Create account')) : null,

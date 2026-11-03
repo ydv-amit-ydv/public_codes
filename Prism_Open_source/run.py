@@ -246,6 +246,8 @@ def main():
     ap.add_argument("--cert")
     ap.add_argument("--key")
     ap.add_argument("--desktop", action="store_true")
+    # launcher flags (start.py); accepted here so an older start.py that passes them through still works
+    ap.add_argument("--preserve", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
 
     from openprism.app import create_admin_app, create_app

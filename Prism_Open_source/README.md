@@ -43,7 +43,13 @@ installed system-wide). Later runs start at once. Other launcher commands:
 | `python3 start.py --port 8443` | any server option is passed through (`--cert/--key`, `--host`, `--data`, …) |
 | `python3 start.py --reset` | **delete all server data** (accounts, projects, certificate, logs) after typing `RESET`, then start fresh |
 | `python3 start.py --reset --yes --no-start` | the same without the question and without starting (scripts) |
-| `python3 start.py --update` | `git pull` the latest version, then start |
+| `python3 start.py --update --preserve` | download the latest version (`git pull`) and **keep all accounts and projects**; a backup of the database is saved in `projects/backups/` first (the 10 newest are kept) |
+| `python3 start.py --update --reset` | download the latest version and **delete all accounts and projects** (asks you to type `RESET`) |
+
+`--update` always needs `--preserve` or `--reset`, so data are never kept or deleted by accident. Stop the server
+(Ctrl+C) before updating. Before a reset, tell users with an **announcement** (Admin console → Server settings →
+Announcement to all users): it appears on the sign-in screen and as a banner in the app, so they can download their
+projects first.
 
 All server data live in `projects/` next to `start.py` (excluded from git), so a fresh clone always starts empty,
 and deleting that folder is the same as `--reset`. The manual route also works:

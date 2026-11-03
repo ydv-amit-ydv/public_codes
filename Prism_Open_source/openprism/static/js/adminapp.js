@@ -178,6 +178,9 @@ function requests() {
 function settings() {
   const reg = h('input', { type: 'checkbox', checked: data.allowRegistration });
   const share = h('input', { type: 'checkbox', checked: data.allowSharing !== false });
+  const annText = h('textarea', { rows: 3, maxlength: 2000, style: { width: '100%', boxSizing: 'border-box' }, placeholder: 'Message to all users (plain text). Leave empty for none.' });
+  annText.value = data.announcement?.text || '';
+  const annLevel = h('select', {}, [['info', 'Information'], ['warning', 'Warning'], ['urgent', 'Urgent (cannot be hidden)']].map(([v, l]) => h('option', { value: v, selected: (data.announcement?.level || 'info') === v }, l)));
   const lim = {};
   main.append(h('div', { class: 'admin-card' }, h('h3', {}, 'Registration'),
     h('label', { class: 'check-line' }, reg, 'Allow users to create their own accounts (otherwise only administrators create accounts)'),
@@ -186,6 +189,15 @@ function settings() {
     h('p', { class: 'hint' }, `Users can send each other end-to-end encrypted copies of projects. The server only stores ciphertext and cannot read them. ${data.pendingShares} share(s) are waiting to be accepted.`),
     h('label', { class: 'check-line' }, share, 'Allow users to share projects with each other'),
     h('button', { class: 'btn primary', onclick: async () => { await api('/api/admin/settings', { allowSharing: share.checked }, 'PUT'); toast('Saved'); load(); } }, 'Save')),
+  h('div', { class: 'admin-card' }, h('h3', {}, 'Announcement to all users'),
+    h('p', { class: 'hint' }, 'Shown on the sign-in screen and as a banner at the top of the app (open apps pick it up within a few minutes). '
+      + 'Use it for maintenance, updates or data deletion notices, e.g. “On 1 March the server is reset: download your projects (File → Download project file) before then.” '
+      + 'Info and warning messages can be hidden by each user until you change the text; urgent messages cannot be hidden.'),
+    annText, h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' } },
+      h('label', {}, 'Level '), annLevel,
+      h('button', { class: 'btn primary', onclick: async () => { await api('/api/admin/settings', { announcement: { text: annText.value, level: annLevel.value } }, 'PUT'); toast(annText.value.trim() ? 'Announcement published' : 'Announcement removed'); load(); } }, 'Publish'),
+      h('button', { class: 'btn', onclick: async () => { await api('/api/admin/settings', { announcement: { text: '' } }, 'PUT'); toast('Announcement removed'); load(); } }, 'Remove'),
+      h('span', { class: 'hint' }, data.announcement ? `Live since ${new Date(data.announcement.updated * 1000).toLocaleString()}` : 'No announcement is shown.'))),
   h('div', { class: 'admin-card' }, h('h3', {}, 'Default limits for new accounts'),
     h('div', { class: 'admin-grid' }, LIMITS.map(([k, l]) => h('label', { class: 'stat-tile' }, h('span', { class: 'hint' }, l),
       lim[k] = h('input', { type: 'number', value: data.defaults[k], min: data.bounds[k][0], max: data.bounds[k][1], style: { width: '100%' } })))),

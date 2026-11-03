@@ -359,7 +359,8 @@ def create_app(data_dir: str | os.PathLike | None = None, secure_cookies: bool |
 
     @app.get("/api/status")
     def status():
-        return {"setup": store.is_setup(), "registration": store.registration_open(), "version": __version__}
+        return {"setup": store.is_setup(), "registration": store.registration_open(), "version": __version__,
+                "announcement": store.announcement()}
 
     # ------------------------------------------------------------- auth
     @app.get("/api/auth/kdf")
@@ -756,6 +757,9 @@ def create_admin_app(data_dir: str | os.PathLike | None = None, store: Store | N
         if "allowSharing" in d:
             store.set_setting("allow_sharing", "1" if d["allowSharing"] else "0")
             store.log(g.admin["username"], "sharing between users", "on" if d["allowSharing"] else "off")
+        if isinstance(d.get("announcement"), dict):
+            a = store.set_announcement(d["announcement"].get("text"), d["announcement"].get("level", "info"))
+            store.log(g.admin["username"], "announcement", f"{a['level']}: {a['text'][:80]}" if a else "removed")
         if "allowRegistration" in d:
             store.set_setting("allow_registration", "1" if d["allowRegistration"] else "0")
             store.log(g.admin["username"], "self-registration", "on" if d["allowRegistration"] else "off")
