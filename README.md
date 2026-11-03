@@ -48,3 +48,19 @@ python -m circopt.app                                   # http://localhost:5000
 
 Full instructions: [`circrna_opt/README.md`](circrna_opt/README.md) and
 [`circrna_opt/INSTALL.md`](circrna_opt/INSTALL.md).
+
+## Prism_Open_source
+
+**OpenPrism** — an open-source scientific graphing and statistics workbench (GraphPad Prism-style data tables,
+80 analyses validated against NIST and R, publication graphs and layouts, end-to-end encrypted multi-user server).
+
+```bash
+git clone https://github.com/ydv-amit-ydv/public_codes.git
+cd public_codes/Prism_Open_source
+python3 start.py                 # first run installs the packages into .venv/, then starts the server
+```
+
+Needs only git and Python 3.10+. `python3 start.py --reset` deletes all server data and starts fresh;
+`python3 start.py --port 8443` uses another port (the epitope engine above also uses 5000).
+Full instructions: [`Prism_Open_source/README.md`](Prism_Open_source/README.md).
+This folder is a release copy; development happens in a separate working repository.
