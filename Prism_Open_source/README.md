@@ -39,31 +39,31 @@ installed system-wide). Later runs start at once. Other launcher commands:
 
 | Command | What it does |
 | --- | --- |
-| `python3 start.py` | start the server (installs the packages on the first run) |
-| `python3 start.py --port 8443` | any server option is passed through (`--cert/--key`, `--host`, `--data`, …) |
-| `python3 start.py --export --output FILE.zip` | save every account, project and share (and the HTTPS certificate) to one zip file |
-| `python3 start.py --import --input FILE.zip` | **replace all current data** with an export (also a bare `openprism.db` or a folder). Shows what will be replaced and asks you to type `IMPORT`; a safety copy of the current database goes to `projects/backups/`. Only exports this version can read are accepted — an export from a newer version or an unknown format is refused and nothing changes |
-| `python3 start.py --reset --reset --reset` | **delete all data** and start fresh — the flag three times is the confirmation |
-| `python3 start.py --selfpurge --export FILE.zip` | export everything, check the export, then **delete everything that belongs to this server**: the OpenPrism folder (code, `.venv`, data, certificate, logs, backups) and a data folder kept elsewhere (`--data` / `OPENPRISM_DATA`). Other projects in the same repository are not touched. Clone a new copy later and `--import` the file |
+| `python3 start.py` | start the server (the first run installs the packages) |
+| `python3 start.py --reset --reset --reset` | delete all current data (accounts, projects, shares, settings) and start fresh |
+| `python3 start.py --reset --reset --reset --loadolddata BACKUP` | delete all current data, load an old backup instead, and start — the first start after installing a new version. `BACKUP` is a backup `.zip` or the folder holding it (the newest one is used); it is checked **before** anything is deleted, and a backup this version cannot read is refused |
+| `python3 start.py --selfpurge --selfpurge --selfpurge --output BACKUP_FOLDER` | save all data as a backup `.zip` in `BACKUP_FOLDER`, check it, then remove this OpenPrism installation completely (code, Python environment, data) |
 
-Stop the server (Ctrl+C) before these commands; they refuse to run while it is running. The same list is printed
-under the IP addresses every time the server starts.
+Giving a flag three times is the confirmation. Stop the server (Ctrl+C) first; the commands refuse to run while it is
+running. The same list is printed under the IP addresses whenever the server starts. Other options go to the server,
+e.g. `python3 start.py --port 8443`.
 
-**Moving to a new version** (any way of getting the code — `git clone`, `git pull` or a ZIP download):
+**Installing a new version**
 
 ```bash
-python3 start.py --export --output ~/openprism-backup.zip
-```
-then get the new code (or `--selfpurge --export …` and clone again), and in the new folder:
-```bash
-python3 start.py --import --input ~/openprism-backup.zip
+python3 start.py --selfpurge --selfpurge --selfpurge --output ~/openprism-backups
 ```
 ```bash
-python3 start.py
+git clone https://github.com/ydv-amit-ydv/public_codes.git
 ```
-`git pull` alone never touches the data (they live in the git-ignored `projects/` folder), so after a pull a plain
-`python3 start.py` keeps everything. Before a reset, tell users with an **announcement** (Admin console → Server
-settings → Announcement to all users) so they can download their projects first.
+```bash
+cd public_codes/Prism_Open_source
+```
+```bash
+python3 start.py --reset --reset --reset --loadolddata ~/openprism-backups
+```
+From then on a plain `python3 start.py` starts it. Before a reset, tell users with an **announcement** (Admin console
+→ Server settings → Announcement to all users) so they can download their projects first.
 
 All server data live in `projects/` next to `start.py` (excluded from git), so a fresh clone always starts empty,
 and deleting that folder is the same as `--reset`. The manual route also works:
@@ -98,7 +98,7 @@ Open the application port in the firewall (e.g. `sudo ufw allow 5000/tcp`).
    * **Linux:** `sudo ufw allow 5000/tcp`.
 4. Guest Wi-Fi and phone hotspots often stop devices from reaching each other; use a normal network.
 
-Options: `--port`, `--admin-port`, `--host`, `--data DIR`, `--http` (only behind an HTTPS reverse proxy),
+Options: `--port`, `--admin-port`, `--host`, `--http` (only behind an HTTPS reverse proxy),
 `--cert/--key`, `--desktop`. Production: `deploy/openprism.service` (systemd, hardened) or
 `docker compose up -d`. Console commands: `python run.py admin create|list|reset-admin <name>`.
 

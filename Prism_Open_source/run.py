@@ -9,7 +9,6 @@
 Options:
     --port 5000 --host 0.0.0.0        main application address
     --admin-port 47219                administration console port (always bound to 127.0.0.1)
-    --data DIR                        data directory (database, TLS certificate)
     --http                            plain HTTP on the main port (only behind an HTTPS reverse proxy!)
     --cert FILE --key FILE            use your own TLS certificate instead of the self-signed one
     --desktop                         open the application in a native window (pip install pywebview)
@@ -93,10 +92,9 @@ def admin_cli(argv):
     ap = argparse.ArgumentParser(prog="run.py admin", description="Manage OpenPrism administrators")
     ap.add_argument("action", choices=["create", "list", "reset-admin"])
     ap.add_argument("username", nargs="?")
-    ap.add_argument("--data", default=None)
     a = ap.parse_args(argv)
     from openprism.store import Store, StoreError
-    store = Store(data_dir(a.data) / "openprism.db")
+    store = Store(data_dir(None) / "openprism.db")
     try:
         if a.action == "list":
             for ad in store.list_admins():
@@ -240,7 +238,6 @@ def main():
     ap.add_argument("--host", default=os.environ.get("OPENPRISM_HOST", "0.0.0.0"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("OPENPRISM_PORT", 5000)))
     ap.add_argument("--admin-port", type=int, default=int(os.environ.get("OPENPRISM_ADMIN_PORT", 47219)))
-    ap.add_argument("--data", "--projects", dest="data", default=None)
     ap.add_argument("--http", action="store_true", default=os.environ.get("OPENPRISM_HTTP") == "1",
                     help="serve plain HTTP on the main port (only behind an HTTPS reverse proxy)")
     ap.add_argument("--cert")
@@ -251,7 +248,7 @@ def main():
     from openprism.app import create_admin_app, create_app
     from openprism.store import Store
 
-    ddir = data_dir(a.data)
+    ddir = data_dir(None)
     store = Store(ddir / "openprism.db")
     ssl_ctx = None
     if not a.http:
@@ -293,11 +290,11 @@ def main():
         print("\n  HTTPS uses a self-signed certificate: browsers will warn once; choose “Advanced → Proceed”.")
         print("  (Use --cert/--key for a real certificate.)")
     py = "python" if os.name == "nt" else "python3"
-    print("\n  Server management (stop the server with Ctrl+C first):")
-    print(f"    {py} start.py --export --output FILE.zip     save all accounts and projects")
-    print(f"    {py} start.py --import --input FILE.zip      replace all data with an export (asks to confirm)")
-    print(f"    {py} start.py --reset --reset --reset        delete all data and start fresh")
-    print(f"    {py} start.py --selfpurge --export FILE.zip  export, then remove this installation")
+    print("\n  Server commands (stop this server with Ctrl+C first):")
+    print(f"    {py} start.py                                                   start the server")
+    print(f"    {py} start.py --reset --reset --reset                           delete all data, start fresh")
+    print(f"    {py} start.py --reset --reset --reset --loadolddata BACKUP      delete all data, load a backup, start")
+    print(f"    {py} start.py --selfpurge --selfpurge --selfpurge --output DIR  back up to DIR, remove this installation")
     print("  Press Ctrl+C to stop.\n")
     pidfile = ddir / "server.pid"
     try:

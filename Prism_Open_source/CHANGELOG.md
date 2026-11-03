@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 — three simple server commands
+
+* `python3 start.py` starts the server; `--reset --reset --reset` deletes all data and starts fresh;
+  `--reset --reset --reset --loadolddata BACKUP` deletes all data, loads an old backup and starts (the backup is checked
+  — readable, intact, a data format this version understands — before anything is deleted);
+  `--selfpurge --selfpurge --selfpurge --output FOLDER` backs everything up to FOLDER, checks the backup and removes the
+  installation completely. Repeating a flag three times is the confirmation.
+* Removed `--export`, `--import` and the server's `--data` option (the data always live in `projects/` next to
+  `start.py`; Docker and the systemd service still set the folder through `OPENPRISM_DATA`).
+
 ## 1.3.0 — simple server management
 
 * `start.py` is the single entry point: `--export --output FILE.zip`, `--import --input FILE.zip` (zip export, a bare

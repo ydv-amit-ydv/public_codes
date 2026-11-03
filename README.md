@@ -61,7 +61,8 @@ python3 start.py                 # first run installs the packages into .venv/, 
 ```
 
 Needs only git and Python 3.10+. `python3 start.py --port 8443` uses another port (the epitope engine above also uses 5000).
-Server management (stop the server first): `--export --output FILE.zip`, `--import --input FILE.zip`,
-`--reset --reset --reset`, `--selfpurge --export FILE.zip` — see the OpenPrism README.
+Server commands (stop the server first): `--reset --reset --reset` (fresh start),
+`--reset --reset --reset --loadolddata BACKUP` (start with an old backup),
+`--selfpurge --selfpurge --selfpurge --output DIR` (back up, then remove the installation) — see the OpenPrism README.
 Full instructions: [`Prism_Open_source/README.md`](Prism_Open_source/README.md).
 This folder is a release copy; development happens in a separate working repository.

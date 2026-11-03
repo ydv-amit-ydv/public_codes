@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""OpenPrism server launcher and manager — needs only Python 3.10+.
+"""OpenPrism server launcher — needs only Python 3.10+.
 
-Start
-    python3 start.py                                start the server (installs the packages on the first run)
-    python3 start.py --port 8443                    other options are passed to the server (python3 run.py --help)
+    python3 start.py
+        Start the server (the first run installs the packages into .venv/ next to this file).
 
-Manage the data (stop the server with Ctrl+C first)
-    python3 start.py --export --output FILE.zip     save all accounts, projects, shares and the certificate to FILE.zip
-    python3 start.py --import --input FILE.zip      replace ALL current data with an export (asks you to type IMPORT;
-                                                    only exports this version can read are accepted)
-    python3 start.py --reset --reset --reset        delete ALL data and start fresh (the flag three times = confirmation)
-    python3 start.py --selfpurge --export FILE.zip  export everything, check the export, then delete everything that
-                                                    belongs to this server (code, environment, data) — re-clone later
+    python3 start.py --reset --reset --reset
+        Delete all current data (accounts, projects, shares, settings) and start fresh.
 
-Moving to a new version:  export → delete or purge the old copy → git clone the new one → --import → start.
-The first run creates a private Python environment in .venv/ next to this file (nothing is installed system-wide).
+    python3 start.py --reset --reset --reset --loadolddata BACKUP
+        Delete all current data, load an old backup instead, and start. Use it for the first start after
+        installing a new version. BACKUP is a backup .zip file or the folder that contains it (the newest
+        backup in the folder is used). The backup is checked before anything is deleted.
+
+    python3 start.py --selfpurge --selfpurge --selfpurge --output BACKUP_FOLDER
+        Save all data as a backup .zip in BACKUP_FOLDER, check it, then delete this OpenPrism installation
+        completely (code, Python environment, data). Afterwards clone a new copy and start it with --loadolddata.
+
+Repeating a flag three times is the confirmation. Stop a running server (Ctrl+C) before these commands.
+Other options are passed to the server, e.g.  python3 start.py --port 8443  (see python3 run.py --help).
 """
 from __future__ import annotations
 
@@ -39,7 +42,6 @@ DB = DATA / "openprism.db"
 PIDFILE = DATA / "server.pid"
 WIN = os.name == "nt"
 EXPORT_FORMAT = "openprism-server-export-1"
-MANAGE = ("--export", "--import", "--reset", "--selfpurge", "--output", "--input")
 
 
 def say(msg=""):
@@ -166,10 +168,10 @@ def copy_db(src: Path, dest: Path):
 # ---------------------------------------------------------------- export / import
 def export(output: str | None) -> Path:
     if not output:
-        fail("Say where to save the export, e.g.\n      python3 start.py --export --output ~/openprism-backup.zip")
+        fail("Say where to save the backup.")
     out = Path(output).expanduser().resolve()
     if out.is_dir():
-        out = out / f"openprism-export-{datetime.datetime.now():%Y%m%d-%H%M%S}.zip"
+        out = out / f"openprism-backup-{datetime.datetime.now():%Y%m%d-%H%M%S}.zip"
     if out.suffix.lower() != ".zip":
         out = out.with_suffix(out.suffix + ".zip") if out.suffix else out.with_suffix(".zip")
     if not DB.exists():
@@ -196,7 +198,7 @@ def export(output: str | None) -> Path:
     except OSError:
         pass
     verify_export(out)
-    say(f"  Exported {users} account(s) and {projects} project(s) to\n      {out}")
+    say(f"  Backed up {users} account(s) and {projects} project(s) to\n      {out}")
     return out
 
 
@@ -276,109 +278,77 @@ def check_compatible(tmp: Path, db: Path, src: Path):
     return manifest, theirs, ours
 
 
-def do_import(inp: str | None, assume_yes: bool = False):
-    if not inp:
-        fail("Say which export to restore, e.g.\n      python3 start.py --import --input ~/openprism-backup.zip")
-    src = Path(inp).expanduser().resolve()
+def find_backup(path: str) -> Path:
+    """A backup .zip, a database file, or a folder: a folder holding openprism.db, or the newest backup .zip in it."""
+    src = Path(path).expanduser().resolve()
     if not src.exists():
         fail(f"{src} does not exist.")
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        db = _extract_db(src, tmp)
-        manifest, theirs, ours = check_compatible(tmp, db, src)
-        try:
-            users, projects = counts(db)
-        except (sqlite3.DatabaseError, ValueError) as e:
-            fail(f"{src} cannot be restored: {e}.")
-        say(f"\n  Import from {src}")
-        say(f"      {users} account(s), {projects} project(s)"
-            + (f", exported {manifest.get('created')} by OpenPrism {manifest.get('openprism')}" if manifest else "")
-            + f" (data schema {theirs}; this version: {ours})")
-        if DB.exists():
-            try:
-                cu, cp = counts(DB)
-                say(f"  This REPLACES everything currently on this server: {cu} account(s), {cp} project(s),\n"
-                    "  shares, settings and the certificate (a safety copy of the current database is kept in projects/backups/).")
-            except (sqlite3.DatabaseError, ValueError):
-                say("  This REPLACES the current server data (a safety copy is kept in projects/backups/).")
-        elif data_files():
-            say("  This replaces the files currently in the data folder.")
-        if not assume_yes:
-            try:
-                ans = input("  Type IMPORT to continue: ").strip()
-            except EOFError:
-                ans = ""
-            if ans != "IMPORT":
-                fail("Cancelled — nothing was changed.")
-        if data_files():
-            if DB.exists():
-                safety = export_safety_copy()
-                say(f"  The current data were saved first to\n      {safety}")
-            for p in data_files():
-                if p.name != "backups":
-                    shutil.rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
-        DATA.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(db, DB)
-        try:
-            os.chmod(DB, 0o600)
-        except OSError:
-            pass
-        if (tmp / "tls").is_dir():
-            shutil.copytree(tmp / "tls", DATA / "tls", dirs_exist_ok=True)
-    say(f"  Restored {users} account(s) and {projects} project(s).")
+    if src.is_dir() and not (src / "openprism.db").exists():
+        zips = sorted(src.glob("openprism-backup-*.zip")) or sorted(src.glob("*.zip"), key=lambda p: p.stat().st_mtime)
+        if not zips:
+            fail(f"No backup (.zip) was found in {src}.")
+        src = zips[-1]
+    return src
 
 
-def export_safety_copy() -> Path:
-    bdir = DATA / "backups"
-    bdir.mkdir(parents=True, exist_ok=True)
-    out = bdir / f"before-import-{datetime.datetime.now():%Y%m%d-%H%M%S}.db"
-    copy_db(DB, out)
-    return out
+def load_backup(src: Path, tmp: Path):
+    """Open and check a backup without touching the current data. Returns (db, users, projects, manifest)."""
+    db = _extract_db(src, tmp)
+    manifest, theirs, ours = check_compatible(tmp, db, src)
+    try:
+        users, projects = counts(db)
+    except (sqlite3.DatabaseError, ValueError) as e:
+        fail(f"{src} cannot be loaded: {e}. Nothing was deleted.")
+    say(f"  Backup {src}\n      {users} account(s), {projects} project(s)"
+        + (f", saved {manifest.get('created')} by OpenPrism {manifest.get('openprism')}" if manifest else "")
+        + f" — data format {theirs} (this version reads up to {ours}): OK")
+    return db, users, projects
 
 
-# ---------------------------------------------------------------- reset / purge
+def install_backup(db: Path, tmp: Path):
+    DATA.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(db, DB)
+    try:
+        os.chmod(DB, 0o600)
+    except OSError:
+        pass
+    if (tmp / "tls").is_dir():
+        shutil.copytree(tmp / "tls", DATA / "tls", dirs_exist_ok=True)
+
+
 def reset():
     files = data_files()
-    if not files:
-        say(f"  Nothing to reset: {DATA} is already empty.")
-        return
     for p in files:
         shutil.rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
-    say(f"  All server data in {DATA} were deleted (accounts, projects, shares, certificate, logs, backups).\n"
-        "  The next start runs the first-time setup again.")
+    say("  All current data were deleted." if files else "  There were no data to delete.")
 
 
 def selfpurge(output: str | None):
     if not output:
-        fail("--selfpurge needs an export first, so nothing is lost:\n"
-             "      python3 start.py --selfpurge --export --output ~/openprism-backup.zip")
-    out = Path(output).expanduser().resolve()
-    if HERE in out.parents or out == HERE:
-        fail(f"The export must be saved outside {HERE}, because that folder is about to be deleted.")
-    exported = None
+        fail("Say where to save the backup first, e.g.\n"
+             "      python3 start.py --selfpurge --selfpurge --selfpurge --output ~/openprism-backups")
+    folder = Path(output).expanduser().resolve()
+    if folder == HERE or HERE in folder.parents:
+        fail(f"The backup folder must be outside {HERE}, because that folder is about to be deleted.")
+    if folder.exists() and not folder.is_dir():
+        fail(f"{folder} is a file; give a folder for the backup.")
+    folder.mkdir(parents=True, exist_ok=True)
+    saved = None
     if DB.exists():
-        exported = export(output)
+        saved = export(str(folder))
     elif data_files():
         fail(f"{DATA} contains files but no database; nothing was deleted. Check the folder by hand.")
     else:
-        say("  There are no server data to export.")
-    repo = next((p for p in [HERE, *HERE.parents] if (p / ".git").exists()), None)
+        say("  There are no data to back up.")
     if DATA.exists() and HERE not in DATA.parents and DATA != HERE:
-        say(f"  Deleting the data folder {DATA} …")
         shutil.rmtree(DATA)
-    say(f"  Deleting {HERE} (code, Python environment, data, certificate, logs, backups) …")
+    say(f"  Deleting {HERE} (code, Python environment, data, certificate, logs) …")
     os.chdir(HERE.parent)
     shutil.rmtree(HERE)
-    say("  Done. Everything belonging to this OpenPrism server was removed.")
-    say("\n  To set it up again:")
-    if repo and repo != HERE:
-        say(f"      cd {repo} && git checkout -- {HERE.relative_to(repo)}      (restore this folder from git), or delete")
-        say(f"      {repo}  and clone the repository again;")
-    else:
-        say("      git clone <repository> and cd into its Prism_Open_source folder;")
-    if exported:
-        say(f"      python3 start.py --import --input {exported}")
-    say("      python3 start.py\n")
+    say("  Done — this OpenPrism server was removed completely.\n")
+    say("  To install the new version: git clone the repository, go to its Prism_Open_source folder and run")
+    say(f"      python3 start.py --reset --reset --reset --loadolddata {saved or folder}" if saved else "      python3 start.py")
+    say("")
 
 
 # ---------------------------------------------------------------- main
@@ -391,15 +361,22 @@ def _version():
 
 
 def _value(args, flag):
-    """Value after --output / --input, removed from args."""
+    """Value after a flag (removed from args)."""
     if flag in args:
         i = args.index(flag)
         if i + 1 >= len(args) or args[i + 1].startswith("--"):
-            fail(f"{flag} needs a path, e.g. {flag} ~/openprism-backup.zip")
+            fail(f"{flag} needs a path.")
         v = args[i + 1]
         del args[i:i + 2]
         return v
     return None
+
+
+COMMANDS = """
+      python3 start.py                                                   start the server
+      python3 start.py --reset --reset --reset                           delete all data, start fresh
+      python3 start.py --reset --reset --reset --loadolddata BACKUP      delete all data, load a backup, start
+      python3 start.py --selfpurge --selfpurge --selfpurge --output DIR  back up to DIR, then remove this installation"""
 
 
 def main():
@@ -409,52 +386,45 @@ def main():
     if args[:1] in (["-h"], ["--help"]):
         say(__doc__)
         return
-    if "--update" in args or "--preserve" in args:
-        fail("--update and --preserve were replaced by export / import:\n"
-             "      python3 start.py --export --output ~/openprism-backup.zip      (save everything)\n"
-             "      … get the new version (git clone / git pull / ZIP) …\n"
-             "      python3 start.py --import --input ~/openprism-backup.zip       (restore it)\n"
-             "  Data in the projects/ folder are never touched by git, so after  git pull  a plain  python3 start.py  keeps them.")
-    # the path may also follow the command directly:  --export FILE.zip  /  --import FILE.zip
-    for flag, opt in (("--export", "--output"), ("--import", "--input")):
-        if flag in args:
-            i = args.index(flag)
-            if i + 1 < len(args) and not args[i + 1].startswith("--") and opt not in args:
-                args[i + 1:i + 1] = [opt]
-    output, inp = _value(args, "--output"), _value(args, "--input")
-    n_reset = args.count("--reset")
-    actions = [a for a in ("--export", "--import", "--selfpurge") if a in args] + (["--reset"] if n_reset else [])
-    if len(actions) > 1 and not (set(actions) == {"--selfpurge", "--export"}):
-        fail(f"Use one management command at a time (got {' '.join(actions)}).")
-    if actions:
-        extra = [a for a in args if a not in ("--export", "--import", "--selfpurge", "--reset", "--yes")]
-        if extra:
-            fail(f"Management commands do not start the server; remove {' '.join(extra)}.")
-    if "--selfpurge" in args:
-        if "--export" not in args:
-            fail("--selfpurge always exports first:\n      python3 start.py --selfpurge --export --output ~/openprism-backup.zip")
+    old = [a for a in ("--update", "--preserve", "--export", "--import", "--input", "--data", "--yes") if a in args]
+    if old:
+        fail(f"{' '.join(old)} no longer exist{'s' if len(old) == 1 else ''}. The commands are:" + COMMANDS)
+    n_purge, n_reset = args.count("--selfpurge"), args.count("--reset")
+    output, olddata = _value(args, "--output"), _value(args, "--loadolddata")
+    args = [a for a in args if a not in ("--selfpurge", "--reset")]
+
+    if n_purge:
+        if n_purge < 3:
+            fail("--selfpurge removes this whole installation. Give it three times to confirm:\n"
+                 "      python3 start.py --selfpurge --selfpurge --selfpurge --output ~/openprism-backups")
+        if n_reset or olddata or args:
+            fail("--selfpurge cannot be combined with other options." + COMMANDS)
         require_stopped("purge")
         selfpurge(output)
         return
-    if "--export" in args:
-        require_stopped("export")       # a running server keeps writing; export after stopping it
-        export(output)
-        return
-    if "--import" in args:
-        require_stopped("import")
-        do_import(inp, "--yes" in args)
-        say("  Start the server with   python3 start.py")
-        return
+    if output:
+        fail("--output is only used with --selfpurge." + COMMANDS)
+    if olddata and n_reset < 3:
+        fail("--loadolddata replaces all current data, so it needs  --reset --reset --reset :\n"
+             f"      python3 start.py --reset --reset --reset --loadolddata {olddata}")
     if n_reset:
         if n_reset < 3:
-            fail(f"Resetting deletes every account and project. To confirm, give the flag three times:\n"
-                 f"      python3 start.py --reset --reset --reset\n"
-                 f"  (you gave it {n_reset} time{'s' if n_reset > 1 else ''}). Tip: export first with  python3 start.py --export --output FILE.zip")
+            fail("--reset deletes all accounts and projects. Give it three times to confirm:\n"
+                 "      python3 start.py --reset --reset --reset")
         require_stopped("reset")
-        reset()
+        if olddata:
+            src = find_backup(olddata)
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                db, users, projects = load_backup(src, tmp)      # checked before anything is deleted
+                reset()
+                install_backup(db, tmp)
+            say(f"  Loaded {users} account(s) and {projects} project(s) from the backup.")
+        else:
+            reset()
+            say("  Starting fresh: the first start runs the setup in the administration console.")
+    if os.environ.get("OPENPRISM_NO_START") == "1":      # used by the automated tests
         return
-    if output or inp:
-        fail("--output belongs to --export and --input to --import.")
     if not venv_python().exists():
         create_venv()
     install_requirements()
