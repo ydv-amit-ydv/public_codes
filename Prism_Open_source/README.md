@@ -51,6 +51,11 @@ installed system-wide). Later runs start at once. Other launcher commands:
 Announcement to all users): it appears on the sign-in screen and as a banner in the app, so they can download their
 projects first.
 
+**Installed from a ZIP download (no git)?** `--update` cannot download by itself; it explains the manual steps instead:
+stop the server, copy the new files over the old folder **but keep its `projects/` folder**, then start with
+`python3 start.py --preserve` (backs up and keeps all data) or `python3 start.py --reset` (starts with no data).
+A brand-new folder from a ZIP needs no flag: `python3 start.py`.
+
 All server data live in `projects/` next to `start.py` (excluded from git), so a fresh clone always starts empty,
 and deleting that folder is the same as `--reset`. The manual route also works:
 `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python run.py`.

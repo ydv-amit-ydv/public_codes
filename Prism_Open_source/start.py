@@ -5,6 +5,7 @@
     python3 start.py --reset      delete ALL server data (accounts, projects, certificate, logs) and start fresh
     python3 start.py --update --preserve   download the latest version, keep all accounts and projects (backup first)
     python3 start.py --update --reset      download the latest version and start with no accounts or projects
+    python3 start.py --preserve            (copies without git, e.g. from a ZIP) back up the data, keep it, and start
     python3 start.py --port 8443  any other option is passed to the server (see python3 run.py --help)
 
 The first run creates a private Python environment in .venv/ next to this file and installs the
@@ -123,8 +124,15 @@ def backup():
 
 def git_pull():
     if not (HERE.parent / ".git").exists() and not (HERE / ".git").exists():
-        sys.exit("  This copy was not cloned with git, so it cannot update itself. Clone the repository again and copy the\n"
-                 f"  folder  {DATA}  into the new copy (that folder holds all accounts and projects).")
+        sys.exit("\n  This copy was not downloaded with git (for example from a ZIP file), so it cannot update itself.\n"
+                 "  To update it by hand:\n"
+                 "    1. Stop the server (Ctrl+C).\n"
+                 "    2. Download the new version and copy its files over this folder. Keep the folder\n"
+                 f"         {DATA}\n"
+                 "       — it holds all accounts and projects (do not replace or delete it).\n"
+                 "    3. Start with   python3 start.py --preserve   (keeps all data, makes a backup first)\n"
+                 "       or with      python3 start.py --reset      (starts with no data).\n"
+                 "  Tip: installing with  git clone  lets  python3 start.py --update --preserve  do all of this for you.")
     say("  Downloading the latest version (git pull) …")
     r = subprocess.run(["git", "-C", str(HERE), "pull", "--ff-only"])
     if r.returncode != 0:
@@ -154,6 +162,8 @@ def main():
         sys.exit("  --update needs --preserve or --reset." + UPDATE_HELP)
     yes = "--yes" in args
     if updating and not updated:
+        if not (HERE.parent / ".git").exists() and not (HERE / ".git").exists():
+            git_pull()                    # explains how to update a copy without git, then stops
         if server_running():
             sys.exit("  OpenPrism seems to be running on this computer. Stop it first (Ctrl+C in its window), then update.")
         if wipe and not yes:
@@ -179,6 +189,8 @@ def main():
         if "--no-start" in args:
             return
     elif preserve:
+        if not updated:
+            backup()
         say(f"  Keeping all accounts and projects in {DATA}.")
     args = [a for a in args if a not in ("--reset", "--preserve", "--update", "--updated", "--yes", "--no-start")]
     if not venv_python().exists():
