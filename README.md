@@ -49,20 +49,13 @@ python -m circopt.app                                   # http://localhost:5000
 Full instructions: [`circrna_opt/README.md`](circrna_opt/README.md) and
 [`circrna_opt/INSTALL.md`](circrna_opt/INSTALL.md).
 
-## Prism_Open_source
+## OpenPrism (moved)
 
-**OpenPrism** — an open-source scientific graphing and statistics workbench (GraphPad Prism-style data tables,
-80 analyses validated against NIST and R, publication graphs and layouts, end-to-end encrypted multi-user server).
+**OpenPrism** — the open-source scientific graphing and statistics workbench — now has its own repository:
+**https://github.com/ydv-amit-ydv/openprism**
 
 ```bash
-git clone https://github.com/ydv-amit-ydv/public_codes.git
-cd public_codes/Prism_Open_source
-python3 start.py                 # first run installs the packages into .venv/, then starts the server
+git clone https://github.com/ydv-amit-ydv/openprism.git
+cd openprism
+python3 start.py --new --new --new --newserveruserdata ~/openprism-data
 ```
-
-Needs only git and Python 3.10+. `python3 start.py --port 8443` uses another port (the epitope engine above also uses 5000).
-Server commands (stop the server first): `--reset --reset --reset` (fresh start),
-`--reset --reset --reset --loadolddata BACKUP` (start with an old backup),
-`--selfpurge --selfpurge --selfpurge --output DIR` (back up, then remove the installation) — see the OpenPrism README.
-Full instructions: [`Prism_Open_source/README.md`](Prism_Open_source/README.md).
-This folder is a release copy; development happens in a separate working repository.
