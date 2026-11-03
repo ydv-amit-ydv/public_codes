@@ -93,8 +93,9 @@ ANALYSES = {
 
 def catalog():
     from ..guide import CHOOSER, G
+    from ..plain import plain
     return {
-        "analyses": [{"key": k, "label": v[1], "category": v[2], "tableTypes": v[3], "guide": G.get(k)} for k, v in ANALYSES.items()],
+        "analyses": [{"key": k, "label": v[1], "category": v[2], "tableTypes": v[3], "guide": G.get(k), "plain": plain(k)} for k, v in ANALYSES.items()],
         "models": model_list(),
         "chooser": CHOOSER,
     }

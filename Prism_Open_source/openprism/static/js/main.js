@@ -10,6 +10,8 @@ import { commandPalette, testChooser } from './chooser.js';
 import { ensureShareKeys, inboxDialog, sentDialog, shareDialog } from './sharing.js';
 import { compile, recompute } from './formulas.js';
 import { accountDialog, authScreen, signOut, unlockScreen } from './account.js';
+import { TABLE_PLAIN, exampleTable, recommend } from './learn.js';
+import { exampleList, loadExample, startTour, tourDone } from './tour.js';
 import { decryptWithKey, encryptWithKey } from './crypto.js';
 import {
   checkQuota, downloadEncrypted, downloadPlain, flushSave, initPersist, openFile, openServerProject, projectBrowser,
@@ -142,23 +144,24 @@ function showNotes() {
 
 function showWelcome() {
   const { body } = head('Welcome to OpenPrism', '', 'getting-started');
-  const step = (n, title, text, action) => h('div', { class: 'type-card', style: { cursor: action ? 'pointer' : 'default' }, onclick: action },
-    h('b', {}, `${n}. ${title}`), h('small', {}, text));
-  body.append(h('div', { class: 'results' },
-    h('p', {}, 'OpenPrism is an open source workbench for scientific graphing, curve fitting and biostatistics. Your project is empty — create a data table and enter or paste your own data to begin.'),
-    h('div', { style: { display: 'flex', gap: '8px', margin: '12px 0 22px', flexWrap: 'wrap' } },
-      h('button', { class: 'btn primary', onclick: newTableDialog }, '+ New data table'),
-      h('button', { class: 'btn', onclick: importDialog }, 'Import CSV / Excel…'),
+  const big = (icon, title, text, action, cls = '') => h('button', { class: `start-card ${cls}`, onclick: action },
+    h('span', { class: 'sc-icon' }, icon), h('b', {}, title), h('small', {}, text));
+  const exList = h('div', { class: 'ex-grid' }, exampleList().map((x) => h('button', { class: 'type-card', onclick: () => loadExample(x.key).catch((e) => toast(e.message, 'err')) },
+    h('b', {}, x.title), h('small', {}, x.sub))));
+  body.append(h('div', { class: 'results welcome' },
+    h('p', { class: 'lead' }, 'Graphs and statistics for scientists — no statistics degree needed. How would you like to start?'),
+    h('div', { class: 'start-grid' },
+      big('📂', 'I have a file', 'CSV or Excel — OpenPrism recognises how your data are arranged and suggests the right table. You can also drag the file onto this window.', importDialog, 'primary'),
+      big('✍️', 'Type or paste data', 'Pick the picture that looks like your data (groups, X–Y, counts, survival…) and type or paste from Excel.', newTableDialog),
+      big('🎓', 'Show me how (1-minute tour)', 'A guided tour on a small example: data → analysis → graph → figure.', () => startTour())),
+    h('h3', {}, 'Or explore an example'),
+    h('p', { class: 'hint' }, 'Each example adds a small data table with its analysis and graph to your project — open them, change values and watch everything update.'),
+    exList,
+    h('div', { style: { display: 'flex', gap: '8px', margin: '22px 0 0', flexWrap: 'wrap' } },
       h('button', { class: 'btn', onclick: projectBrowser }, 'My projects…'),
-      h('button', { class: 'btn', onclick: () => document.getElementById('file-open').click() }, 'Open file…'),
+      h('button', { class: 'btn', onclick: () => document.getElementById('file-open').click() }, 'Open project file…'),
       h('button', { class: 'btn', onclick: () => openManual() }, '📖 User manual')),
-    h('h3', {}, 'How it works'),
-    h('div', { class: 'ex-list' },
-      step(1, 'Choose a table type', 'XY, Column, Grouped, Contingency, Survival, Parts of whole or Multiple variables — it decides which analyses and graphs fit your data.', newTableDialog),
-      step(2, 'Enter your data', 'Type, paste from Excel, or import a CSV/Excel file. Use replicate subcolumns for repeated measurements.'),
-      step(3, 'Analyze', 'Click ∑ Analyze to run t tests, ANOVA, curve fits, survival, regression… Results update when the data change.'),
-      step(4, 'Graph & publish', 'Each table gets a graph; format it, add significance brackets, then combine graphs on a layout page and export at 300+ dpi.')),
-    h('p', { class: 'hint', style: { marginTop: '16px' } }, 'Tip: every “?” button in OpenPrism opens help for that spot; the full manual is under Help → User manual.')));
+    h('p', { class: 'hint', style: { marginTop: '16px' } }, 'Tip: every “?” button opens help for that spot. Replay the tour any time from Help → Guided tour or My account.')));
 }
 
 // --------------------------------------------------------------- navigator ---
@@ -262,8 +265,13 @@ function newTableDialog() {
   const drawCards = () => {
     cards.innerHTML = '';
     for (const [k, v] of Object.entries(TABLE_TYPES)) {
+      const pl = TABLE_PLAIN[k];
       cards.append(h('button', { class: `type-card ${k === type ? 'on' : ''}`, onclick: () => { type = k; drawCards(); drawOpts(); } },
-        h('b', { class: 'with-help' }, `${v.icon}  ${v.label}`, helpIcon(`table-${k}`)), h('small', {}, v.desc)));
+        h('b', { class: 'with-help' }, `${v.icon}  ${pl ? pl.title : v.label}`, helpIcon(`table-${k}`)),
+        pl ? h('span', { class: 'tc-sub' }, `${v.label} table`) : null,
+        h('small', {}, pl ? pl.say : v.desc),
+        pl ? exampleTable(pl.ex) : null,
+        pl ? h('small', { class: 'tc-use' }, `→ ${pl.use}`) : null));
     }
   };
   const drawOpts = () => {
@@ -285,7 +293,7 @@ function newTableDialog() {
   };
   drawCards(); drawOpts();
   modal({
-    title: 'New data table', wide: true, body: h('div', {}, h('div', { class: 'hint with-help' }, 'Which kind of data do you have?', helpIcon('table-types')), cards, opts),
+    title: 'New data table', wide: true, body: h('div', {}, h('div', { class: 'hint with-help' }, 'Which picture looks most like your data? (Have a file? Use Import instead — OpenPrism recognises the layout for you.)', helpIcon('table-types')), cards, opts),
     buttons: [{ label: 'Cancel' }, { label: 'Create', primary: true, onClick: async () => {
       const t = createTable(type, { reps, datasets: type === 'parts' ? 1 : type === 'contingency' ? Math.max(2, nds) : nds });
       if (type === 'contingency') t.datasets = Array.from({ length: Math.max(2, nds) }, (_, i) => ({ name: `Outcome ${i + 1}`, reps: 1 }));
@@ -417,7 +425,6 @@ document.getElementById('file-open').addEventListener('change', async (e) => {
   if (f) await openFile(f);
 });
 
-let importType = 'column';
 /** Add or edit a calculated column: a formula of other data sets (by letter), with a live preview. */
 function formulaDialog(t, index = null) {
   const ds = index != null ? t.datasets[index] : null;
@@ -487,36 +494,108 @@ async function exportPzfx() {
   } catch (e) { toast(`Export failed: ${e.message}`, 'err'); }
 }
 
-function importDialog() {
-  let type = currentTable()?.type || 'column';
-  modal({ title: 'Import data from CSV / Excel / GraphPad Prism', body: h('div', {},
-    h('p', { class: 'hint' }, 'GraphPad Prism files (.pzfx, XML) are imported with all their data tables, replicates, row titles and excluded values; the table type below is then ignored.'),
-    h('div', { class: 'field' }, h('label', {}, 'Create table of type'), h('select', { onchange: (e) => { type = e.target.value; } },
-      Object.entries(TABLE_TYPES).map(([k, v]) => h('option', { value: k, selected: k === type }, v.label)))),
-    h('div', { class: 'hint' }, 'Column and Multiple-variables tables: one column per group or variable. XY / survival: first column is X. Grouped / contingency / parts: first column holds row titles. The first row should contain column titles.')),
-  buttons: [{ label: 'Cancel' }, { label: 'Choose file…', primary: true, onClick: () => { importType = type; document.getElementById('file-import').click(); } }] });
+function importDialog() { document.getElementById('file-import').click(); }
+
+function previewTable(p) {
+  const head = [];
+  const hasX = TABLE_TYPES[p.type]?.hasX; const hasRL = TABLE_TYPES[p.type]?.rowLabels;
+  if (hasRL) head.push('');
+  if (hasX) head.push(p.xTitle || 'X');
+  for (const d of p.datasets) for (let k = 0; k < (d.reps || 1); k++) head.push(k ? '' : d.name);
+  const rows = p.cells.map((r, i) => [...(hasRL ? [p.rowLabels[i]] : []), ...(hasX ? [p.x[i]] : []), ...r]);
+  const MAXC = 8;
+  const cut = (r) => (r.length > MAXC ? [...r.slice(0, MAXC), '…'] : r);
+  return h('div', { class: 'imp-prev' }, h('table', { class: 'mini-ex' }, h('tbody', {}, h('tr', {}, cut(head).map((c) => h('th', {}, c))),
+    rows.map((r) => h('tr', {}, cut(r).map((c) => h('td', {}, c ?? '')))))));
 }
+
+async function finishImport(file, list, warnings = []) {
+  let first = null;
+  for (const raw of list) {
+    const t = normalizeTable({ ...raw, id: uid('t'), excluded: raw.excluded || {}, rev: 1 });
+    t.name = uniqueName(P().tables, t.name);
+    P().tables.push(t);
+    P().graphs.push(createGraph(t));
+    first ||= t;
+  }
+  commit('Import');
+  open('table', first.id);
+  const next = recommend(first)[0];
+  const meta = next && CATALOG.analyses?.find((a) => a.key === next.key);
+  toast(`Imported “${file.name}” as a ${TABLE_TYPES[first.type].label} table.${meta ? ` Next step: ∑ Analyze → ${meta.label.replace(/\s*\(.*\)\s*$/, '')}, or open its graph on the left.` : ''}`, '', meta ? { label: 'Analyze', onClick: () => doAnalyze(first) } : null);
+  for (const w of warnings) toast(w);
+}
+
+async function smartImport(f) {
+  const ask = new FormData();
+  ask.append('file', f); ask.append('inspect', '1');
+  const info = await api('/api/import', ask, undefined, 'Read file');
+  if (!info.options?.length) {
+    modal({ title: `Cannot import “${f.name}” yet`, body: h('div', {}, (info.notices?.length ? info.notices : ['No numbers were found in this file.']).map((n) => h('div', { class: 'warnbox' }, n))),
+      buttons: [{ label: 'OK', primary: true }] });
+    return;
+  }
+  let chosen = 0;
+  const list = h('div', { class: 'imp-opts' });
+  const draw = () => {
+    list.innerHTML = '';
+    info.options.forEach((o, i) => {
+      const pl = TABLE_PLAIN[o.type];
+      list.append(h('div', { class: `imp-opt ${i === chosen ? 'on' : ''}`, onclick: () => { chosen = i; draw(); } },
+        h('div', { class: 'imp-head' }, h('input', { type: 'radio', checked: i === chosen }), h('b', {}, o.title),
+          i === 0 ? h('span', { class: 'imp-badge' }, 'Recommended') : null, h('span', { class: 'tc-sub' }, `${TABLE_TYPES[o.type].label} table`)),
+        h('div', { class: 'imp-why' }, 'Why: ', o.why, '.'),
+        i === chosen ? [previewTable(o.preview), pl ? h('div', { class: 'tc-use' }, `→ ${pl.use}`) : null,
+          (o.warnings || []).map((w) => h('div', { class: 'hint' }, `ℹ ${w}`))] : null));
+    });
+  };
+  draw();
+  modal({ title: `Import “${f.name}”`, wide: true,
+    body: h('div', {},
+      h('p', { class: 'hint' }, `OpenPrism read ${info.rows} row(s) with the columns ${info.columns.slice(0, 8).map((c) => `“${c}”`).join(', ')}${info.columns.length > 8 ? '…' : ''}. `
+        + 'Here is how it suggests arranging them — pick another option if it does not look right.'),
+      (info.notices || []).map((n) => h('div', { class: 'warnbox' }, n)), list),
+    buttons: [{ label: 'Cancel' }, { label: 'Import', primary: true, onClick: async () => {
+      const o = info.options[chosen];
+      const fd = new FormData();
+      fd.append('file', f); fd.append('option', JSON.stringify({ type: o.type, layout: o.layout, mapping: o.mapping }));
+      try {
+        const t = await api('/api/import', fd, undefined, 'Import file');
+        await finishImport(f, [t], t.warnings || []);
+        return true;
+      } catch (e) { toast(e.message, 'err'); return false; }
+    } }] });
+}
+
+// drop a CSV / Excel / Prism file anywhere on the window to import it
+document.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); document.body.classList.add('drop-hint'); } });
+document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('drop-hint'); });
+document.addEventListener('drop', async (e) => {
+  document.body.classList.remove('drop-hint');
+  const f = e.dataTransfer?.files?.[0];
+  if (!f || !state.username) return;
+  e.preventDefault();
+  if (!/\.(csv|tsv|txt|xlsx|xls|pzfx)$/i.test(f.name)) { toast('Drop a CSV, Excel or GraphPad Prism (.pzfx) file to import it.', 'err'); return; }
+  try {
+    if (/\.pzfx$/i.test(f.name)) {
+      const fd = new FormData(); fd.append('file', f); fd.append('type', 'column'); fd.append('header', '1');
+      const res = await api('/api/import', fd);
+      await finishImport(f, res.tables || [res], res.warnings || []);
+    } else await smartImport(f);
+  } catch (err) { toast(err.message, 'err'); }
+});
+
 document.getElementById('file-import').addEventListener('change', async (e) => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
-  const fd = new FormData();
-  fd.append('file', f); fd.append('type', importType); fd.append('header', '1');
   try {
-    const res = await api('/api/import', fd);
-    const list = res.tables || [res];   // a Prism .pzfx file holds several tables
-    let first = null;
-    for (const raw of list) {
-      const t = normalizeTable({ ...raw, id: uid('t'), excluded: raw.excluded || {}, rev: 1 });
-      t.name = uniqueName(P().tables, t.name);
-      P().tables.push(t);
-      P().graphs.push(createGraph(t));
-      first ||= t;
-    }
-    commit('Import');
-    open('table', first.id);
-    toast(`Imported ${list.length > 1 ? `${list.length} tables from ` : ''}${f.name}`);
-    for (const w of res.warnings || []) toast(w);
+    if (/\.pzfx$/i.test(f.name)) {
+      const fd = new FormData();
+      fd.append('file', f); fd.append('type', 'column'); fd.append('header', '1');
+      const res = await api('/api/import', fd);
+      await finishImport(f, res.tables || [res], res.warnings || []);
+    } else await smartImport(f);
   } catch (err) { toast(err.message, 'err'); }
 });
 
@@ -554,7 +633,7 @@ const MENUS = () => [
   ['Tools', [['Sample size & power calculator…', () => powerDialog()]]],
   ['Account', [['My account & password…', () => accountDialog({ onBeforeSignOut: flushSave })], ['My projects & storage…', projectBrowser],
     '-', ['Sign out', async () => { await flushSave(); signOut(false); }]]],
-  ['Help', [['User manual', () => openManual(), 'F1'], ['Getting started', () => openManual('getting-started')], ['Choosing a statistical test', () => openManual('choosing-a-test')],
+  ['Help', [['🎓 Guided tour (1 minute)', () => startTour()], ['Load example data', () => open(null)], '-', ['User manual', () => openManual(), 'F1'], ['Getting started', () => openManual('getting-started')], ['Choosing a statistical test', () => openManual('choosing-a-test')],
     ['Statistics glossary', () => openManual('glossary')], ['Which test should I use? (guided)…', () => testChooser(currentTable(), (k) => doAnalyze(currentTable(), k))],
     ['Validation report (accuracy vs NIST and R)', () => window.open('/static/help/validation.html', '_blank', 'noopener')], '-', ['Keyboard shortcuts', shortcutsHelp], ['About OpenPrism', about]]],
 ];
@@ -757,7 +836,7 @@ function shortcutsHelp() {
 }
 function about() {
   modal({ title: 'About OpenPrism', body: h('div', {},
-    h('p', {}, h('b', {}, 'OpenPrism 1.0'), ' — an open source scientific graphing and statistics workbench (MIT license).'),
+    h('p', {}, h('b', {}, 'OpenPrism 1.1'), ' — an open source scientific graphing and statistics workbench (MIT license).'),
     h('p', {}, 'Statistics are computed on the server with SciPy, NumPy, pandas and statsmodels; graphs are drawn with Plotly.js.'),
     h('p', {}, 'Accuracy is validated against NIST certified values, R and Monte-Carlo calibration: ', h('a', { href: '/static/help/validation.html', target: '_blank', rel: 'noopener' }, 'validation report'), '.'),
     h('p', { class: 'hint' }, 'OpenPrism is an independent project and is not affiliated with or endorsed by GraphPad Software. Always verify important results.')),
@@ -834,6 +913,7 @@ setAuthLostHandler(() => {
   await signedIn(me.username);
   state.localEncrypt = (v) => encryptWithKey(v, state.dataKey);
   try { await loadCatalog(); } catch (e) { toast(`Could not load the analysis catalog: ${e.message}`, 'err'); }
+  setTimeout(() => { if (!tourDone() && !P().tables.length && !state.current?.kind) startTour(); }, 1200);
   initPersist({ setProject, refresh: () => { drawNav(); drawMenus(); }, newProject: newProjectAction });
   on('encryption-changed', () => { drawLock(); drawMenus(); drawRibbon(); });
   drawMenus();

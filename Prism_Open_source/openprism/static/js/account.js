@@ -274,6 +274,8 @@ export function accountDialog({ onBeforeSignOut } = {}) {
     body: h('div', {},
       h('p', { class: 'hint' }, '🔒 Your projects are end-to-end encrypted: they are encrypted in this browser before they reach the server.'),
       sec('Preferences', h('div', { class: 'field check' }, h('label', {}, auto, 'Auto-save projects to the server (a few seconds after each change)'))),
+      sec('Learning', h('p', { class: 'hint' }, 'A one-minute guided tour of the main steps, on a small example.'),
+        h('button', { class: 'btn', onclick: () => { document.querySelector('.modal-bg .modal-head .x')?.click(); import('./tour.js').then((m) => m.startTour()); } }, '🎓 Replay the guided tour')),
       state.myFingerprint ? sec('Sharing key', h('p', { class: 'hint' }, 'Colleagues who share projects with you see this fingerprint. Read it to them when they ask, so they can check that their copy is encrypted for you and nobody else.'),
         h('code', { class: 'fp' }, state.myFingerprint)) : null,
       sec('Change password',

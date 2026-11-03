@@ -1,6 +1,7 @@
 // Analysis dialogs (parameter forms), running analyses and rendering results.
 import { P, TABLE_TYPES, commit, emit, getTable, normalizeTable, tableForServer, uid, uniqueName } from './state.js';
 import { HELP, helpIcon } from './help.js';
+import { recommend } from './learn.js';
 import { api, download, h, modal, toast } from './ui.js';
 
 export let CATALOG = { analyses: [], models: [] };
@@ -262,19 +263,46 @@ export function analyzeDialog(table, preset, existing) {
     const left = h('div', { class: 'pick-list' });
     const right = h('div');
     const cats = [...new Set(avail.map((a) => a.category))];
+    const pref = (k, d) => { try { const v = localStorage.getItem(`openprism.pref.${k}`); return v === null ? d : v === '1'; } catch (_) { return d; } };
+    const setPref = (k, v) => { try { localStorage.setItem(`openprism.pref.${k}`, v ? '1' : '0'); } catch (_) { /* ignore */ } };
+    let showAdvanced = pref('showAdvanced', false);
+    let showOther = false;
+    const recs = existing ? [] : recommend(table).filter((r) => avail.some((a) => a.key === r.key && a.tableTypes.includes(table.type)));
+    const pick = (k) => { key = k; params = { ...defaults(key) }; params.datasets = pickDefault(); drawList(); drawForm(); };
+    if (!preset && !existing && recs.length) { key = recs[0].key; params = { ...defaults(key) }; params.datasets = pickDefault(); }
     function drawList() {
       left.innerHTML = '';
+      if (recs.length) {
+        left.append(h('div', { class: 'cat rec' }, '⭐ Recommended for your data'));
+        for (const r of recs) {
+          const a = avail.find((x) => x.key === r.key);
+          left.append(h('button', { class: `rec-item ${a.key === key ? 'on' : ''}`, title: a.plain?.question || '', onclick: () => pick(a.key) },
+            h('span', {}, a.label.replace(/\s*\(.*\)\s*$/, '')), h('small', {}, r.why)));
+        }
+      }
+      left.append(h('div', { class: 'pick-toggles' },
+        h('label', {}, h('input', { type: 'checkbox', checked: showAdvanced, onchange: (e) => { showAdvanced = e.target.checked; setPref('showAdvanced', showAdvanced); drawList(); } }), 'Show advanced analyses'),
+        h('label', {}, h('input', { type: 'checkbox', checked: showOther, onchange: (e) => { showOther = e.target.checked; drawList(); } }), 'Show analyses for other table types')));
+      let hidden = 0;
       for (const c of cats) {
+        const items = avail.filter((x) => x.category === c).filter((a) => {
+          const ok = a.tableTypes.includes(table.type);
+          const show = a.key === key || ((ok || showOther) && (showAdvanced || a.plain?.level !== 'advanced'));
+          if (!show && ok) hidden++;
+          return show;
+        });
+        if (!items.length) continue;
         left.append(h('div', { class: 'cat' }, c));
-        for (const a of avail.filter((x) => x.category === c)) {
+        for (const a of items) {
           const ok = a.tableTypes.includes(table.type);
           left.append(h('button', {
             class: a.key === key ? 'on' : '', disabled: !ok || (existing && a.key !== existing.key),
-            title: ok ? '' : `Not available for ${TABLE_TYPES[table.type].label} tables`,
-            onclick: () => { key = a.key; params = { ...defaults(key) }; params.datasets = pickDefault(); drawList(); drawForm(); },
+            title: ok ? (a.plain?.question || '') : `Needs a ${TABLE_TYPES[a.tableTypes[0]]?.label || ''} table — not available for ${TABLE_TYPES[table.type].label} tables`,
+            onclick: () => pick(a.key),
           }, a.label));
         }
       }
+      if (hidden && !showAdvanced) left.append(h('div', { class: 'hint pick-more' }, `${hidden} more advanced analyses fit this table — tick “Show advanced analyses”.`));
     }
     function drawForm() {
       right.innerHTML = '';
@@ -282,10 +310,13 @@ export function analyzeDialog(table, preset, existing) {
       if (!a) return;
       right.append(h('h3', { style: { marginTop: 0, fontSize: '14px', display: 'flex', alignItems: 'center' } }, a.label, HELP[key] ? helpIcon(key) : null));
       right.append(h('div', { class: 'hint' }, `Analyze data table “${table.name}” (${TABLE_TYPES[table.type].label}).`));
+      right.append(plainBox(a, table, params));
       if (a.guide) right.append(aboutPanel(a));
       const dsBox = h('div', { class: 'ds-checks' }, table.datasets.map((d, i) => h('label', {},
         h('input', { type: 'checkbox', checked: params.datasets.includes(i), onchange: (e) => {
           params.datasets = e.target.checked ? [...new Set([...params.datasets, i])].sort((x, y) => x - y) : params.datasets.filter((x) => x !== i);
+          const pb = right.querySelector('.plain-box');
+          if (pb) pb.replaceWith(plainBox(a, table, params));
         } }), `${String.fromCharCode(65 + (i % 26))}: ${d.name}`)));
       if (!['multiple_regression', 'logistic', 'cox', 'fine_gray', 'factorial', 'poisson', 'glm', 'ordinal', 'regression_diagnostics', 'manova', 'mixed_model', 'summary_describe', 'summary_ttest', 'summary_anova'].includes(key)) right.append(h('div', { class: 'field' }, h('label', {}, table.type === 'multi' ? 'Variables to analyze' : 'Data sets to analyze'), dsBox));
       for (const f of FORMS[key] || []) {
@@ -366,6 +397,23 @@ export function analyzeDialog(table, preset, existing) {
       onClose: () => { if (!done) resolve(null); },
     });
   });
+}
+
+/** "In plain words": the question the analysis answers, an example, and whether it suits this table. */
+export function plainBox(a, table, params) {
+  const p = a.plain;
+  const notes = [];
+  if (!a.tableTypes.includes(table.type)) notes.push(['bad', `This analysis needs a ${a.tableTypes.map((t) => TABLE_TYPES[t]?.label).join(' or ')} table; yours is a ${TABLE_TYPES[table.type].label} table.`]);
+  const nsel = (params.datasets || []).length;
+  if (['ttest', 'permutation', 'bayes_t', 'equivalence', 'bland_altman', 'roc'].includes(a.key) && nsel !== 2) notes.push(['bad', `Tick exactly two data sets below (now ${nsel}).`]);
+  if (a.key === 'one_way' && nsel === 2) notes.push(['tip', 'With only two groups a t test gives the same answer and is simpler to report.']);
+  if (a.key === 'ttest' && table.datasets.length > 2) notes.push(['tip', 'You have more than two groups: one-way ANOVA compares them all at once (testing pairs one by one inflates false positives).']);
+  if (!notes.length && a.tableTypes.includes(table.type)) notes.push(['ok', 'Suitable for this table.']);
+  return h('div', { class: 'plain-box' },
+    p ? h('div', { class: 'plain-q' }, h('span', { class: 'plain-tag' }, 'In plain words'), p.question) : null,
+    p ? h('div', { class: 'plain-ex' }, h('b', {}, 'Example: '), p.example) : null,
+    p?.level === 'advanced' ? h('div', { class: 'plain-lvl' }, 'Advanced / specialist method') : null,
+    notes.map(([k, t]) => h('div', { class: `plain-note ${k}` }, { ok: '✓ ', bad: '⚠ ', tip: '💡 ' }[k], t)));
 }
 
 /** "About this analysis": what it does, when to use it, data layout and assumptions. */

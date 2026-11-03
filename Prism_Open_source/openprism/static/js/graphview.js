@@ -4,6 +4,7 @@ import { ERROR_TYPES, GRAPH_KINDS, PALETTES, PLOT_CONFIG, PRESETS, SYMBOLS, figu
 import { P, commit, defaultStyle, getTable } from './state.js';
 import { exportGraphWith, exportDialog as openExportDialog } from './exporter.js';
 import { helpIcon } from './help.js';
+import { GRAPH_PLAIN } from './learn.js';
 import { checkbox, debounce, download, field, h, modal, prompt, select, toast } from './ui.js';
 
 let currentPlot = null;
@@ -84,9 +85,10 @@ function renderInspector(root, g, redraw) {
   // graph type
   const kinds = GRAPH_KINDS[t.type] || [];
   root.append(sec('Graph type', h('div', { class: 'kind-grid' }, kinds.map(([k, label]) => h('button', {
-    class: g.kind === k ? 'on' : '', title: label,
+    class: g.kind === k ? 'on' : '', title: `${label} — ${GRAPH_PLAIN[k] || ''}`,
     onclick: () => { g.kind = k; commit('Graph type'); redraw(); renderInspector(root, g, redraw); },
-  }, kindIcon(k), label)))));
+  }, kindIcon(k), label))), GRAPH_PLAIN[g.kind] ? h('div', { class: 'plain-graph' }, h('b', {}, 'This graph: '), GRAPH_PLAIN[g.kind]) : null,
+  h('div', { class: 'plain-graph hint' }, '💡 To add P values, stars or a fitted curve, run ∑ Analyze on the data table — results appear on this graph automatically.')));
 
   // quick style presets and format tools
   root.append(sec('Quick style',

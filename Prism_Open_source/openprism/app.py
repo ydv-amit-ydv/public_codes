@@ -16,6 +16,7 @@ for every computation.
 from __future__ import annotations
 
 import functools
+import json
 import io
 import ipaddress
 import os
@@ -105,6 +106,43 @@ def parse_upload(raw: bytes, filename: str, ttype: str, has_header: bool) -> dic
         return make_table(name, ttype, [{"name": c, "reps": 1} for c in cols[1:]], [r[1:] for r in values],
                           row_labels=[str(r[0])[:200] if r[0] is not None else "" for r in values])
     return make_table(name, "column", [{"name": c, "reps": 1} for c in cols], values)
+
+
+def inspect_upload(raw: bytes, filename: str) -> dict:
+    """Recognise the layout of a CSV/Excel file and propose table types (runs inside the sandbox)."""
+    from .detect import inspect
+    if filename.lower().endswith(".pzfx"):
+        return {"pzfx": True, "options": []}
+    try:
+        return inspect(raw, filename)
+    except ValueError as e:
+        raise AnalysisError(str(e)) from None
+    except Exception:  # noqa: BLE001
+        raise AnalysisError("Could not read the file. Is it a valid CSV or Excel file?") from None
+
+
+def build_upload(raw: bytes, filename: str, option: dict) -> dict:
+    """Create the data table for the import option the user chose."""
+    from .detect import build, read_frame
+    try:
+        df = read_frame(raw, filename)
+    except Exception:  # noqa: BLE001
+        raise AnalysisError("Could not read the file. Is it a valid CSV or Excel file?") from None
+    if df.shape[1] > MAX_DATASETS or df.size > MAX_TABLE_CELLS:
+        raise AnalysisError("The file has too many columns or cells.")
+    mapping = option.get("mapping") or {}
+    if not isinstance(mapping, dict) or any(v is not None and v not in df.columns for v in mapping.values()):
+        raise AnalysisError("The chosen columns are not in this file.")
+    if option.get("type") not in ("xy", "column", "grouped", "contingency", "survival", "parts", "multi", "summary"):
+        raise AnalysisError("Unknown table type.")
+    if option.get("layout") not in ("wide", "long", "bygroup", "summary"):
+        raise AnalysisError("Unknown layout.")
+    name = Path(filename).stem[:100] or "Imported"
+    try:
+        table, warnings = build(df, name, {"type": option["type"], "layout": option["layout"], "mapping": mapping})
+    except (KeyError, ValueError, IndexError):
+        raise AnalysisError("These data cannot be arranged this way; choose another option.") from None
+    return {**table, "warnings": warnings}
 
 
 def _env_flag(name, default):
@@ -576,6 +614,19 @@ def create_app(data_dir: str | os.PathLike | None = None, secure_cookies: bool |
         f = request.files.get("file")
         if f is None:
             return jsonify({"error": "No file uploaded"}), 400
+        if request.form.get("inspect") == "1" or request.form.get("option"):
+            raw = f.read(30 * 1024 * 1024 + 1)
+            if len(raw) > 30 * 1024 * 1024:
+                return jsonify({"error": "File is too large (max 30 MB)."}), 413
+            if request.form.get("inspect") == "1":
+                return jsonify(compute(inspect_upload, raw, f.filename or "Imported"))
+            try:
+                option = json.loads(request.form.get("option") or "{}")
+            except ValueError:
+                raise AnalysisError("Invalid import option.") from None
+            if not isinstance(option, dict):
+                raise AnalysisError("Invalid import option.")
+            return jsonify(compute(build_upload, raw, f.filename or "Imported", option))
         ttype = request.form.get("type", "column")
         if ttype not in ("xy", "column", "grouped", "contingency", "survival", "parts", "multi", "nested", "summary"):
             ttype = "column"

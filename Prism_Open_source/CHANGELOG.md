@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0 — made for newcomers
+
+* **Smart import**: Import (or drag a CSV/Excel file onto the window) recognises how the data are arranged and proposes the
+  right table, explaining why in plain words with a preview; alternatives are one click away. Long-format files (a group
+  column and a value column) are rearranged automatically into Column, Grouped, Contingency or Survival tables; mean/SD/n
+  columns become summary data; decimal-comma files get a clear explanation instead of an empty table.
+* **Recommended analyses** for the data at the top of the Analyze dialog; only the analyses that fit the table are listed
+  (advanced methods behind a switch); an **In plain words** box for all 75 analyses (the question it answers, an example,
+  and whether it suits the data, e.g. "tick exactly two data sets").
+* **Graph types explained** in one sentence each; tip on adding P values and curve fits.
+* **New data table** shows each table type as a picture of example data with an everyday name.
+* **Start page** with three clear starting points (I have a file / type or paste / tour) and four ready-made examples.
+* **Guided tour** (one minute, on an example that can be removed afterwards): offered automatically to new accounts,
+  replayable from Help or My account.
+
 ## 1.0.0
 
 First stable release.

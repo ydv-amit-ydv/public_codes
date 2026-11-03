@@ -92,6 +92,28 @@ logged, never data.</p>
 to agree with the server to 15 digits. Statistical tests run on the server, which loads all statistical libraries once at start-up so each calculation
 starts immediately (typically 5–30 ms). Large data tables (thousands of rows) only render the visible rows, so scrolling and editing stay fast.</p>
 </section>
+<section id="newcomers"><h2>New to statistics? Start here</h2>
+<p><b>Guided tour.</b> New accounts are offered a one-minute tour that walks through the four steps — data, analysis, graph, figure —
+on a small example (you can keep or remove the example at the end). Replay it any time from <i>Help → Guided tour</i> or
+<i>My account → Replay the guided tour</i>. Arrow keys move between steps, Esc ends the tour.</p>
+<p><b>Examples.</b> The start page offers ready-made examples (three treatment groups, a dose-response curve, survival of two groups,
+a two-factor experiment), each with its analysis and graph, so you can change values and watch everything update.</p>
+<p><b>Smart import.</b> <i>Import</i> (or dragging a CSV/Excel file onto the window) looks at your columns and proposes how to arrange
+them, explaining why in plain words and showing a preview — for example “<i>“Treatment” contains group names and “Weight” the measured
+values; each group becomes one column</i>”. Files in <i>long format</i> (one row per measurement with a group column and a value column, the
+usual export of Excel, REDCap or lab instruments) are rearranged automatically: one grouping column → groups side by side (Column table),
+two grouping columns → rows × columns (Grouped table), two category columns → counts (Contingency table), a time column with a 0/1
+event column → Survival table, columns named mean / SD / n → Summary data. Pick another option if the suggestion does not fit.
+Numbers written with a decimal comma (1,5) are not reinterpreted: the import explains how to fix the file.</p>
+<p><b>Recommended analyses.</b> The Analyze dialog starts with the analyses recommended for your data (e.g. three groups → one-way
+ANOVA) and shows only the analyses that fit the table; specialist methods appear when you tick <i>Show advanced analyses</i>.
+Every analysis has an <i>In plain words</i> box — the question it answers, an everyday example, and a check of whether it suits your
+data (for instance “tick exactly two data sets” for a t test). The full description is under <i>About this analysis</i>.</p>
+<p><b>Graph types explained.</b> Under <i>Graph type</i> each graph is described in one sentence (what it shows and when to use it).</p>
+<p><b>Table types as pictures.</b> <i>New data table</i> shows each table type as a small example of what the data look like, with
+everyday names: groups side by side (Column), X and Y values (XY), two ways of grouping (Grouped), counts in categories (Contingency),
+time until an event (Survival), several variables per subject (Multiple variables)…</p>
+</section>
 <section id="interop"><h2>Exchanging data with GraphPad Prism</h2>
 <p><i>File → Import CSV / Excel / GraphPad Prism</i> reads Prism XML project files (<code>.pzfx</code>; in Prism use <i>File → Save As</i> and choose
 the .pzfx format). All data tables are imported with their type, replicate subcolumns, row titles, X values and excluded values; tables entered as
@@ -188,7 +210,7 @@ def main():
     toc = "\n    ".join(['<li class="h">Working faster &amp; reproducibly</li>', '<li><a href="#screen">Full screen &amp; focus mode</a></li>',
                          '<li><a href="#number-format">Number format (strict)</a></li>', '<li><a href="#formulas">Calculated columns</a></li>',
                          '<li><a href="#sharing">Sharing projects with colleagues</a></li>', '<li><a href="#toolbar">Toolbar, menus &amp; keyboard</a></li>', '<li><a href="#activity">Calculation activity &amp; speed</a></li>',
-                         '<li><a href="#interop">Exchanging data with Prism (.pzfx)</a></li>', '<li><a href="#figures">Shapes, templates, EPS &amp; EMF</a></li>',
+                         '<li><a href="#newcomers">New to statistics? Start here</a></li>', '<li><a href="#interop">Exchanging data with Prism (.pzfx)</a></li>', '<li><a href="#figures">Shapes, templates, EPS &amp; EMF</a></li>',
                          '<li><a href="#palette">Command palette</a></li>', '<li><a href="#test-wizard">Which test should I use?</a></li>',
                          '<li><a href="#reproducibility">Reproducibility &amp; all digits</a></li>', '<li><a href="#validation">Validation of results</a></li>',
                          '<li><a href="#test-finder">Test finder (complete)</a></li>'] + ref_toc)
