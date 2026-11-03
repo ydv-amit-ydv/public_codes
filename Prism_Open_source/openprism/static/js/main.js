@@ -837,7 +837,7 @@ function shortcutsHelp() {
 }
 function about() {
   modal({ title: 'About OpenPrism', body: h('div', {},
-    h('p', {}, h('b', {}, 'OpenPrism 1.2'), ' — an open source scientific graphing and statistics workbench (MIT license).'),
+    h('p', {}, h('b', {}, 'OpenPrism 1.3'), ' — an open source scientific graphing and statistics workbench (MIT license).'),
     h('p', {}, 'Statistics are computed on the server with SciPy, NumPy, pandas and statsmodels; graphs are drawn with Plotly.js.'),
     h('p', {}, 'Accuracy is validated against NIST certified values, R and Monte-Carlo calibration: ', h('a', { href: '/static/help/validation.html', target: '_blank', rel: 'noopener' }, 'validation report'), '.'),
     h('p', { class: 'hint' }, 'OpenPrism is an independent project and is not affiliated with or endorsed by GraphPad Software. Always verify important results.')),

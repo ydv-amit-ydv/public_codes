@@ -246,8 +246,6 @@ def main():
     ap.add_argument("--cert")
     ap.add_argument("--key")
     ap.add_argument("--desktop", action="store_true")
-    # launcher flags (start.py); accepted here so an older start.py that passes them through still works
-    ap.add_argument("--preserve", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
 
     from openprism.app import create_admin_app, create_app
@@ -294,7 +292,19 @@ def main():
     if ssl_ctx and not (a.cert and a.key):
         print("\n  HTTPS uses a self-signed certificate: browsers will warn once; choose “Advanced → Proceed”.")
         print("  (Use --cert/--key for a real certificate.)")
+    py = "python" if os.name == "nt" else "python3"
+    print("\n  Server management (stop the server with Ctrl+C first):")
+    print(f"    {py} start.py --export --output FILE.zip     save all accounts and projects")
+    print(f"    {py} start.py --import --input FILE.zip      replace all data with an export (asks to confirm)")
+    print(f"    {py} start.py --reset --reset --reset        delete all data and start fresh")
+    print(f"    {py} start.py --selfpurge --export FILE.zip  export, then remove this installation")
     print("  Press Ctrl+C to stop.\n")
+    pidfile = ddir / "server.pid"
+    try:
+        import json as _json
+        pidfile.write_text(_json.dumps({"pid": os.getpid(), "port": a.port}))
+    except OSError:
+        pidfile = None
 
     if a.desktop:
         try:
@@ -315,6 +325,11 @@ def main():
     print("Stopping…")
     main_srv.shutdown()
     admin_srv.shutdown()
+    if pidfile:
+        try:
+            pidfile.unlink()
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":

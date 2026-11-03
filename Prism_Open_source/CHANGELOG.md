@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0 — simple server management
+
+* `start.py` is the single entry point: `--export --output FILE.zip`, `--import --input FILE.zip` (zip export, a bare
+  `openprism.db` or a folder; current data backed up first), `--reset --reset --reset` (three times = confirmation) and
+  `--selfpurge --export FILE.zip` (export, verify, then remove this installation). The git-based `--update` /
+  `--preserve` were removed.
+* Exports are consistent SQLite snapshots with a manifest (format, version, data schema), checked for integrity, and
+  readable only by the owner. `--import` shows what will be replaced and asks you to type `IMPORT`; it accepts only
+  exports this version can read (same or older data schema) and refuses newer or unknown formats without changing
+  anything. `--selfpurge` removes everything that belongs to the server, including a data folder kept elsewhere.
+* The server writes a marker while it runs; every management command refuses to run while the server is up (a stale
+  marker from a crash is detected and ignored).
+* The start-up banner lists the management commands under the IP addresses.
+
 ## 1.2.0
 
 * **Safe updates**: `python3 start.py --update --preserve` downloads the latest version and keeps every account and

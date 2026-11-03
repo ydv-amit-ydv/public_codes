@@ -39,22 +39,31 @@ installed system-wide). Later runs start at once. Other launcher commands:
 
 | Command | What it does |
 | --- | --- |
-| `python3 start.py` | start the server (installs/updates packages when needed) |
+| `python3 start.py` | start the server (installs the packages on the first run) |
 | `python3 start.py --port 8443` | any server option is passed through (`--cert/--key`, `--host`, `--data`, …) |
-| `python3 start.py --reset` | **delete all server data** (accounts, projects, certificate, logs) after typing `RESET`, then start fresh |
-| `python3 start.py --reset --yes --no-start` | the same without the question and without starting (scripts) |
-| `python3 start.py --update --preserve` | download the latest version (`git pull`) and **keep all accounts and projects**; a backup of the database is saved in `projects/backups/` first (the 10 newest are kept) |
-| `python3 start.py --update --reset` | download the latest version and **delete all accounts and projects** (asks you to type `RESET`) |
+| `python3 start.py --export --output FILE.zip` | save every account, project and share (and the HTTPS certificate) to one zip file |
+| `python3 start.py --import --input FILE.zip` | **replace all current data** with an export (also a bare `openprism.db` or a folder). Shows what will be replaced and asks you to type `IMPORT`; a safety copy of the current database goes to `projects/backups/`. Only exports this version can read are accepted — an export from a newer version or an unknown format is refused and nothing changes |
+| `python3 start.py --reset --reset --reset` | **delete all data** and start fresh — the flag three times is the confirmation |
+| `python3 start.py --selfpurge --export FILE.zip` | export everything, check the export, then **delete everything that belongs to this server**: the OpenPrism folder (code, `.venv`, data, certificate, logs, backups) and a data folder kept elsewhere (`--data` / `OPENPRISM_DATA`). Other projects in the same repository are not touched. Clone a new copy later and `--import` the file |
 
-`--update` always needs `--preserve` or `--reset`, so data are never kept or deleted by accident. Stop the server
-(Ctrl+C) before updating. Before a reset, tell users with an **announcement** (Admin console → Server settings →
-Announcement to all users): it appears on the sign-in screen and as a banner in the app, so they can download their
-projects first.
+Stop the server (Ctrl+C) before these commands; they refuse to run while it is running. The same list is printed
+under the IP addresses every time the server starts.
 
-**Installed from a ZIP download (no git)?** `--update` cannot download by itself; it explains the manual steps instead:
-stop the server, copy the new files over the old folder **but keep its `projects/` folder**, then start with
-`python3 start.py --preserve` (backs up and keeps all data) or `python3 start.py --reset` (starts with no data).
-A brand-new folder from a ZIP needs no flag: `python3 start.py`.
+**Moving to a new version** (any way of getting the code — `git clone`, `git pull` or a ZIP download):
+
+```bash
+python3 start.py --export --output ~/openprism-backup.zip
+```
+then get the new code (or `--selfpurge --export …` and clone again), and in the new folder:
+```bash
+python3 start.py --import --input ~/openprism-backup.zip
+```
+```bash
+python3 start.py
+```
+`git pull` alone never touches the data (they live in the git-ignored `projects/` folder), so after a pull a plain
+`python3 start.py` keeps everything. Before a reset, tell users with an **announcement** (Admin console → Server
+settings → Announcement to all users) so they can download their projects first.
 
 All server data live in `projects/` next to `start.py` (excluded from git), so a fresh clone always starts empty,
 and deleting that folder is the same as `--reset`. The manual route also works:
