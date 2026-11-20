@@ -157,6 +157,54 @@ compared with UniProt's reference proteome of the host (human by default; `host_
   candidates are checked. The index takes about 8 s to build and a few hundred MB of memory for human, built on first use.
 - This checks the sequence of the peptide, not whether the host protein is expressed in a relevant tissue.
 
+## The Comparison tab: judging a peptide against wet-lab results
+
+Every predictor here is calibrated against **random** peptides, not against real epitopes: a
+NetMHCpan %Rank of 0.4 means "in the top 0.4 % of random peptides for binding", which is not a
+probability that anything is immunogenic. The Comparison tab answers the question an absolute
+cut-off cannot.
+
+Give it peptides whose wet-lab outcome you know (the **panel**) and the peptides you want judged
+(the **queries**). Both are scored **in the same run**, with the same alleles and models, so
+nothing differs between them except the peptide. Each query then gets a **likelihood ratio**:
+how much more typical its score is of peptides that worked than of peptides that did not —
+*strong support* (>= 10x), *moderate* (3-10x), *inconclusive*, or *evidence against* (<= 1/3).
+
+**The panel needs both kinds of peptide.** Peptides that worked, alone, cannot give a
+confidence: known epitopes score high, but so does a great deal of junk, so a percentile among
+positives only ever flatters the query. With no negatives the tab reports *no baseline* rather
+than inventing a number. When exporting from IEDB, keep the **Negative** rows: peptides tested
+in the same assays that gave no response are the ideal comparison group.
+
+Panel format, one peptide per line, header optional:
+
+```
+MHC class, epitope, alleles (comma separated, optional) [, outcome] [, assay] [, name]
+1, GILGFVFTL, HLA-A*02:01, positive
+1, AAAAAAAAA, HLA-A*02:01, negative
+2, PKYVKQNTLKLATGM, HLA-DQA1*05:01/DQB1*02:01, positive
+```
+
+A bare list of peptides also works (every row counts as positive and the class is taken from the
+length), and a pasted IEDB export is recognised by its header. A class II pair such as
+`HLA-DQA1*05:01/DQB1*02:01` is one allele, not two.
+
+Also in the output:
+
+- **Which predictor separates *your* panel** (AUC per tool, measured on your own data): the
+  honest way to see which of the eleven to trust for this question, rather than which is
+  best-known.
+- **What each tool says** about each query, so a verdict can be taken apart.
+- **What the numbers cannot tell you**, always shown: published epitopes were often found
+  *because* a predictor flagged them and are skewed to well-studied alleles, so recovering them
+  is partly circular; "positive" spans assays that ask different questions, and binding is not
+  immunogenicity; a small panel gives a noisy baseline.
+- If any panel peptide ends up without a score, the run **says the baseline is smaller than the
+  panel you gave** instead of quietly reporting a confidence built on what survived.
+
+Each class is compared separately, peptides are used exactly as given (never cut), and nothing
+is filtered, so the baseline has no holes.
+
 ## Runs are isolated from code changes
 
 A stored run is a finished artefact: updating the engine never changes it.

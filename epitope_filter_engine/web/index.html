@@ -89,6 +89,7 @@ details>summary{cursor:pointer}
 <nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><button id="updbadge" class="b" style="display:none;font-size:11px;padding:1px 7px;margin-right:8px;background:#2b5c2b;border-color:#3d7a3d" title="A newer version of the engine is available">Update available</button><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Documentation</a>
 <button data-t="pipeline">Pipeline</button>
 <button data-t="single">Single model</button>
+<button data-t="comparison">Comparison</button>
 <button data-t="projects">Projects</button>
 <button data-t="settings">Settings</button></nav>
 <div id="tip"></div>
@@ -227,6 +228,52 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
  </div>
 </div>
 
+<!-- ============================ COMPARISON ============================ -->
+<div class="pane" id="comparison">
+ <div id="kform" class="fcol">
+  <h3>1 &middot; Panel of tested peptides <span class="q" data-h="k_panel">?</span></h3>
+  <div class="muted sm">One per line: <b>MHC class, epitope, alleles</b> (alleles optional), then optionally
+   <b>outcome</b> (<i>positive</i> / <i>negative</i>), assay, name. An IEDB export header is understood too.</div>
+  <textarea id="k_panel" rows="9" spellcheck="false" placeholder="1, GILGFVFTL, HLA-A*02:01, positive
+1, NLVPMVATV, HLA-A*02:01, positive
+1, AAAAAAAAA, HLA-A*02:01, negative
+2, PKYVKQNTLKLATGM, HLA-DRB1*01:01, positive"></textarea>
+  <div id="k_panelinfo" class="muted sm"></div>
+
+  <h3>2 &middot; Query peptides <span class="q" data-h="k_queries">?</span></h3>
+  <textarea id="k_queries" rows="4" spellcheck="false" placeholder="SIINFEKLY&#10;GILGFVFTV"></textarea>
+
+  <h3>3 &middot; Alleles and models <span class="q" data-h="k_run">?</span></h3>
+  <div class="muted sm">The panel and the queries are scored in one run with these settings, so only the peptide differs.</div>
+  <div id="k_arms"></div>
+
+  <div style="margin-top:12px"><button class="primary" id="k_run">Compare</button>
+   <span id="k_runmsg" class="bad"></span></div>
+  <div id="k_preview" class="muted sm" style="margin-top:8px"></div>
+  <div id="k_warn" class="warn sm"></div>
+ </div>
+ <div id="kout" class="ocol">
+  <div class="card" id="k_progress" style="display:none">
+   <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b id="k_pstate">Starting...</b><span class="muted" id="k_ptime"></span><button class="b" id="k_cancel">Cancel</button></div>
+   <div class="bar" id="k_pbar" style="margin:8px 0"><i></i></div><div id="k_stages"></div><div id="k_activity"></div>
+   <details open><summary class="muted">Log</summary><pre id="k_log"></pre></details>
+  </div>
+  <div class="card" id="k_results" style="display:none">
+   <div id="k_info" style="margin-bottom:6px"></div>
+   <div id="k_rwarn" class="warn sm"></div>
+   <div style="margin:6px 0"><a class="dl big" id="k_dl" href="#">Download the comparison (csv)</a></div>
+   <div id="k_body"></div>
+  </div>
+  <div id="k_empty" class="muted">Paste peptides whose wet-lab outcome you know, add the peptides you want judged, and press
+   <b>Compare</b>.<br><br>Every predictor here is calibrated against <i>random</i> peptides, not against real epitopes, so an
+   absolute cut-off answers a question nobody asked. This tab scores your query and your tested peptides in the same run and
+   reads the query against them: how much more typical its score is of peptides that <b>worked</b> than of peptides that
+   <b>did not</b>.<br><br>That needs both. Peptides that worked alone cannot give a confidence, because known epitopes score
+   high and so does a great deal of junk &mdash; so mark some rows <i>negative</i> (tested, no response). With none, the
+   result says <i>no baseline</i> rather than inventing a number.</div>
+ </div>
+</div>
+
 <!-- ============================ PROJECTS ============================ -->
 <div class="pane" id="projects" style="padding:14px;flex-direction:column;overflow:auto">
  <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
@@ -316,6 +363,9 @@ const HELP = {
  imm_top_q: "An immunogenicity tool votes yes when the pair ranks in this top share of the binders in this run (it needs at least 8 binder pairs).",
  min_alleles: "A peptide is a candidate only if it passes for at least this many alleles.",
  min_coverage: "A peptide is a candidate only if the share of the population presenting it is at least this (needs the population file).",
+ k_panel: "Peptides whose wet-lab outcome you already know. One per line: <b>MHC class</b> (1/2 or I/II), the <b>epitope</b>, and its <b>alleles</b> comma separated (may be left empty, and a class II pair such as HLA-DQA1*05:01/DQB1*02:01 counts as one allele). Then optionally the <b>outcome</b> (positive / negative), the assay and a name. A bare list of peptides works too (every row counts as positive, and the class is taken from the length). A pasted IEDB export is understood by its header (Description, MHC - Allele Names, Qualitative Measure, Assay - Method) &mdash; keep its <i>Negative</i> rows: those are the comparison group.",
+ k_queries: "The peptides you want judged, one per line or comma separated. They are scored in the same run as the panel, with the same alleles and models, so nothing differs between them except the peptide itself.",
+ k_run: "Each class present in the panel runs its own comparison, so a peptide that could belong to either is never judged against a mixed baseline. Nothing is filtered and every model scores every peptide, otherwise the baseline would have holes. Peptides are used exactly as given and never cut: a validated epitope is a specific peptide.",
  update: "The engine checks the public repository it was cloned from for a newer version. <b>Update now</b> fast-forwards the code folder and lists what changed; the server then has to be restarted to load it. Your runs, settings and caches are in the workspace, outside the code folder, so an update never changes a finished run, and every stored run keeps the version and commit it was produced with. An update is refused while a run is going, and if you have edited tracked files yourself. A copy that was installed by copying files rather than cloning cannot update itself, and the card gives the command instead.",
  host_mode: "Compares each candidate with the host's own proteins (UniProt reference proteome, downloaded once in Settings). <b>Identical</b>: one of its 9-mers occurs exactly in a host protein. <b>Near</b>: a 9-mer with one mismatch. Such peptides may be tolerated or risk autoimmunity. <b>Flag only</b> adds the columns Host_Self, Host_Best_Identity, Host_Best_Protein; the remove options also take them out of the candidates.",
  cluster_by: "What decides that two candidates are the same epitope. <b>Whole peptide</b>: their windows overlap by 70 %. <b>Binding core</b> (class II default): their predicted 9-aa cores overlap by 70 %, so the many 15-25-mers built around one core become one cluster; falls back to the whole peptide when no core was predicted.",
@@ -492,6 +542,7 @@ fetch("api/alleles").then(r => r.json()).then(d => {
   for (const c of [1, 2]) {
     renderPresets(c);
     if (typeof renderPresets == "function" && $("presetss" + c)) renderPresets("s" + c);
+    if ($("presetsk" + c)) renderPresets("k" + c);
     if (!SELS[c].length) { const first = presetKeys(c)[0]; if (first) SELS[c] = PRES[c][first].alleles.slice(); }   // the population preset comes first when the file exists
     drawChips(c);
   }
@@ -1138,7 +1189,9 @@ function showReadiness(m, d){
   });
   for (const c of [1, 2]) {
     const bad = Object.keys(NOTREADY).filter(k => NOTREADY[k] && CLASS_OF[k] == c);
-    $("nr" + c).innerHTML = bad.length ? "Not ready: " + bad.map(k => `${k} (${esc(NOTREADY[k])})`).join(", ") + ". See Settings." : "";
+    const msg = bad.length ? "Not ready: " + bad.map(k => `${k} (${esc(NOTREADY[k])})`).join(", ") + ". See Settings." : "";
+    $("nr" + c).innerHTML = msg;
+    if ($("k_nr" + c)) $("k_nr" + c).innerHTML = msg;
   }
   queuePreview(); if (typeof singleModelChanged == "function" && $("s_model")) singleModelChanged();
 }
@@ -1166,6 +1219,151 @@ async function deepTest(m){
 loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
+
+/* ---------- comparison with tested peptides ---------- */
+SELS.k1 = SELS.k1 || ["HLA-A*02:01"]; SELS.k2 = SELS.k2 || ["HLA-DRB1*01:01"];
+let KJOB = null, kpoll = null, kprev = null;
+const KMODELS = {1: ["netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_imm", "bigmhc_el", "bigmhc_im"],
+                 2: ["netmhciipan_el", "netmhciipan_ba", "mixmhc2pred", "cd4episcore", "tlimmuno2", "immuscope"]};
+/* NetCTLpan and NetChop are left out on purpose: they need the protein around a peptide,
+   and a panel is a list of peptides with no protein to sit in. */
+function buildComparison(){
+  $("k_arms").innerHTML = [1, 2].map(c => `
+    <div class="card" style="margin:8px 0;padding:8px">
+     <label class="i"><input type="checkbox" id="k_en${c}" ${c == 1 ? "checked" : ""}> <b>${ARMS[c].title}</b> (${ARMS[c].tag})</label>
+     <div id="k_wrap${c}">
+      <div class="sub">Alleles</div>${alleleBlock("k" + c)}
+      <div class="sub">Models</div>
+      ${KMODELS[c].map(k => {
+        const m = ARMS[c].models.find(x => x[0] == k) || [k, k, ""];
+        return `<label class="i"><input type="checkbox" class="km${c}" id="km_${k}" value="${k}" data-health="${m[3] || ""}" checked> ${esc(m[1])} <span class="muted sm">${esc(m[2] || "")}</span></label>`;
+      }).join("")}
+      <div class="bad sm" id="k_nr${c}"></div>
+     </div>
+    </div>`).join("");
+  for (const c of ["k1", "k2"]) {
+    $("as" + c).oninput = () => searchAlleles(c);
+    $("clr" + c).onclick = () => { SELS[c] = []; drawChips(c); queueComparePreview(); };
+    drawChips(c);
+    if ($("presets" + c)) renderPresets(c);
+  }
+  [1, 2].forEach(c => {
+    $("k_en" + c).onchange = () => { $("k_wrap" + c).style.opacity = $("k_en" + c).checked ? 1 : .45; queueComparePreview(); };
+    $("k_wrap" + c).style.opacity = $("k_en" + c).checked ? 1 : .45;
+  });
+  $("k_panel").oninput = $("k_queries").oninput = queueComparePreview;
+  document.querySelectorAll(".km1, .km2").forEach(b => b.onchange = queueComparePreview);
+  queueComparePreview();
+}
+function compareParams(){
+  const classes = [1, 2].filter(c => $("k_en" + c).checked);
+  const out = {panel: $("k_panel").value, queries: $("k_queries").value, classes,
+               preset: ($("strat") || {}).value || "balanced", profile: ($("profile") || {}).value || undefined};
+  for (const c of classes) {
+    const models = {};
+    document.querySelectorAll(".km" + c).forEach(b => models[b.value] = b.checked);
+    out["c" + c] = {alleles: SELS["k" + c].slice(), models,
+                    lengths: c == 1 ? [9] : [15]};        /* unused: peptides are taken as given */
+    if (c == 2) out["c" + c].nii = {version: ($("nii_version") || {value: "4.3"}).value};
+  }
+  return out;
+}
+function queueComparePreview(){ clearTimeout(kprev); kprev = setTimeout(comparePreview, 350); }
+async function comparePreview(){
+  const d = await (await fetch("api/comparative/preview", {method: "POST", headers: {"Content-Type": "application/json"},
+                                                           body: JSON.stringify(compareParams())})).json();
+  if (d.hint) { $("k_preview").textContent = d.hint; $("k_warn").innerHTML = ""; $("k_panelinfo").textContent = ""; return; }
+  const parts = Object.entries(d.classes || {}).map(([k, v]) =>
+    `${k == "c1" ? "class I" : "class II"}: ${v.n_positive} positive + ${v.n_negative} negative, ${v.n_queries} quer${v.n_queries == 1 ? "y" : "ies"}, ${f0(v.n_predictions)} predictions`);
+  $("k_preview").textContent = parts.join("  |  ");
+  $("k_panelinfo").textContent = "";
+  $("k_warn").innerHTML = (d.warnings || []).map(esc).join("<br>");
+}
+$("k_run").onclick = async () => {
+  $("k_runmsg").textContent = "";
+  const r = await fetch("api/comparative/run", {method: "POST", headers: {"Content-Type": "application/json"},
+                                                body: JSON.stringify(compareParams())});
+  const d = await r.json();
+  if (!r.ok) { $("k_runmsg").textContent = d.error; return; }
+  KJOB = d.id;
+  $("k_empty").style.display = "none"; $("k_progress").style.display = "block"; $("k_results").style.display = "none";
+  $("k_run").disabled = true; $("k_cancel").disabled = false; $("k_cancel").style.display = "";
+  clearInterval(kpoll); ktick(); kpoll = setInterval(ktick, 1000);
+};
+$("k_cancel").onclick = () => { $("k_cancel").disabled = true; fetch(`api/jobs/${KJOB}/cancel`, {method: "POST"}); };
+async function ktick(){
+  let d;
+  try { const r = await fetch(`api/jobs/${KJOB}`); if (!r.ok) { clearInterval(kpoll); return; } d = await r.json(); } catch(e) { return; }
+  paintProgress(d, "k_");
+  if (TERMINAL.includes(d.state)) {
+    clearInterval(kpoll); $("k_cancel").style.display = "none"; $("k_run").disabled = false;
+    if (d.state == "done") loadComparison(d);
+  }
+}
+const LRBAND = lr => lr == null ? "" : lr >= 10 ? "pass" : lr >= 3 ? "" : lr > 1 / 3 ? "" : "bad";
+async function loadComparison(d){
+  const s = d.summary || {};
+  $("k_results").style.display = "block";
+  $("k_dl").href = `api/jobs/${KJOB}/csv?table=comparison`;
+  $("k_info").innerHTML = `<b>${f0(s.queries)} query result(s)</b> against a panel of ${f0(s.panel)} tested peptide(s)`
+    + ` &middot; ${fmtT(s.seconds)} <span class="muted">&middot; saved in Projects as run ${esc(KJOB)}</span>`;
+  const res = await (await fetch(`api/jobs/${KJOB}/comparative`)).json();
+  $("k_rwarn").innerHTML = (res.warnings || []).map(esc).join("<br>");
+  let h = "";
+  for (const [cls, r] of Object.entries(res.classes || {})) {
+    const tag = cls == "1" ? "MHC class I (CTL)" : "MHC class II (HTL)";
+    h += `<div class="sub" style="margin-top:12px">${tag}</div>`;
+    h += `<div class="muted sm">Baseline: <b>${r.panel.n_positive}</b> peptide(s) that worked, <b>${r.panel.n_negative}</b> that did not`
+       + `${r.panel.decoys ? " (decoys, not tested peptides)" : ""} &middot; judged on <b>${esc(r.primary || "-")}</b>`
+       + ` &middot; alleles: ${esc((r.alleles || []).join(", ") || "none")}</div>`;
+    h += `<table style="margin-top:6px"><tr><th>Query</th><th>Verdict</th><th>Likelihood ratio</th><th>Score</th>
+          <th title="Share of peptides that WORKED scoring at or below this">vs. worked</th>
+          <th title="Share of peptides that did NOT work scoring at or below this">vs. did not</th><th>Baseline</th></tr>`;
+    for (const q of r.queries) {
+      if (q.error) { h += `<tr><td><code>${esc(q.peptide)}</code></td><td class="bad" colspan="6">${esc(q.error)}</td></tr>`; continue; }
+      const ev = (q.evidence || {})[r.primary] || {};
+      h += `<tr class="${LRBAND(q.likelihood_ratio)}"><td><code>${esc(q.peptide)}</code> <span class="muted sm">${q.length} aa</span></td>
+        <td><b>${esc(q.verdict)}</b><div class="muted sm">${esc(q.explanation || "")}</div></td>
+        <td>${q.likelihood_ratio == null ? "-" : q.likelihood_ratio >= 1 ? f0(q.likelihood_ratio) + "&times;" : q.likelihood_ratio.toFixed(3) + "&times;"}</td>
+        <td>${ev.score == null ? "-" : (+ev.score).toPrecision(3)}</td>
+        <td>${ev.pct_of_positives == null ? "-" : ev.pct_of_positives + "%"}</td>
+        <td>${ev.pct_of_negatives == null ? "-" : ev.pct_of_negatives + "%"}</td>
+        <td class="muted sm">${ev.n_pos || 0} / ${ev.n_neg || 0}${ev.length_matched ? "" : ", pooled over lengths"}</td></tr>`;
+    }
+    h += "</table>";
+    /* per-tool evidence for each query, so a verdict can be taken apart */
+    for (const q of r.queries.filter(x => !x.error)) {
+      const rows = Object.entries(q.evidence || {}).filter(([k, v]) => v.likelihood_ratio != null);
+      if (!rows.length) continue;
+      h += `<details style="margin-top:6px"><summary class="muted">What each tool says about ${esc(q.peptide)}</summary>
+        <table><tr><th>Tool / column</th><th>Score</th><th>Likelihood ratio</th><th>vs. worked</th><th>vs. did not</th></tr>` +
+        rows.sort((a, b) => b[1].likelihood_ratio - a[1].likelihood_ratio).map(([k, v]) =>
+          `<tr><td>${esc(k)}</td><td>${v.score == null ? "-" : (+v.score).toPrecision(3)}</td>
+           <td>${v.likelihood_ratio >= 1 ? f0(v.likelihood_ratio) + "&times;" : v.likelihood_ratio.toFixed(3) + "&times;"}</td>
+           <td>${v.pct_of_positives == null ? "-" : v.pct_of_positives + "%"}</td>
+           <td>${v.pct_of_negatives == null ? "-" : v.pct_of_negatives + "%"}</td></tr>`).join("") + "</table></details>";
+    }
+    /* how well each tool told the panel's own positives from its negatives */
+    const sep = Object.entries(r.panel.separation || {});
+    if (sep.length) {
+      h += `<details style="margin-top:6px" open><summary class="muted">Which predictor separates <b>your</b> panel (AUC)</summary>
+        <div class="muted sm">1.00 = every peptide that worked outscores every one that did not; 0.50 = no better than a coin.
+        This is measured on your own data, so it says which tool to trust here rather than which is best in general.</div>
+        <table><tr><th>Tool / column</th><th>AUC</th><th>n worked</th><th>n did not</th></tr>` +
+        sep.map(([k, v]) => [k, v["class_" + cls] || Object.values(v)[0]])
+           .filter(([k, v]) => v && v.auc != null)
+           .sort((a, b) => b[1].auc - a[1].auc)
+           .map(([k, v]) => `<tr class="${v.auc >= 0.8 ? "pass" : v.auc < 0.6 ? "bad" : ""}"><td>${esc(k)}</td><td>${v.auc.toFixed(3)}</td><td>${v.n_pos}</td><td>${v.n_neg}</td></tr>`).join("") +
+        "</table></details>";
+    }
+    if ((r.caveats || []).length) {
+      h += `<details style="margin-top:6px" open><summary class="muted">What these numbers cannot tell you</summary><ul class="sm" style="margin:4px 0 0 16px">`
+         + r.caveats.map(x => `<li>${esc(x)}</li>`).join("") + "</ul></details>";
+    }
+  }
+  $("k_body").innerHTML = h;
+}
+buildComparison();
 
 /* ---------- self update ---------- */
 function updRender(d, msg){

@@ -28,6 +28,7 @@ import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
 import consensus, funnel, models as model_registry
 import pipeline, pipeline_ii, pipeline_dual, pipeline_single                                  # noqa: E402
+import comparative, comparative_run                                                          # noqa: E402
 import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import immuscope_runner as isc_run, tlimmuno2_runner as tl2_run   # noqa: E402
 import pandas as pd                                          # noqa: E402
@@ -466,6 +467,50 @@ def single_preview():
         return jsonify(pipeline_single.preview(request.get_json(force=True)))
     except (ValueError, config.ConfigError) as e:
         return jsonify(hint=str(e))
+
+
+@main.post("/api/comparative/preview")
+def comparative_preview():
+    """Counts and warnings while the panel is being pasted; never an HTTP error."""
+    try:
+        return jsonify(comparative_run.preview(request.get_json(force=True)))
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(hint=str(e))
+
+
+@main.post("/api/comparative/run")
+def comparative_start():
+    params = request.get_json(force=True)
+    try:
+        norm = comparative_run.normalise(params)
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(error=str(e)), 400
+    for c, d in norm["classes"].items():
+        for name in _needed_models({**d["p"], "mhc_class": c}):
+            if not config.model(name).get("enabled", True):
+                return jsonify(error=f"{name} is disabled in Settings."), 400
+            bad = [x for x in HEALTH[name](False) if not x["ok"]]
+            if bad:
+                return jsonify(error=f"{name} is not ready: "
+                                     + "; ".join(f"{x['name']} ({x['detail']})" for x in bad)), 400
+    job = _submit("comparative", params, lambda j: comparative_run.run(params, j))
+    return jsonify(id=job.id)
+
+
+@main.get("/api/jobs/<job_id>/comparative")
+def job_comparative(job_id):
+    """The analysis of a finished comparison, read from what the run saved."""
+    job = _job(job_id)
+    if not job or not job.result:
+        return jsonify(error="no result"), 404
+    r = job.result
+    if r.get("comparative"):
+        return jsonify(r["comparative"])
+    path = r.get("comparative_json")
+    if not path or not os.path.exists(path):
+        return jsonify(error="this run is not a comparison"), 404
+    with open(path) as f:
+        return jsonify(json.load(f))
 
 
 @main.post("/api/single/run")

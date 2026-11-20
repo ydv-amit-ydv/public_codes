@@ -920,6 +920,45 @@ try:
 finally:
     _runs.BUILD = _saved
 
+# ---- comparison against peptides with a known wet-lab outcome --------------------------------------------------------
+_pos9 = ("GILGFVFTL", "NLVPMVATV", "GLCTLVAML", "CLGGLLTMV", "YLLEMLWRL", "KLGGALQAK", "ILRGSVAHK", "RMFPNAPYL", "VLFSSDFRI")
+_neg9 = ("AAAAAAAAA", "CCCCCCCCC", "DDDDDDDDD", "EEEEEEEEE", "FFFFFFFFF", "GGGGGGGGG", "HHHHHHHHH", "IIIIIIIII", "KKKKKKKKK")
+_pan = "\n".join([f"1, {p}, HLA-A*02:01, positive" for p in _pos9] + [f"1, {p}, HLA-A*02:01, negative" for p in _neg9])
+_cmp = {"panel": _pan, "queries": "SIINFEKLY, WWWWWWWWW",
+        "c1": {"alleles": ["HLA-A*02:01"], "models": {"netmhcpan": True}}}
+
+pv = c.post("/api/comparative/preview", json=_cmp).get_json()
+assert pv["classes"]["c1"] == {"n_panel": 18, "n_queries": 2, "n_peptides": 20, "n_positive": 9,
+                               "n_negative": 9, "n_alleles": 1, "n_predictions": 20}, pv
+# a panel of positives only cannot give a confidence, and the preview says so before anything runs
+pv = c.post("/api/comparative/preview", json={**_cmp, "panel": "\n".join(f"1, {p},, positive" for p in _pos9)}).get_json()
+assert any("no peptide with outcome 'negative'" in w for w in pv["warnings"]), pv
+# half-filled forms come back as a hint, not an error
+assert "hint" in c.post("/api/comparative/preview", json={"panel": "", "queries": ""}).get_json()
+for bad, msg in (({"panel": "", "queries": "GILGFVFTL"}, "panel is empty"),
+                 ({"panel": _pan, "queries": ""}, "at least one query"),
+                 ({"panel": _pan, "queries": "GILG1VFTL"}, "non-standard")):
+    r = c.post("/api/comparative/run", json={**_cmp, **bad})
+    assert r.status_code == 400 and msg in r.get_json()["error"], (bad, r.get_json())
+
+d = wait_job(c.post("/api/comparative/run", json=_cmp).get_json()["id"], timeout=180)
+assert d["state"] == "done", d.get("error")
+assert d["summary"]["panel"] == 18 and d["summary"]["queries"] == 2, d["summary"]
+res = c.get(f"/api/jobs/{d['id']}/comparative").get_json()
+one = res["classes"]["1"]
+assert one["primary"] and one["alleles"] == ["HLA-A*02:01"], one
+assert {q["peptide"] for q in one["queries"]} == {"SIINFEKLY", "WWWWWWWWW"}, one["queries"]
+assert one["caveats"] and any("predictor flagged them" in x for x in one["caveats"]), one["caveats"]
+# the stub only ever scores GILGFVFTL, so the baseline really is incomplete here: the run must
+# SAY the baseline shrank rather than quietly reporting a confidence built on what survived
+assert any("NOT in the baseline" in w for w in res["warnings"]), res["warnings"]
+assert c.get(f"/api/jobs/{d['id']}/csv?table=comparison").data.startswith(b"Class,Peptide"), "comparison csv"
+# the analysis is read back from what the run saved, so it survives a restart like any other run
+_MGR._jobs.pop(d["id"], None)
+assert c.get(f"/api/jobs/{d['id']}/comparative").get_json()["classes"]["1"]["primary"] == one["primary"]
+# a run that is not a comparison says so instead of returning something meaningless
+assert c.get(f"/api/jobs/{_iso['id']}/comparative").status_code == 404
+
 # ---- self update: the page can see its version and install a newer one -----------------------------------------------
 u = c.get("/api/update?check=0").get_json()                    # no network on the first paint
 assert u["version"] and u["checked"] is None and "is_git" in u and u["manual"].startswith("git -C"), u
