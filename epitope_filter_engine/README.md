@@ -157,6 +157,26 @@ compared with UniProt's reference proteome of the host (human by default; `host_
   candidates are checked. The index takes about 8 s to build and a few hundred MB of memory for human, built on first use.
 - This checks the sequence of the peptide, not whether the host protein is expressed in a relevant tissue.
 
+## Runs are isolated from code changes
+
+A stored run is a finished artefact: updating the engine never changes it.
+
+- **Results are read, not recomputed.** Every table, the run details json and the HTML report
+  are written when the run happens and served from the workspace afterwards, so reopening an
+  old run after an update (or a restart) returns the same numbers.
+- **Each run records the build that produced it**: the `VERSION` string and the git commit
+  (`engine_version`, `engine_commit`, `engine_build` in `run.json`, shown in Projects and
+  printed in the report). The build is read once when the process starts, not when the run is
+  saved, so a run started after *Update now* but before the restart is labelled with the code
+  that actually ran it.
+- **The reuse cache is keyed on the build.** The fingerprint that lets a later run skip a
+  finished class includes the build id, so a class result computed by one version is never
+  reused by another: after an update the class is recomputed instead of mixing old results
+  into a new run.
+- **Re-rank** makes a new run that records its own build and keeps `rerank_of` pointing at the
+  run it came from.
+- Nothing in the workspace is under git, so `git pull` and *Update now* cannot touch runs.
+
 ## Updating the engine from the page
 
 Settings shows the installed version and commit and a **Check for updates** button; when the

@@ -887,6 +887,39 @@ from MHC1.BA_EL_scripts import netmhcpan_app as _nm                             
 assert _nm.nucleotide_message("x", "ASNENMETM") is None and _nm.nucleotide_message("x", DNA)
 assert "RNA" in _nm.nucleotide_message("x", RNA) and "DNA" in _nm.nucleotide_message("x", DNA)
 
+# ---- a stored run is isolated from later code changes ----------------------------------------------------------------
+# the build that produced a run is recorded once, with the real VERSION and commit
+assert _runs.BUILD["version"] and _runs.BUILD["id"].startswith(_runs.BUILD["version"].split()[0]), _runs.BUILD
+_iso = wait_job(c.post("/api/pipeline/run", json={**both, "c2": {"enabled": False}, "title": "isolation"}).get_json()["id"])
+assert _iso["state"] == "done", _iso.get("error")
+_r = [r for r in c.get("/api/runs").get_json()["runs"] if r["id"] == _iso["id"]][0]
+_m = c.get(f"/api/runs/{_r['id']}").get_json()
+assert _m["engine_version"] == _runs.BUILD["version"] and _m["engine_build"] == _runs.BUILD["id"], _m
+assert "engine_build" in _r, _r                                  # and the listing shows it
+# the saved report says which engine produced it, so a shared or printed result carries its provenance
+_page = c.get(f"/api/jobs/{_iso['id']}/csv?table=report&inline=1").data
+assert _runs.BUILD["id"].encode() in _page, "the report does not say which engine produced it"
+# the reuse fingerprint includes the build, so a class result from one version is never
+# reused by another: updating the code recomputes instead of mixing old results into a new run
+from common import checkpoints as _ck                                            # noqa: E402
+_spec = {"alleles": ["HLA-A*02:01"], "lengths": [9], "models": {"netmhcpan": True}}
+_fp_a = _ck.fingerprint(_spec, 1, "2026.01+aaaaaaaa", None)
+_fp_b = _ck.fingerprint(_spec, 1, "2026.02+bbbbbbbb", None)
+assert _fp_a != _fp_b, "a code update must invalidate the resume cache"
+assert _ck.fingerprint(_spec, 1, "2026.01+aaaaaaaa", None) == _fp_a      # and be stable otherwise
+# reopening a finished run reads what was saved: the numbers do not move
+_before = c.get(f"/api/jobs/{_r['id']}/result?table=regions").get_json()
+_MGR._jobs.pop(_r["id"], None)                                   # as after a restart
+_after = c.get(f"/api/jobs/{_r['id']}/result?table=regions").get_json()
+assert _before["rows"] == _after["rows"] and _before["total"] == _after["total"]
+# an old run keeps its recorded build even when the running build has moved on
+_saved = dict(_runs.BUILD)
+try:
+    _runs.BUILD = {"version": "9999.99-z", "commit": "ffffffffffff", "id": "9999.99-z+ffffffffffff"}
+    assert c.get(f"/api/runs/{_r['id']}").get_json()["engine_build"] == _saved["id"], "a stored run was relabelled"
+finally:
+    _runs.BUILD = _saved
+
 # ---- self update: the page can see its version and install a newer one -----------------------------------------------
 u = c.get("/api/update?check=0").get_json()                    # no network on the first paint
 assert u["version"] and u["checked"] is None and "is_git" in u and u["manual"].startswith("git -C"), u

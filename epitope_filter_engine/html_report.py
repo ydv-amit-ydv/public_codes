@@ -72,7 +72,8 @@ def build(run):
     reg, seqs, now = run["regions"], run.get("seqs", {}), time.strftime("%Y-%m-%d %H:%M")
     h = [f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
          f"<title>{E(run['title'])}</title><style>{CSS}</style></head><body><main>",
-         f"<h1>{E(run['title'])}</h1><div class='muted'>{now} &middot; job {E(run['job'])} &middot; strategy <b>{E(run['strategy'])}</b></div>"]
+         f"<h1>{E(run['title'])}</h1><div class='muted'>{now} &middot; job {E(run['job'])} &middot; strategy <b>{E(run['strategy'])}</b>"
+         + (f" &middot; engine {E(run['engine'])}" if run.get("engine") else "") + "</div>"]
 
     n_dual = int((reg["Type"] == "CTL+HTL").sum()) if len(reg) else 0
     k = [(len(reg), "epitope regions"), (n_dual, "CTL+HTL regions"), (int((reg["Type"] == "CTL only").sum()) if len(reg) else 0, "CTL only"),

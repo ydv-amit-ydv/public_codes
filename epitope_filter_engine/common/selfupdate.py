@@ -45,6 +45,13 @@ def is_git():
     return ok and out == "true"
 
 
+def commit(short=True):
+    """The installed commit, or None when this is not a clone."""
+    args = ("rev-parse", "--short=12", "HEAD") if short else ("rev-parse", "HEAD")
+    ok, out, _ = _git(*args, timeout=20)
+    return out if (ok and out) else None
+
+
 def _branch():
     ok, out, _ = _git("rev-parse", "--abbrev-ref", "HEAD", timeout=20)
     return out if ok and out != "HEAD" else "main"

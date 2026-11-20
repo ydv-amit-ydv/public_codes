@@ -11,10 +11,31 @@ import re
 import shutil
 import time
 
-from . import config
+from . import config, selfupdate
 from .jobs import Job
 
-ENGINE_VERSION = "2026.10"
+
+def _build():
+    """What is actually running, read once when this module is imported.
+
+    Deliberately not read later: after an in-page update the files on disk are the new
+    version while this process is still running the old code, so a run started before the
+    restart must be labelled with the code that produced it, not with the new VERSION file.
+    """
+    v, c = "unknown", None
+    try:
+        v = selfupdate.version()
+        c = selfupdate.commit()
+    except Exception:                                      # noqa: BLE001 - never stop the server over provenance
+        pass
+    return {"version": v, "commit": c, "id": f"{v.split()[0] if v else 'unknown'}+{c or 'nogit'}"}
+
+
+BUILD = _build()
+# The build id goes into the resume fingerprint, so a finished class result computed by one
+# version is never reused by a different one: updating the code invalidates the reuse cache
+# instead of silently mixing old results into a new run.
+ENGINE_VERSION = BUILD["id"]
 RUN = "{RUN}"
 
 
@@ -66,7 +87,8 @@ def default_name(kind, params):
 def create(job, kind, params, name=None):
     job.id = job.id            # (kept: the id is the folder name)
     _write(job.id, {"id": job.id, "kind": kind, "name": name or default_name(kind, params), "created": time.time(), "state": "queued",
-                    "params": params, "input": describe_input(params), "engine_version": ENGINE_VERSION, "notes": "", "starred": False})
+                    "params": params, "input": describe_input(params), "notes": "", "starred": False,
+                    "engine_version": BUILD["version"], "engine_commit": BUILD["commit"], "engine_build": BUILD["id"]})
 
 
 def finish(job):
@@ -96,7 +118,8 @@ def listing():
         if not m:
             continue
         size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(os.path.join(root, rid)) for f in fs)
-        out.append({k: m.get(k) for k in ("id", "kind", "name", "created", "started", "finished", "state", "summary", "input", "notes", "starred", "error", "engine_version")}
+        out.append({k: m.get(k) for k in ("id", "kind", "name", "created", "started", "finished", "state", "summary", "input", "notes", "starred", "error",
+                                     "engine_version", "engine_commit", "engine_build")}
                    | {"size": size, "model": (m.get("params") or {}).get("model"),
                       "classes": [c for c in ("c1", "c2") if (m.get("params") or {}).get(c, {}).get("enabled", True) and (m.get("params") or {}).get(c)]})
     return sorted(out, key=lambda r: -(r["created"] or 0))

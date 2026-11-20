@@ -140,6 +140,7 @@ def _finalize(job, params, classes, class_results, seqs, t0, strategy):
         f"{', '.join(map(str, results[c]['details']['input'].get('lengths') or [])) or 'as given'}, models "
         f"{', '.join(results[c]['details']['input']['models'])}" for c in classes)
     html = html_report.build({"title": params.get("title") or "Epitope prediction report", "job": job.id, "strategy": strategy,
+                              "engine": runs.BUILD["id"],
                               "regions": reg, "classes": results, "seqs": seqs, "warnings": warns, "rules": rules, "info_text": info_text,
                               "population_text": (f"{pop.label}: {len(pop.freqs)} alleles, regions weighted " +
                                                   ", ".join(f"{k} {v:.2f}" for k, v in pop.region_weights.items())) if pop else "none: coverage is the share of the chosen alleles"})
