@@ -2,8 +2,6 @@
 
 ## epitope_filter_engine
 
-*(renamed from `local_engine_codes`; same code, plus an install guide)*
-
 A local, offline web GUI that runs **eleven MHC epitope predictors** side by side and fuses
 them into one ranked peptide list — both T-cell arms in one job:
 
