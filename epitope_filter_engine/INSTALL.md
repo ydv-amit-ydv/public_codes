@@ -212,8 +212,8 @@ the reason.
         PRIME/                   PRIME 2.1                 §5.2
         MixMHC2pred/             MixMHC2pred 2.1           §5.3
     iedb/
-        ng_tc1-v0.2-beta/        NetCTLpan + NetChop       §6.2  (743 MB)
-        ng_tc2-v0.2.3-beta/      NetMHCIIpan + CD4episcore §6.3  (1.6 GB)
+        tc1/                     NetCTLpan + NetChop       §6.2  (743 MB)
+        tc2/                     NetMHCIIpan + CD4episcore §6.3  (1.6 GB)
     ImmuScope/                   ImmuScope-IM              §5.6
     TLimmuno2/                   TLimmuno2                 §5.7
     engine_workspace/            runs, caches, learned timings, host proteome
@@ -293,8 +293,9 @@ git clone --depth 1 https://github.com/GfellerLab/MixMHC2pred.git && cd MixMHC2p
 mkdir -p PWMdef
 for sp in Human Mouse; do
   curl -LO https://mixmhc2pred.unil.ch/data/PWMdef/PWMdef_$sp.zip
-  unzip -oj PWMdef_$sp.zip -d PWMdef && rm PWMdef_$sp.zip
-done
+  unzip -oj PWMdef_$sp.zip -d PWMdef && rm PWMdef_$sp.zip   # -j matters: the zip holds a
+done                                                       # PWMdef_Human/ folder, and the
+                                                           # engine wants the .txt files flat
 ```
 
 Without `PWMdef/` the engine reports MixMHC2pred as not ready and names this URL, and a run
@@ -426,7 +427,8 @@ drives the bundle's own `tcell_mhci.py` in the bundle's own `uv` environment.
 mkdir -p ~/local_engines/iedb && cd ~/local_engines/iedb
 wget https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/IEDB_NG_TC1-v0.2-beta.tar.gz   # 743 MB
 tar -xzf IEDB_NG_TC1-v0.2-beta.tar.gz
-cd ng_tc1-v0.2-beta && uv sync && ./configure
+mv ng_tc1-v0.2-beta tc1        # NetCTL refuses a path over 77 characters
+cd tc1 && uv sync && ./configure
 ```
 
 Check the `README` in that downloads folder for the current file name if this one is gone.
@@ -448,7 +450,8 @@ Same licence terms, 1.6 GB. Provides NetMHCIIpan EL + BA in versions 4.3 (defaul
 cd ~/local_engines/iedb
 wget https://downloads.iedb.org/nextgen-tools/tcell_mhcii/LATEST/IEDB_NG_TC2-v0.2.3-beta.tar.gz
 tar -xzf IEDB_NG_TC2-v0.2.3-beta.tar.gz
-cd ng_tc2-v0.2.3-beta && uv sync
+mv ng_tc2-v0.2.3-beta tc2      # keep the path short here too
+cd tc2 && uv sync
 ```
 
 Needs `tcsh`, `gawk`, `perl` and `r-base-core`.
@@ -510,7 +513,7 @@ the stub: `BIGMHC_PYTHON=<env python> BIGMHC_HOME=<clone> conda run -n epitope-e
 ### 8.1 CD4episcore returns nothing: "loop of ufunc does not support argument 0 of type float"
 
 Two independent causes in IEDB's class II bundle v0.2.3-beta, both seen on a
-Core Ultra 9 / WSL machine. Run these from inside `ng_tc2-v0.2.3-beta/`.
+Core Ultra 9 / WSL machine. Run these from inside the class II bundle (`~/local_engines/iedb/tc2/`).
 
 **(a) The R path is built from bytes**, giving `-R b/usr/bin/R`.
 `install_tools.sh --iedb` applies this one automatically.
@@ -538,6 +541,33 @@ done
 ```
 
 Confirm with the hand check: `PKYVKQNTLKLATGM` + `DRB1*01:01` → **96.32**.
+
+### 8.1b NetCTL: "will not work with the current executable path ... at most 77 characters"
+
+IEDB's `./configure` prints this when the bundle sits too deep. The installer avoids it by
+renaming the extracted folder to `tc1`, and repairs an older install by renaming it for you
+(re-running `bash start.sh --redo-setup` is enough). If you still see it, your home directory
+is long: install with a shorter path, `bash start.sh --dir /opt/le`.
+
+### 8.1c MixMHC2pred stays "not ready" after the PWMdef download
+
+The zip contains a `PWMdef_Human/` folder, but the engine needs the `.txt` files **directly**
+in `PWMdef/`. Unzip with `-j` (junk paths). An install made before this was fixed is repaired
+in place by `bash start.sh --redo-setup` — it flattens the folder instead of downloading again.
+
+### 8.1d "Could not find a version that satisfies the requirement pandas"
+
+Seen while building the BigMHC or ImmuScope environment. `--index-url` *replaces* PyPI, so a
+single `pip install torch --index-url <pytorch> numpy pandas ...` looks for pandas on the
+PyTorch index, where it does not exist. Install torch on its own:
+
+```bash
+pip install numpy pandas h5py scikit-learn ruamel.yaml tqdm click
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+The installer does this correctly now; `bash start.sh --redo-setup` fixes an environment left
+empty by the old one.
 
 ### 8.2 PRIME hangs
 

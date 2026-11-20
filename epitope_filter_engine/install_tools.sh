@@ -84,11 +84,6 @@ ensure_env() {
     else
       run "'$CONDA' create -y -q -n '$name' python='$pyver'" || return 1
     fi
-    if [ "$DRY" != 1 ] && "$CONDA" run -n "$name" python -c "import $check" >/dev/null 2>&1; then
-      info "packages already installed in $name ($check)"
-    else
-      run "'$CONDA' run -n '$name' pip install -q $*" || return 1
-    fi
     [ "$DRY" = 1 ] || REPLY_PY="$("$CONDA" run -n "$name" python -c 'import sys; print(sys.executable)' 2>/dev/null)"
     info "environment: conda env '$name' (found by the engine automatically)"
   else
@@ -96,17 +91,47 @@ ensure_env() {
       info "environment exists: $vdir/"
     else
       run "'$PY' -m venv '$vdir'" || return 1
-    fi
-    if [ "$DRY" != 1 ] && "$vdir/bin/python" -c "import $check" >/dev/null 2>&1; then
-      info "packages already installed in $vdir ($check)"
-    else
       run "'$vdir/bin/pip' install -q --upgrade pip" || true
-      run "'$vdir/bin/pip' install -q $*" || return 1
     fi
     REPLY_PY="$vdir/bin/python"
     info "environment: $vdir/"
   fi
-  return 0
+  [ $# -gt 0 ] || return 0
+  env_pip "$name" "$vdir" "$check" "$@"
+}
+
+env_has() {                                    # env_has <name> <vdir> <module>
+  [ "$DRY" = 1 ] && return 1
+  if [ -n "$CONDA" ]; then
+    "$CONDA" run -n "$1" python -c "import $3" >/dev/null 2>&1
+  else
+    [ -x "$2/bin/python" ] && "$2/bin/python" -c "import $3" >/dev/null 2>&1
+  fi
+}
+
+env_pip() {                                    # env_pip <name> <vdir> <import check> <pip args...>
+  local name="$1" vdir="$2" check="$3"; shift 3
+  if env_has "$name" "$vdir" "$check"; then
+    info "already installed: $check"
+    return 0
+  fi
+  if [ -n "$CONDA" ]; then
+    run "'$CONDA' run -n '$name' pip install -q $*"
+  else
+    run "'$vdir/bin/pip' install -q $*"
+  fi
+}
+
+# CPU torch, installed ON ITS OWN.
+#
+# --index-url REPLACES PyPI rather than adding to it, so a single
+#   pip install torch --index-url <pytorch cpu> numpy pandas h5py ...
+# sends pip to the PyTorch index for pandas too and dies with
+#   "Could not find a version that satisfies the requirement pandas".
+# That is exactly what happened, so torch gets its own call and everything else
+# comes from PyPI normally.
+ensure_torch() {                               # ensure_torch <name> <vdir>
+  env_pip "$1" "$2" torch "torch --index-url $TORCH_CPU"
 }
 
 need() {                                       # need <cmd> <apt package>
@@ -156,29 +181,40 @@ do_prime() {
 do_mixmhc2pred() {
   local m="$DIR/gfeller/MixMHC2pred" sp
   clone https://github.com/GfellerLab/MixMHC2pred.git "$m" || return 1
-  if [ -d "$m/PWMdef" ] && [ -n "$(ls -A "$m/PWMdef" 2>/dev/null)" ]; then
-    info "PWMdef already present"; return 0
+  # The engine needs the definition .txt files DIRECTLY in PWMdef/. The zip holds them in a
+  # PWMdef_Human/ folder, so unzip must junk paths (-j); an install made before that fix has
+  # them one level too deep and is flattened here instead of being re-downloaded.
+  if [ "$DRY" != 1 ] && [ -d "$m/PWMdef" ] && ! ls "$m"/PWMdef/*.txt >/dev/null 2>&1; then
+    if find "$m/PWMdef" -mindepth 2 -name '*.txt' -print -quit 2>/dev/null | grep -q .; then
+      info "flattening PWMdef (the files were one folder too deep)"
+      find "$m/PWMdef" -mindepth 2 -type f -exec mv -f {} "$m/PWMdef/" \; 2>/dev/null
+      find "$m/PWMdef" -mindepth 1 -type d -empty -delete 2>/dev/null
+    fi
+  fi
+  if [ "$DRY" != 1 ] && ls "$m"/PWMdef/*.txt >/dev/null 2>&1; then
+    info "PWMdef already present ($(ls "$m"/PWMdef/*.txt | wc -l) allele files)"; return 0
   fi
   need unzip unzip || return 1
   # the repository ships the program but not the allele definitions
   run "mkdir -p '$m/PWMdef'" || return 1
   for sp in Human Mouse; do
     fetch "https://mixmhc2pred.unil.ch/data/PWMdef/PWMdef_$sp.zip" "$m/PWMdef_$sp.zip" || return 1
-    run "unzip -oq '$m/PWMdef_$sp.zip' -d '$m/PWMdef'" || return 1
+    run "unzip -ojq '$m/PWMdef_$sp.zip' -d '$m/PWMdef'" || return 1
     run "rm -f '$m/PWMdef_$sp.zip'"
   done
 }
 
 do_bigmhc() {
   clone https://github.com/KarchinLab/bigmhc.git "$DIR/bigmhc" || return 1
-  ensure_env bigmhc "$DIR/bigmhc/.venv" 3.11 torch \
-    "torch --index-url $TORCH_CPU numpy pandas psutil" || return 1
+  ensure_env bigmhc "$DIR/bigmhc/.venv" 3.11 pandas numpy pandas psutil || return 1
+  ensure_torch bigmhc "$DIR/bigmhc/.venv"
 }
 
 do_mhcflurry() {
   # MHCflurry has no repository to clone: the conda env (or MHCFLURRY_PYTHON) is all there is
-  ensure_env mhcflurry "$DIR/mhcflurry-env" 3.11 mhcflurry \
-    "mhcflurry --extra-index-url $TORCH_CPU" || return 1
+  # --extra-index-url ADDS to PyPI (unlike --index-url), so mhcflurry and its torch
+  # dependency can be resolved in one call
+  ensure_env mhcflurry "$DIR/mhcflurry-env" 3.11 mhcflurry "mhcflurry --extra-index-url $TORCH_CPU" || return 1
   local py="$REPLY_PY" dl
   if [ "$DRY" = 1 ]; then
     info '$ mhcflurry-downloads fetch models_class1_presentation'
@@ -214,8 +250,8 @@ do_immuscope() {
       [ -n "$f" ] && run "mv '$f' '$h/data/raw/'"
     fi
   fi
-  ensure_env immuscope "$h/.venv" 3.11 torch \
-    "torch --index-url $TORCH_CPU numpy pandas h5py scikit-learn ruamel.yaml tqdm click" || return 1
+  ensure_env immuscope "$h/.venv" 3.11 h5py numpy pandas h5py scikit-learn ruamel.yaml tqdm click || return 1
+  ensure_torch immuscope "$h/.venv"
 }
 
 do_tlimmuno2() {
@@ -224,8 +260,7 @@ do_tlimmuno2() {
   # TensorFlow 2.15 (Keras 2) is required: Keras 3 cannot load these models. With conda the
   # environment is simply built on Python 3.11; with venv we must find such an interpreter.
   if [ -n "$CONDA" ]; then
-    ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow \
-      '"tensorflow-cpu==2.15.1" "numpy<2" pandas' || return 1
+    ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow '"tensorflow-cpu==2.15.1" "numpy<2" pandas' || return 1
     return 0
   fi
   if "$PY" -c 'import sys; sys.exit(0 if sys.version_info[:2] <= (3,11) else 1)' 2>/dev/null; then
@@ -240,35 +275,77 @@ do_tlimmuno2() {
     info "install conda (INSTALL.md 3) or: sudo apt install -y python3.11-venv"
     return 1
   fi
-  PY="$py" ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow \
-    '"tensorflow-cpu==2.15.1" "numpy<2" pandas'
+  PY="$py" ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow '"tensorflow-cpu==2.15.1" "numpy<2" pandas'
+}
+
+# NetCTL refuses to run if its own executable path is longer than 77 characters, and
+# "<models>/iedb/ng_tc1-v0.2-beta/method/nctl/nctle/netCTL.1" alone is 57 of them, so a
+# normal home directory pushes it over and ./configure warns that NetCTL will not work.
+# The engine finds a bundle by its files, not its folder name, so the extracted directory
+# is renamed to something short. shorten_bundle also repairs an install done before this.
+shorten_bundle() {                             # shorten_bundle <dir> <glob> <short name>
+  local d="$1" pat="$2" short="$3" old
+  [ -d "$d/$short" ] && return 0
+  old="$(find "$d" -maxdepth 1 -name "$pat" -type d -print -quit 2>/dev/null)"
+  [ -n "$old" ] || return 1
+  run "mv '$old' '$d/$short'" || return 1
+  info "renamed $(basename "$old") -> $short (NetCTL needs a path under 78 characters)"
+  # a uv/virtualenv records absolute paths in pyvenv.cfg and in every script shebang, so it
+  # does not survive its folder being renamed: drop it and let uv sync build it again (seconds)
+  if [ "$DRY" != 1 ] && [ -d "$d/$short/.venv" ]; then
+    rm -rf "$d/$short/.venv"
+    info "removed the bundle's old .venv so it is rebuilt for the new path"
+  fi
 }
 
 do_iedb1() {
-  local d="$DIR/iedb" t=IEDB_NG_TC1-v0.2-beta.tar.gz
+  local d="$DIR/iedb" t=IEDB_NG_TC1-v0.2-beta.tar.gz h="$DIR/iedb/tc1"
   need tcsh tcsh; need gawk gawk
   need uv uv || { info "uv: curl -LsSf https://astral.sh/uv/install.sh | sh"; return 1; }
-  [ -d "$d/ng_tc1-v0.2-beta" ] && { info "already extracted"; return 0; }
-  run "mkdir -p '$d'" || return 1
-  run "curl -fL --retry 3 -o '$d/$t' 'https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/$t'" || return 1
-  run "tar -xzf '$d/$t' -C '$d'" || return 1
+  if [ ! -d "$h" ]; then
+    if shorten_bundle "$d" 'ng_tc1-*' tc1; then             # repair an earlier install
+      run "cd '$h' && uv sync && ./configure" || return 1
+      return 0
+    fi
+    run "mkdir -p '$d'" || return 1
+    run "curl -fL --retry 3 -o '$d/$t' 'https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/$t'" || return 1
+    run "tar -xzf '$d/$t' -C '$d'" || return 1
+    shorten_bundle "$d" 'ng_tc1-*' tc1 || return 1
+    run "rm -f '$d/$t'"
+  else
+    info "already extracted"
+  fi
   # the bundle keeps its own uv environment; the engine drives its tcell_mhci.py through it
-  run "cd '$d/ng_tc1-v0.2-beta' && uv sync && ./configure" || return 1
-  run "rm -f '$d/$t'"
+  if [ "$DRY" = 1 ] || [ ! -x "$h/.venv/bin/python" ]; then
+    run "cd '$h' && uv sync && ./configure" || return 1
+  else
+    info "bundle environment already built"
+  fi
+  if [ "$DRY" != 1 ] && [ ${#h} -gt 20 ]; then
+    local probe="$h/method/nctl/nctle/netCTL.1"
+    [ ${#probe} -gt 77 ] && info "WARNING: $probe is ${#probe} characters; NetCTL needs 77 or fewer. Use --dir with a shorter path."
+  fi
 }
 
 do_iedb2() {
-  local d="$DIR/iedb" t=IEDB_NG_TC2-v0.2.3-beta.tar.gz h="$DIR/iedb/ng_tc2-v0.2.3-beta"
+  local d="$DIR/iedb" t=IEDB_NG_TC2-v0.2.3-beta.tar.gz h="$DIR/iedb/tc2"
   need tcsh tcsh; need gawk gawk; need perl perl; need R r-base-core
   need uv uv || { info "uv: curl -LsSf https://astral.sh/uv/install.sh | sh"; return 1; }
   if [ -d "$h" ]; then
     info "already extracted"
+  elif shorten_bundle "$d" 'ng_tc2-*' tc2; then             # repair an earlier install
+    :
   else
     run "mkdir -p '$d'" || return 1
     run "curl -fL --retry 3 -o '$d/$t' 'https://downloads.iedb.org/nextgen-tools/tcell_mhcii/LATEST/$t'" || return 1
     run "tar -xzf '$d/$t' -C '$d'" || return 1
-    run "cd '$h' && uv sync" || return 1
+    shorten_bundle "$d" 'ng_tc2-*' tc2 || return 1
     run "rm -f '$d/$t'"
+  fi
+  if [ "$DRY" = 1 ] || [ ! -x "$h/.venv/bin/python" ]; then
+    run "cd '$h' && uv sync" || return 1
+  else
+    info "bundle environment already built"
   fi
   # INSTALL.md 8.1(a): src/imscore.py builds the R path from bytes, giving "-R b/usr/bin/R",
   # and CD4episcore then returns nothing. Applied once, guarded by the grep.
