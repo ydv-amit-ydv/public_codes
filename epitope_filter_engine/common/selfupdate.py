@@ -11,7 +11,11 @@ pull; `status()` says so and gives the command to do it by hand.
 """
 import os
 import subprocess
+import threading
 import time
+import re
+
+_ANSI = re.compile("\x1b\\[[0-9;]*m")       # the installer colours its headings
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "https://github.com/ydv-amit-ydv/public_codes"
@@ -117,6 +121,65 @@ def status(check_remote=True):
         d["error"] = (f"This folder has {ahead} commit(s) of its own and is {behind} behind the remote, so it cannot "
                       f"fast-forward. Sort it out with git, or re-clone.")
     return d
+
+
+# ---------------------------------------------------------------- repairing the predictors
+#
+# Updating the code never touches the predictors in the models folder: that is the point of
+# keeping them apart. But a fix to the installer is only worth anything once the installer
+# runs again, so the page can run it. It is the same install_tools.sh the command line uses,
+# it is idempotent, and it repairs in place rather than downloading again.
+_repair = {"running": False, "log": [], "started": None, "finished": None, "ok": None}
+_repair_lock = threading.Lock()
+MAX_LOG = 4000
+
+
+def repair_status():
+    with _repair_lock:
+        return {"running": _repair["running"], "started": _repair["started"],
+                "finished": _repair["finished"], "ok": _repair["ok"],
+                "log": list(_repair["log"])[-400:], "lines": len(_repair["log"])}
+
+
+def repair_start(models_dir=None, light=False):
+    """Run install_tools.sh in the background. Returns at once; follow it with repair_status()."""
+    script = os.path.join(ROOT, "install_tools.sh")
+    if not os.path.exists(script):
+        return {"ok": False, "error": "install_tools.sh is not in this folder."}
+    with _repair_lock:
+        if _repair["running"]:
+            return {"ok": False, "error": "A repair is already running."}
+        _repair.update({"running": True, "log": [], "started": time.time(), "finished": None, "ok": None})
+
+    cmd = ["bash", script]
+    if models_dir:
+        cmd += ["--dir", models_dir]
+    if not light:
+        cmd += ["--iedb"]
+
+    def work():
+        rc = 1
+        try:
+            env = dict(os.environ, ENGINE_FROM_START="1", PYTHONUNBUFFERED="1")
+            p = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, text=True, bufsize=1, env=env)
+            for line in p.stdout:
+                line = _ANSI.sub("", line.rstrip("\n"))      # the installer colours its headings
+                with _repair_lock:
+                    if len(_repair["log"]) < MAX_LOG:
+                        _repair["log"].append(line)
+                    elif len(_repair["log"]) == MAX_LOG:
+                        _repair["log"].append("... (log truncated; run it in a terminal to see everything)")
+            rc = p.wait()
+        except Exception as e:                           # noqa: BLE001 - always report, never crash the server
+            with _repair_lock:
+                _repair["log"].append(f"could not run the installer: {e}")
+        finally:
+            with _repair_lock:
+                _repair.update({"running": False, "finished": time.time(), "ok": rc == 0})
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"ok": True, "message": "Repair started."}
 
 
 def apply():

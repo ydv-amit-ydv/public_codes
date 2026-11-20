@@ -285,6 +285,11 @@ server has to be restarted (**Restart to finish** does it and reloads the page).
   folder yourself (it says which). Untracked files such as `.venv` or `__pycache__` are ignored.
 - A copy installed by copying files rather than cloning cannot update itself; the card says so
   and gives the command.
+- **Repair / install predictors** sits beside it and re-runs the installer over the models
+  folder, with its log live in the page. Updating the code deliberately never touches the
+  predictors, so when an update fixes the *installer* it only helps once the installer runs
+  again — that button is how. It is also the way to install a predictor you skipped, or to fix
+  one that was installed by an older version. It is refused while a run is going.
 
 ## Single model and Projects
 

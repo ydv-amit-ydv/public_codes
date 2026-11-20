@@ -322,9 +322,14 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
    <button class="b" id="updcheck">Check for updates</button>
    <button class="b" id="updapply" style="display:none;background:#2b5c2b;border-color:#3d7a3d">Update now</button>
    <button class="b" id="updrestart" style="display:none;background:#2b5c2b;border-color:#3d7a3d">Restart to finish</button>
+   <button class="b" id="updrepair" title="Run the installer again over the predictors">Repair / install predictors</button>
    <span id="updmsg" class="sm" style="margin-left:6px"></span>
   </div>
   <div id="upddetail" class="sm muted" style="margin-top:8px"></div>
+  <div id="updrepairbox" style="display:none;margin-top:8px">
+   <div class="sm" id="updrepairmsg"></div>
+   <pre id="updrepairlog" style="max-height:260px;overflow:auto"></pre>
+  </div>
  </div>
  <div class="card" id="hostcard">
   <b>Host proteome</b> <span class="q" data-h="host_mode">?</span> <span class="muted sm" id="hostinfo"></span>
@@ -1460,9 +1465,37 @@ $("updapply").onclick = () => {
     $("upddetail").innerHTML = "<b>Updated.</b> " + d.n_files + " file(s) changed"
       + (d.files && d.files.length ? ": <code>" + d.files.slice(0,12).map(esc).join("</code>, <code>") + "</code>"
          + (d.n_files > 12 ? " and " + (d.n_files - 12) + " more" : "") : "")
-      + ".<br>Restart the server to load it. Finished runs are unchanged.";
+      + ".<br>Restart the server to load it. Finished runs are unchanged."
+      + "<br><b>If this update changed the installer</b> (install_tools.sh above), press "
+      + "<b>Repair / install predictors</b> afterwards: updating the code never touches the "
+      + "predictors in your models folder, so a fixed installer only helps once it runs again.";
   }).catch(e => { $("updapply").disabled = false; $("updmsg").textContent = "update failed: " + e; });
 };
+let repairPoll = null;
+function paintRepair(d){
+  $("updrepairbox").style.display = "";
+  $("updrepairlog").textContent = (d.log || []).join("\n");
+  const el = $("updrepairlog"); el.scrollTop = el.scrollHeight;
+  if (d.running) { $("updrepairmsg").textContent = "Running the installer... this can take a while on the first go."; $("updrepairmsg").className = "sm"; }
+  else if (d.ok === true) { $("updrepairmsg").innerHTML = "<b>Done.</b> Press <b>Test run</b> on the models below to confirm, or reload the page."; $("updrepairmsg").className = "sm ok"; }
+  else if (d.ok === false) { $("updrepairmsg").textContent = "The installer reported a problem; the log says which tool. Fix that and press Repair again."; $("updrepairmsg").className = "sm bad"; }
+}
+$("updrepair").onclick = () => {
+  $("updrepair").disabled = true;
+  fetch("api/update/repair", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"})
+    .then(r => r.json()).then(d => {
+      if (!d.ok) { $("updrepair").disabled = false; $("updmsg").textContent = d.error; $("updmsg").className = "sm bad"; return; }
+      clearInterval(repairPoll);
+      const tick = () => fetch("api/update/repair").then(r => r.json()).then(s => {
+        paintRepair(s);
+        if (!s.running) { clearInterval(repairPoll); $("updrepair").disabled = false; checkAll(false); }        /* the models that were just installed go green on their own */
+      }).catch(() => {});
+      tick(); repairPoll = setInterval(tick, 1500);
+    }).catch(e => { $("updrepair").disabled = false; $("updmsg").textContent = "could not start: " + e; });
+};
+/* if a repair was already going when the page was opened, pick it back up */
+fetch("api/update/repair").then(r => r.json()).then(d => { if (d.running || d.lines) paintRepair(d); }).catch(() => {});
+
 $("updrestart").onclick = () => {
   $("updrestart").disabled = true; $("updmsg").textContent = "restarting...";
   fetch("api/update/restart", {method: "POST"}).then(r => r.json()).then(d => {

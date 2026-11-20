@@ -733,6 +733,26 @@ def api_update_apply():
     return jsonify(r), (200 if r.get("ok") else 400)
 
 
+@main.post("/api/update/repair")
+def api_update_repair():
+    """Run the installer again over the models folder: fixes what a newer installer fixes.
+
+    The code and the predictors are deliberately kept apart, so updating the code cannot
+    repair a predictor that was installed by an older, buggier installer. This closes that
+    gap from the page.
+    """
+    if _job_running():
+        return jsonify(ok=False, error="A run is going. Wait for it to finish before repairing."), 409
+    body = request.get_json(silent=True) or {}
+    r = selfupdate.repair_start(models_dir=config.search_root(), light=bool(body.get("light")))
+    return jsonify(r), (200 if r.get("ok") else 400)
+
+
+@main.get("/api/update/repair")
+def api_update_repair_status():
+    return jsonify(selfupdate.repair_status())
+
+
 @main.post("/api/update/restart")
 def api_update_restart():
     """Restart the server so the new code is loaded. The reply is sent first, then the

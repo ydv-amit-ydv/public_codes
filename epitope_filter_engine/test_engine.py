@@ -999,7 +999,15 @@ _fake = _Job("pipeline"); _fake.state = "running"; _MGR._jobs[_fake.id] = _fake
 for path in ("/api/update/apply", "/api/update/restart"):
     r = c.post(path)
     assert r.status_code == 409 and "run is going" in r.get_json()["error"], (path, r.status_code, r.get_json())
+for path in ("/api/update/repair",):
+    r = c.post(path)
+    assert r.status_code == 409 and "run is going" in r.get_json()["error"], (path, r.get_json())
 _MGR._jobs.pop(_fake.id, None)
+# repairing re-runs the installer over the models folder, which updating the code cannot do:
+# the predictors live outside the code folder on purpose. Status is readable before any run.
+st = c.get("/api/update/repair").get_json()
+assert st["running"] is False and st["lines"] == 0 and st["log"] == [], st
+assert _su._ANSI.sub("", "\x1b[1m==> x\x1b[0m") == "==> x", "the installer's colours must not reach the page"
 # a folder that is not a clone says so instead of trying, and gives the manual command
 _root = _su.ROOT
 try:
