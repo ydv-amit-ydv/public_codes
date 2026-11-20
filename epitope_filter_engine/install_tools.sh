@@ -319,6 +319,7 @@ say "Summary"
 [ ${#FAILED[@]}  -gt 0 ] && info "failed:                       ${FAILED[*]}"
 [ "$WANT_IEDB" = 0 ] && [ -z "$ONLY" ] && info "the IEDB bundles were not requested: add --iedb"
 
+if [ -z "${ENGINE_FROM_START:-}" ]; then                 # start.sh says this part itself
 cat <<EOF
 
     NetMHCpan 4.2 is not installed by this script (DTU licence form): INSTALL.md 6.1
@@ -327,6 +328,7 @@ cat <<EOF
       cd "$(cd "$(dirname "$0")" && pwd)" && ENGINE_MODELS_DIR="$DIR" bash start.sh
     then open http://127.0.0.1:5000 and press Test run for each model under Settings.
 EOF
+fi
 
 [ ${#FAILED[@]} -gt 0 ] && exit 1
 exit 0

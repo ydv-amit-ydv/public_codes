@@ -323,36 +323,35 @@ Every run ends with a consensus step (`consensus.py`, tested in `test_consensus.
   coverage / rank / cluster / panel marks, sorted best first. Also peptides, candidates, panel and `run details` (json: the exact rules,
   tools, population and warnings behind the run).
 
-## Copy, paste, run
-
-> **Full install instructions for a new machine, conda-based and WSL-focused, are in
-> [`INSTALL.md`](INSTALL.md)**: every predictor, its licence, verification and the known
-> faults. `bash install_tools.sh` sets up the open-licence ones in one command. The rest of
-> this section is the short version.
+## Install it
 
 ```bash
-git clone https://github.com/ydv-amit-ydv/public_codes.git ~/public_codes
-conda env create -f ~/public_codes/epitope_filter_engine/environment.yml
-mkdir -p ~/local_engines                     # the tools go here, beside each other
-cd ~/public_codes/epitope_filter_engine
-ENGINE_MODELS_DIR=~/local_engines bash start.sh         # http://127.0.0.1:5000
+git clone https://github.com/ydv-amit-ydv/public_codes.git
 ```
 
-```
-~/local_engines/        <- ENGINE_MODELS_DIR
-    netmhc/             <- the NetMHCpan tarball extracted anywhere below (even nested)
-    bigmhc/             <- the BigMHC clone anywhere below
-    ...                 <- one folder per tool; names do not matter
+```bash
+cd public_codes/epitope_filter_engine && bash start.sh
 ```
 
-`start.sh` uses `$ENGINE_PYTHON`, else the active conda env, else the conda env
-`epitope-engine` (from `environment.yml`), else a `./.venv` it creates with flask + pandas.
-Each predictor runs in its own environment, found by name, so the server never imports
-torch or TensorFlow. With no config file the server **discovers everything**:
+The first run installs the system packages, the engine's environment and every predictor that
+does not need a licence form, then opens <http://localhost:5000>. Later runs just open it.
+**NetMHCpan 4.2** is the one you fetch yourself (DTU licence form); extract it under
+`~/local_engines` and it is found. Everything else works without it.
+
+See [`INSTALL.md`](INSTALL.md) for the options, the per-tool steps and the troubleshooting.
+
+```
+~/local_engines/        <- the predictors (ENGINE_MODELS_DIR)
+    netmhc/             <- the NetMHCpan tarball, extracted anywhere below (even nested)
+    bigmhc/  gfeller/  iedb/  ImmuScope/  TLimmuno2/
+```
+
+Each predictor runs in its own environment, found by name, so the server never imports torch
+or TensorFlow. With no config file the server **discovers everything**:
 
 | What | How it is found |
 |---|---|
-| NetMHCpan | a file named `netMHCpan` that has a `Linux_x86_64/` folder beside it, anywhere under `runner_codes/..` (up to 6 levels; shallowest wins) |
+| NetMHCpan | a file named `netMHCpan` that has a `Linux_x86_64/` folder beside it, anywhere under the models folder (up to 6 levels; shallowest wins) |
 | BigMHC | a folder with `src/predict.py` and `models/` |
 | BigMHC's Python | `BIGMHC_PYTHON` if set, else the conda env (named like `bigmhc` first) that can import torch, numpy, pandas and psutil |
 | Scratch dir | `/tmp/epitope_engine` |

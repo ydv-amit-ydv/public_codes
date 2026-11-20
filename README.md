@@ -17,25 +17,22 @@ automatically and runs each one in its own interpreter.
 
 **The predictors are not included and not redistributed here** — each has its own licence.
 
-Quick start on Linux / WSL:
+Quick start on Linux / WSL — clone, one command, done:
 
 ```bash
-git clone https://github.com/ydv-amit-ydv/public_codes.git ~/public_codes
+git clone https://github.com/ydv-amit-ydv/public_codes.git
 ```
 
 ```bash
-mkdir -p ~/local_engines && cd ~/public_codes/epitope_filter_engine && ENGINE_MODELS_DIR=~/local_engines bash start.sh
+cd public_codes/epitope_filter_engine && bash start.sh
 ```
 
-That already works (<http://127.0.0.1:5000>) with the built-in IEDB/Calis model. To add the
-predictors, run `bash install_tools.sh` for the open-licence ones and follow
-[`epitope_filter_engine/INSTALL.md`](epitope_filter_engine/INSTALL.md) for NetMHCpan and
-the IEDB bundles.
+The first run installs everything it can and opens the engine on <http://localhost:5000>;
+later runs just open it. The one exception is **NetMHCpan 4.2**, which needs DTU's licence
+form — the engine runs without it and tells you where to put it.
 
-- **[`INSTALL.md`](epitope_filter_engine/INSTALL.md)** — full install, every tool, verification, troubleshooting
-- **[`README.md`](epitope_filter_engine/README.md)** — what each model gives and how the consensus works
-
-Update with `git -C ~/public_codes pull`; your runs and settings live outside the code folder.
+Full details, and every step by hand: [`epitope_filter_engine/INSTALL.md`](epitope_filter_engine/INSTALL.md).
+What each model gives and how the consensus works: [`epitope_filter_engine/README.md`](epitope_filter_engine/README.md).
 
 ## circrna_opt
 

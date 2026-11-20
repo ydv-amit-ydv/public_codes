@@ -1,63 +1,73 @@
-# Installing the Epitope Filter Engine (WSL + conda)
+# Installing the Epitope Filter Engine
 
-Complete, ordered instructions for a new machine: WSL2, conda, the engine, then each of
-the eleven predictors, then how to verify every one of them.
+## Clone it, run one command, done
 
-The engine is a small Flask app. **It contains no predictors.** Each one is third-party
-software with its own licence, downloaded separately. The engine finds it on disk and runs
-it as a subprocess **in its own conda environment**, so torch, TensorFlow and the two IEDB
-bundles never have to agree about anything. That is why there is one environment per tool
-and not one big one.
+```bash
+git clone https://github.com/ydv-amit-ydv/public_codes.git
+```
 
-**Written for Ubuntu on WSL2**, which is what it is developed and tested on. It works the
-same on native Ubuntu — skip §2.1. macOS runs the engine but not DTU's Linux binaries
-(NetMHCpan, NetMHCIIpan, NetCTLpan, NetChop).
+```bash
+cd public_codes/epitope_filter_engine && bash start.sh
+```
 
-Allow about **20 GB** of disk for everything, or about 4 GB without the two IEDB bundles.
+That is the whole installation. The first run:
 
-| | |
-|---|---|
-| §1 | the short version |
-| §2 | WSL2 and system packages |
-| §3 | conda (Miniforge) |
-| §4 | the engine itself |
-| §5 | the open-licence predictors — one command |
-| §6 | NetMHCpan and the IEDB bundles — licence form, large downloads |
-| §7 | **verify every model** |
-| §8 | troubleshooting the faults we actually hit |
-| §9–12 | optional data, variables, updating, licences |
+- installs the system packages the shell-based predictors need (it asks once, with sudo),
+- makes the engine's own environment (conda if you have it, otherwise a virtualenv),
+- installs `uv`, then downloads and sets up **every predictor that can be installed without
+  a licence form** — MixMHCpred, PRIME, MixMHC2pred, BigMHC, MHCflurry, ImmuScope, TLimmuno2
+  and both IEDB bundles (NetMHCIIpan, CD4episcore, NetCTLpan, NetChop),
+- applies the CD4episcore fix that release needs,
+- and opens the engine on <http://localhost:5000>.
+
+Every run after that just opens the engine, in a second. Re-running is always safe: anything
+already installed is skipped.
+
+**One thing you must do by hand: NetMHCpan 4.2.** DTU require you to accept their licence on
+their own site, so no script may download it. Get the Linux version from
+<https://services.healthtech.dtu.dk/services/NetMHCpan-4.2/>, extract it anywhere under
+`~/local_engines`, and the engine finds it. Everything else works without it, and the first
+run tells you this again at the end. See §6.1.
+
+```
+Options you will probably never need:
+  bash start.sh --light        skip the two big IEDB bundles (~2.4 GB)
+  bash start.sh --no-setup     just start, skip the first-run install
+  bash start.sh --setup-only   install, do not open the server
+  bash start.sh --redo-setup   run the install again
+  bash start.sh --dir DIR      put the predictors somewhere else
+  bash start.sh --dry-run      print what the install would do, change nothing
+```
+
+Allow about **20 GB** of disk, or about 4 GB with `--light`. The predictors go in
+`~/local_engines` (or beside the clone, if you already had them there).
+
+**Written for Ubuntu, including WSL2**, which is what it is developed and tested on. On WSL,
+read §2.1 first — where you put the files matters a great deal for speed. macOS runs the
+engine but not DTU's Linux binaries (NetMHCpan, NetMHCIIpan, NetCTLpan, NetChop).
 
 ---
 
-## 1. The short version
+## The rest of this page
 
-From a fresh Ubuntu-on-WSL2 shell, with conda already installed (§3):
+You do not need it to install. It is here for when something breaks, or when you want to do a
+step yourself.
 
-```bash
-sudo apt update && sudo apt install -y git curl wget unzip g++ perl tcsh gawk r-base-core
-```
+The engine is a small Flask app and **contains no predictors**. Each one is third-party
+software with its own licence, installed separately, which the engine finds on disk and runs
+as a subprocess **in its own environment** — so torch, TensorFlow and the two IEDB bundles
+never have to agree about anything.
 
-```bash
-git clone https://github.com/ydv-amit-ydv/public_codes.git ~/public_codes
-```
-
-```bash
-conda env create -f ~/public_codes/epitope_filter_engine/environment.yml
-```
-
-```bash
-cd ~/public_codes/epitope_filter_engine && bash install_tools.sh --iedb
-```
-
-```bash
-cd ~/public_codes/epitope_filter_engine && ENGINE_MODELS_DIR=~/local_engines bash start.sh
-```
-
-Open <http://localhost:5000> in your Windows browser. Everything except **NetMHCpan 4.2**
-(§6.1) is now installed; go to §7 and press *Test run* on each model.
-
-`install_tools.sh` is idempotent — re-run it any time, and `--dry-run` shows what it would
-do without doing it.
+| | |
+|---|---|
+| §2 | WSL2, and the system packages the installer puts in |
+| §3 | conda (optional, but the smoother path) |
+| §4 | the engine itself, and where everything lives |
+| §5 | each open-licence predictor by hand |
+| §6 | **NetMHCpan** and the IEDB bundles |
+| §7 | **verify every model** |
+| §8 | troubleshooting the faults we actually hit |
+| §9–12 | optional data, variables, updating, licences |
 
 ---
 
