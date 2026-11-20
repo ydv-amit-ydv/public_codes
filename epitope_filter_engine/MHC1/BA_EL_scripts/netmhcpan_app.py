@@ -99,18 +99,113 @@ def read_sequences(text):
     return seqs
 
 
+NT = set("ACGTUN")
+
+
+def nucleotide_message(name, seq):
+    """Message when `seq` is almost certainly DNA or RNA, else None.
+
+    A, C, G and T are also amino-acid letters (Ala, Cys, Gly, Thr), so a pasted nucleotide
+    sequence passes the residue check and would be silently predicted as a peptide. The
+    three conditions below (length, near-purity, and at least three different bases) keep
+    genuine protein out of it: a poly-alanine stretch, or a short Gly/Thr-rich motif, is
+    not rejected.
+    """
+    s = seq.upper()
+    if len(s) < 15:
+        return None                                        # too short to call either way
+    n = sum(ch in NT for ch in s)
+    if n / len(s) < 0.95 or len({ch for ch in s if ch in "ACGTU"}) < 3:
+        return None                                        # not pure enough, or one or two letters only
+    kind = "RNA" if "U" in s and "T" not in s else "DNA"
+    return (f"{name} looks like a {kind} sequence, not protein: {n} of its {len(s)} residues are "
+            f"A, C, G, T, U or N. Those are also amino-acid letters, so it would otherwise be "
+            f"predicted as a peptide and the results would be meaningless. Translate it to protein "
+            f"first — the engine does not translate.")
+
+
+def _reject_nucleotide(name, seq):
+    msg = nucleotide_message(name, seq)
+    if msg:
+        raise ValueError(msg)
+
+
+def check_input_text(text, mode):
+    """Raise ValueError if the input looks like DNA or RNA.
+
+    Called while a request is being validated, so a nucleotide paste is refused before a
+    job is started, instead of failing once the run is already going. build_peptides
+    checks again as it cuts.
+    """
+    if mode in ("peptides", "fragments"):
+        for name, seq in read_peptides(text):
+            _reject_nucleotide(f"'{seq}'" if mode == "peptides" else name, seq)
+    else:
+        for name, seq in read_sequences(text):
+            _reject_nucleotide(name, seq)
+
+
+def read_peptides(text):
+    """Loose peptide input -> [(name, peptide)].
+
+    FASTA records keep their names; bare tokens (one peptide per line, or whitespace
+    separated) become pep1, pep2, ... Repeated names are made unique, because each name
+    is carried as the 'Protein' of its windows and has to identify one input peptide.
+    """
+    if any(l.lstrip().startswith(">") for l in text.splitlines()):
+        recs = read_sequences(text)
+    else:
+        recs = [(None, t) for t in text.split()]
+    out, seen = [], {}
+    for i, (name, seq) in enumerate(recs, 1):
+        n = name or f"pep{i}"
+        seen[n] = seen.get(n, 0) + 1
+        if seen[n] > 1:
+            n = f"{n}#{seen[n]}"
+        out.append((n, seq.upper()))
+    return out
+
+
 def build_peptides(text, mode, lengths, bounds=(8, 14)):
-    """DataFrame[Protein, Start, Peptide] plus a list of warnings. `bounds` = accepted length of loose peptides."""
+    """DataFrame[Protein, Start, Peptide] plus a list of warnings. `bounds` = accepted length of loose peptides.
+
+    mode "scan"       cut each FASTA sequence into every chosen window
+    mode "peptides"   use the peptides exactly as given (one row each)
+    mode "fragments"  many peptides at once, each cut into every chosen window that fits;
+                      'Protein' is the input peptide's name and 'Start' the offset inside it,
+                      so a window is always traceable back to the peptide it came from
+    """
     warns, rows = [], []
-    if mode == "peptides":
+    if mode == "fragments":
+        for name, seq in read_peptides(text):
+            _reject_nucleotide(name, seq)
+            bad = set(seq) - AA
+            if bad:
+                warns.append(f"{name}: non-standard residues {''.join(sorted(bad))}; windows containing them skipped")
+            n0 = len(rows)
+            for L in lengths:
+                for s in range(len(seq) - L + 1):          # empty when the peptide is shorter than L
+                    p = seq[s:s + L]
+                    if not set(p) - AA:
+                        rows.append((name, s + 1, p))
+            if len(rows) == n0:                            # nothing could be cut
+                if bounds[0] <= len(seq) <= bounds[1] and not bad:
+                    rows.append((name, 1, seq))            # shorter than every chosen size: keep it whole
+                    warns.append(f"{name}: {len(seq)} aa, shorter than every chosen size; used whole")
+                else:
+                    warns.append(f"skipped '{name}' ({len(seq)} aa): cannot be cut to the chosen sizes and is "
+                                 f"not {bounds[0]}-{bounds[1]} standard aa")
+    elif mode == "peptides":
         for i, tok in enumerate(text.replace(">", " ").split(), 1):
             p = tok.upper()
+            _reject_nucleotide(f"'{tok}'", p)
             if not (bounds[0] <= len(p) <= bounds[1]) or set(p) - AA:
                 warns.append(f"skipped '{tok}' (needs {bounds[0]}-{bounds[1]} standard aa)")
                 continue
             rows.append(("peptide", i, p))
     else:
         for name, seq in read_sequences(text):
+            _reject_nucleotide(name, seq)
             bad = set(seq) - AA
             if bad:
                 warns.append(f"{name}: non-standard residues {''.join(sorted(bad))}; windows containing them skipped")

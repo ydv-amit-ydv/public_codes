@@ -832,6 +832,61 @@ assert [r for r in c.get("/api/runs").get_json()["runs"] if r["id"] == d["id"]][
 d = wait_job(c.post("/api/single/run", json={**sp, "model": "iedb_imm"}).get_json()["id"])
 assert d["state"] == "done" and "IEDB_Immunogenicity" in c.get(f"/api/jobs/{d['id']}/result?table=single").get_json()["columns"]
 
+# ---- mode "fragments": many peptides, each cut into the chosen sizes, traceable to its parent ------------------------
+frag = {**params, "mode": "fragments", "text": "SIINFEKLGILGFVFTL\nGILGFVFTLAA", "lengths": [9, 10],
+        "alleles": ["HLA-A*02:01"], "models": {"netmhcpan": True}, "filters": {}}   # no filter: every window in the table
+pv = c.post("/api/pipeline/preview", json=frag).get_json()
+# 9+8 windows from the 17-mer and 3+2 from the 11-mer = 22, but GILGFVFTL occurs in both
+# input peptides, so 21 distinct peptides are predicted and mapped back to both parents
+assert pv["n_windows"] == 22 and pv["n_peptides"] == 21, pv
+d = wait_job(c.post("/api/pipeline/run", json=frag).get_json()["id"])
+assert d["state"] == "done", d.get("error")
+rows = c.get(f"/api/jobs/{d['id']}/result?table=master&limit=500").get_json()["rows"]
+# a window shared by two input peptides is predicted once and mapped back to BOTH parents,
+# each with its own offset, so every row is traceable to the peptide it came from
+# (the stub only ever scores GILGFVFTL, which is exactly the shared window here)
+assert {(r["Protein"], r["Start"]) for r in rows if r["Peptide"] == "GILGFVFTL"} == {("pep1", 9), ("pep2", 1)}, rows
+assert all(len(r["Peptide"]) in (9, 10) for r in rows)
+# a peptide shorter than every chosen size is used whole, and says so
+pv = c.post("/api/pipeline/preview", json={**frag, "text": "SIINFEKL", "lengths": [10]}).get_json()
+assert pv["n_peptides"] == 1 and any("shorter than every chosen size" in w for w in pv["warnings"]), pv
+# one too short to cut and outside the accepted length is skipped, not silently kept
+pv = c.post("/api/pipeline/preview", json={**frag, "text": "AAA\nGILGFVFTL", "lengths": [9]}).get_json()
+assert pv["n_peptides"] == 1 and any("skipped 'pep1'" in w for w in pv["warnings"]), pv
+# named input keeps its names
+pv = c.post("/api/pipeline/preview", json={**frag, "text": ">epA\nGILGFVFTLAA", "lengths": [9]}).get_json()
+assert pv["n_peptides"] == 3, pv
+# the protein-context tools are refused for fragments, as for loose peptides
+r = c.post("/api/pipeline/run", json={**frag, "models": {"netmhcpan": True, "netctlpan": True}})
+assert r.status_code == 400 and "NetCTLpan" in r.get_json()["error"], r.get_json()
+r = c.post("/api/pipeline/run", json={**frag, "funnel": {"mode": "manual", "stages": [{"models": ["netchop"]}]}})
+assert r.status_code == 400 and "needs the protein" in r.get_json()["error"], r.get_json()
+# sizes are still required in this mode (they decide the cutting)
+r = c.post("/api/pipeline/run", json={**frag, "lengths": []})
+assert r.status_code == 400 and "length" in r.get_json()["error"], r.get_json()
+# class II fragments go through the same path
+pv2 = c.post("/api/pipeline/preview", json={**ii, "mode": "fragments", "text": "A" * 30, "lengths": [15]}).get_json()
+assert pv2["n_windows"] == 16 and pv2["n_peptides"] == 1, pv2      # 16 windows of poly-A are one peptide
+
+# ---- a nucleotide sequence is refused: ACGT are amino-acid letters too, so it would be predicted silently ----------
+DNA, RNA = "ATGGCCTGCACCGGTAAATTCGGCTAACGTACGTACGGATCCAGTC", "AUGGCCUGCACCGGUAAAUUCGGCUAACGUACGUACGGAUCC"
+for text, mode in ((">myseq\n" + DNA, "scan"), (DNA, "fragments"), (DNA[:24], "peptides"),
+                   (">myseq\n" + DNA.lower(), "scan"), (">myseq\n" + RNA, "scan"),
+                   (">myseq\nATGGCCTGCANNGGTAAATTCGGCTAACGTACGTACGGATCC", "scan")):
+    r = c.post("/api/pipeline/run", json={**frag, "mode": mode, "text": text, "lengths": [9]})
+    assert r.status_code == 400 and "not protein" in r.get_json()["error"], (mode, r.status_code, r.get_json())
+    assert "RNA" if mode == "scan" and "U" in text else True
+# while the form is still being filled, preview says it as a hint rather than an error
+assert "not protein" in c.post("/api/pipeline/preview", json={**frag, "text": DNA}).get_json().get("hint", ""), "no hint"
+# and real protein is never refused: poly-alanine, two-letter peptides and short ACGT peptides are fine
+for text, mode, n in (("A" * 30, "fragments", 22), ("GTGTGTGTGTGTGTGTGTGT", "fragments", 12),
+                      ("ACGTACGTA", "peptides", 1), ("SIINFEKLGILGFVFTLQWE", "fragments", 12)):
+    r = c.post("/api/pipeline/run", json={**frag, "mode": mode, "text": text, "lengths": [9, 10]})
+    assert r.status_code == 200, (text, r.get_json())
+from MHC1.BA_EL_scripts import netmhcpan_app as _nm                              # noqa: E402
+assert _nm.nucleotide_message("x", "ASNENMETM") is None and _nm.nucleotide_message("x", DNA)
+assert "RNA" in _nm.nucleotide_message("x", RNA) and "DNA" in _nm.nucleotide_message("x", DNA)
+
 # ---- nothing hangs: a silent program is killed, a busy one is not, a runaway one hits the time limit ---------------------
 from common.jobs import run_cmd as _rc, ToolHung as _TH                          # noqa: E402
 import time as _t                                                                # noqa: E402

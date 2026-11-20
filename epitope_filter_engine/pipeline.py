@@ -52,15 +52,17 @@ def normalise(params):
     if not alleles:
         raise ValueError("Select at least one allele.")
     lengths = sorted({int(x) for x in p.get("lengths", [9]) if 8 <= int(x) <= 14})
-    if p.get("mode", "scan") == "scan" and not lengths:
+    if p.get("mode", "scan") != "peptides" and not lengths:
         raise ValueError("Select at least one peptide length (8-14).")
+    nm.check_input_text(p.get("text", ""), p.get("mode", "scan"))
     f = {k: _num((p.get("filters") or {}).get(k)) for k in FILTER_KEYS}
     nmp = {"ba": bool((p.get("nmp") or {}).get("ba", True)),
            "rankS": float((p.get("nmp") or {}).get("rankS", 0.5)),
            "rankW": float((p.get("nmp") or {}).get("rankW", 2.0))}
-    if p.get("mode", "scan") == "peptides" and (models["netctlpan"] or models["netchop"]):
+    if p.get("mode", "scan") != "scan" and (models["netctlpan"] or models["netchop"]):
         raise ValueError("NetCTLpan and NetChop need the protein the peptides come from (cleavage depends on the "
-                         "surrounding residues): choose 'Cut a protein / FASTA into fragments'.")
+                         "surrounding residues, which a short input peptide does not carry): choose "
+                         "'Cut a protein / FASTA into fragments'.")
     iedb = {"mask_choice": (p.get("iedb") or {}).get("mask_choice", "default"),
             "positions": str((p.get("iedb") or {}).get("positions", ""))}
     if iedb["mask_choice"] not in ci.MASK_CHOICES:

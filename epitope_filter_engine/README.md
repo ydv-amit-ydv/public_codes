@@ -29,8 +29,18 @@ on it in one job. Each arm has its own fragment sizes (all the sizes the models 
 alleles (the India population preset comes first when the population file is found), models and chain switch; an arm can be switched off.
 A small **?** beside every parameter explains it and gives its default.
 
-1. **Windows are cut once and de-duplicated.** Identical windows (the same sequence at several positions or in several proteins, or the same
-   peptide from two sizes of a loose list) are predicted once and mapped back; the preview shows how many were merged.
+0. **Three ways to give the input.** *Cut a protein / FASTA* scans whole sequences. *Peptides exactly as given* takes a list and predicts each
+   as it stands. *Many peptides, cut each* takes any number of peptides and cuts **every one** into all the ticked sizes that fit inside it, so a
+   list of 20-mers from the literature becomes their 9-, 10- and 11-mers. Each window keeps the name of the peptide it came from (`Protein`) and
+   its offset inside it (`Start`), so every row is traceable to its parent; a peptide shorter than every ticked size is used whole and the page
+   says so. In the last two modes NetCTLpan and NetChop are switched off, because cleavage depends on the residues flanking the peptide in its
+   protein and a short input peptide does not carry them.
+   **A pasted DNA or RNA sequence is refused** with an explanation: A, C, G and T are amino-acid letters too, so a nucleotide sequence would
+   otherwise be predicted as a peptide and the results would look normal but mean nothing. The check needs length, near-purity and at least three
+   different bases, so a poly-alanine or Gly/Thr-rich peptide is never rejected.
+1. **Windows are cut once and de-duplicated.** Identical windows (the same sequence at several positions or in several proteins, the same
+   peptide from two sizes of a loose list, or one shared by two input peptides) are predicted once and mapped back to **every** place they came
+   from; the preview shows how many were merged.
 2. **Each arm** runs its models, then the consensus step (see below): votes, agreement, population-weighted coverage, priority score.
 3. **Regions.** Candidates of both classes are grouped by position into labelled regions: **CTL+HTL** (a class I and a class II candidate
    overlap), **CTL only**, **HTL only**; CTL+HTL regions rank first. Each peptide table carries its `Region_ID`.

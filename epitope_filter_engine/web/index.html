@@ -99,6 +99,7 @@ details>summary{cursor:pointer}
   <h3>1 &middot; Protein or peptides <span class="q" data-h="mode">?</span></h3>
   <label class="i"><input type="radio" name="mode" value="scan" checked> Cut a protein / FASTA into fragments</label>
   <label class="i"><input type="radio" name="mode" value="peptides"> Use the peptides exactly as given (one per line)</label>
+  <label class="i"><input type="radio" name="mode" value="fragments"> Many peptides, cut <b>each</b> into the sizes below (one peptide per line)</label>
   <textarea id="text" rows="7" spellcheck="false">&gt;demo
 MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <div style="margin-top:4px"><input type="file" id="file" accept=".txt,.fa,.fasta,.pep"> <span class="muted sm">or load a file</span></div>
@@ -195,6 +196,7 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <h3>Input</h3>
   <label class="i"><input type="radio" name="smode" value="scan" checked> Cut a protein / FASTA into fragments</label>
   <label class="i"><input type="radio" name="smode" value="peptides"> Use the peptides exactly as given (one per line)</label>
+  <label class="i"><input type="radio" name="smode" value="fragments"> Many peptides, cut <b>each</b> into the sizes below (one peptide per line)</label>
   <textarea id="s_text" rows="6" spellcheck="false">&gt;demo
 MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <div style="margin-top:4px"><input type="file" id="s_file" accept=".txt,.fa,.fasta,.pep"> <button class="b" id="s_copy">copy the Pipeline input</button></div>
@@ -289,7 +291,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.da
 
 /* ---------- help: a small ? next to every parameter ---------- */
 const HELP = {
- mode: "<b>Cut a protein</b>: every window of the sizes you tick is predicted (identical windows are predicted once). <b>Peptides as given</b>: one peptide per line, used exactly; NetCTLpan and NetChop need the protein and are switched off.",
+ mode: "<b>Cut a protein</b>: every window of the sizes you tick is predicted (identical windows are predicted once). <b>Peptides as given</b>: one peptide per line, used exactly. <b>Many peptides, cut each</b>: give any number of peptides and every one is cut into all the sizes you tick that fit inside it, so a 20-mer from the literature becomes its 9-mers, 10-mers and so on; each window keeps the name of the peptide it came from and its offset in it, and a peptide shorter than every chosen size is used whole. In the last two modes NetCTLpan and NetChop are switched off, because cleavage depends on the residues flanking the peptide in its protein and a short input peptide does not carry them.",
  arms: "<b>MHC class I</b> peptides are shown to CD8 (killer) T cells, <b>class II</b> peptides to CD4 (helper) T cells. Both are on by default; where a class I and a class II candidate overlap, the region is labelled <b>CTL+HTL</b>.",
  sizes1: "Peptide lengths cut from the protein. All lengths the models accept are ticked: 8-14 for class I (most epitopes are 9-10). Fewer sizes = faster.",
  sizes2: "Window lengths for class II. 11-25 are ticked; the binding core is 9 aa, longer windows add flanks. Fewer sizes = faster.",
@@ -495,12 +497,12 @@ $("title").oninput = () => {};
 /* mode: loose peptides have no protein context */
 const AUTOOFF = {}, NOTREADY = {};
 function applyModeRules(){
-  const pep = mode() == "peptides";
+  const m = mode(), pep = m != "scan";              // neither loose peptides nor fragments carry protein context
   document.querySelectorAll("input[data-prot]").forEach(box => {
     if (pep) { if (box.checked) AUTOOFF[box.id] = true; box.checked = false; box.disabled = true; }
     else if (!NOTREADY[box.dataset.health]) { box.disabled = false; if (AUTOOFF[box.id]) { box.checked = true; AUTOOFF[box.id] = false; } }
   });
-  [1, 2].forEach(c => $("sizes" + c).parentElement.style.opacity = pep ? .45 : 1);
+  [1, 2].forEach(c => $("sizes" + c).parentElement.style.opacity = m == "peptides" ? .45 : 1);   // fragments needs the sizes
   queuePreview();
 }
 document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = applyModeRules);

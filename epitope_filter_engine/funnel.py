@@ -76,7 +76,7 @@ def normalise(spec, cls, mode):
                 raise ValueError(f"Funnel stage {i}: '{m}' is not a class {'I' if cls == 1 else 'II'} model.")
             if m in seen:
                 raise ValueError(f"'{models.SPECS[m].label}' appears in more than one stage; a model runs once.")
-            if models.SPECS[m].protein and mode == "peptides":
+            if models.SPECS[m].protein and mode != "scan":
                 raise ValueError(f"{models.SPECS[m].label} needs the protein: use 'Cut a protein' or remove it from the funnel.")
             seen.add(m)
         pr = dict(st.get("pass") or {"rule": "all"})

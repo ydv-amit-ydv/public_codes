@@ -52,12 +52,13 @@ def normalise(params):
         raise ValueError("Choose a model: " + ", ".join(MODELS))
     cls, label, needs_alleles, needs_prot, _, _ = MODELS[model]
     mode = p.get("mode", "scan")
-    if needs_prot and mode == "peptides":
+    if needs_prot and mode != "scan":
         raise ValueError(f"{label} needs the protein the peptides come from: choose 'Cut a protein / FASTA into fragments'.")
     lengths = sorted({int(x) for x in p.get("lengths", [9 if cls == 1 else 15])})
     lo, hi = (8, 14) if cls == 1 else (11, 25)
     lengths = [x for x in lengths if lo <= x <= hi]
-    if mode == "scan" and not lengths:
+    nm.check_input_text(p.get("text", ""), mode)
+    if mode != "peptides" and not lengths:
         raise ValueError(f"Select at least one peptide length ({lo}-{hi}).")
     canon = allele_lib.canonical if cls == 1 else allele_lib.canonical_ii
     alleles = list(dict.fromkeys(canon(a) for a in p.get("alleles", []) if str(a).strip()))

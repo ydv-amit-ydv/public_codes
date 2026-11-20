@@ -49,8 +49,6 @@ def normalise(params):
     parts = split(params)
     if not any(parts.values()):
         raise ValueError("Switch on MHC class I, class II, or both.")
-    if params.get("mode", "scan") == "peptides" and parts[2] is not None and parts[1] is None:
-        pass
     return {c: (MODULE[c].normalise(p) if p else None) for c, p in parts.items()}, parts
 
 
@@ -67,7 +65,11 @@ def preview(params):
 
 
 def _seqs(text, mode):
-    return dict(nm.read_sequences(text)) if mode == "scan" else {}
+    if mode == "scan":
+        return dict(nm.read_sequences(text))
+    if mode == "fragments":
+        return dict(nm.read_peptides(text))      # each input peptide is its own short "protein"
+    return {}
 
 
 def run(params, job):

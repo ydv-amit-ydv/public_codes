@@ -56,8 +56,9 @@ def normalise(params):
     if wrong:
         raise ValueError("Not MHC class II alleles: " + ", ".join(wrong) + " (DR, DQ, DP or mouse I-A / I-E expected).")
     lengths = sorted({int(x) for x in p.get("lengths", [15]) if int(x) in SCAN_LENGTHS})
-    if p.get("mode", "scan") == "scan" and not lengths:
+    if p.get("mode", "scan") != "peptides" and not lengths:
         raise ValueError("Select at least one peptide length (11-25).")
+    nm.check_input_text(p.get("text", ""), p.get("mode", "scan"))
     version = (p.get("nii") or {}).get("version", "4.3")
     if version not in nn.VERSIONS:
         raise ValueError(f"NetMHCIIpan version must be one of {nn.VERSIONS}.")
