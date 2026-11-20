@@ -1,0 +1,76 @@
+{
+  "tmp_dir": "auto",
+  "workspace_dir": "auto",
+  "performance": {
+    "profile": "auto",
+    "threads": 0,
+    "nice": 5,
+    "stall_seconds": 900,
+    "timeout_minutes": 0,
+    "parallel_models": 2,
+    "cache": 1
+  },
+  "population": {
+    "label": "India",
+    "weights_csv": "auto"
+  },
+  "host_proteome": {
+    "organism": "human",
+    "fasta": "auto",
+    "url": ""
+  },
+  "models": {
+    "netmhcpan": {
+      "enabled": true,
+      "home": "auto",
+      "workers": 0,
+      "alleles_per_call": 3
+    },
+    "bigmhc": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto",
+      "device": "cpu",
+      "jobs": 0
+    },
+    "mhcflurry": {
+      "enabled": true,
+      "python": "auto",
+      "command": "auto"
+    },
+    "iedb_bundle": {
+      "enabled": true,
+      "home": "auto",
+      "python": "auto"
+    },
+    "mixmhc2pred": {
+      "enabled": true,
+      "home": "auto"
+    },
+    "immuscope": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto"
+    },
+    "tlimmuno2": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto"
+    },
+    "iedb_bundle_ii": {
+      "enabled": true,
+      "home": "auto",
+      "python": "auto"
+    },
+    "mixmhcpred": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto"
+    },
+    "prime": {
+      "enabled": true,
+      "python": "auto",
+      "home": "auto"
+    }
+  }
+}

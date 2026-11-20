@@ -1,0 +1,13 @@
+# virtualenvs the engine makes on first run
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# engine runtime state (runs, caches, learned timings, downloaded proteomes)
+engine_workspace/
+engine_config.json
+timings.json
+
+# local scratch
+*.log

@@ -770,8 +770,8 @@ both = {"text": both_text, "mode": "scan", "preset": "iedb", "title": "Stub run"
         "c2": {**{k: ii[k] for k in ("alleles", "nii", "models", "chain")}, "lengths": [15], "filters": {}}}
 pv = c.post("/api/pipeline/preview", json=both).get_json()
 assert pv["classes"]["c1"]["n_peptides"] > 0 and pv["classes"]["c2"]["n_peptides"] > 0, pv
-d = wait_job(c.post("/api/pipeline/run", json=both).get_json()["id"], timeout=120)
 if have_tools:
+    d = wait_job(c.post("/api/pipeline/run", json=both).get_json()["id"], timeout=120)
     assert d["state"] == "done", d
     names = [x["name"] for x in d["stages"]]
     assert "c1_netmhcpan" in names and "c2_netmhciipan" in names and names[-1] == "regions", names
@@ -789,9 +789,9 @@ if have_tools:
     assert "report.html" in zn and "regions.csv" in zn and "classI/master.csv" in zn and "classII/master.csv" in zn and any(n.startswith("per_model/") for n in zn), zn
     rep = c.get(f"/api/jobs/{d['id']}/report").get_json()
     assert rep["dual"] and set(rep["classes"]) == {"1", "2"}
-    # one class switched off is a normal single-class run through the same form
-    d1 = wait_job(c.post("/api/pipeline/run", json={**both, "c2": {"enabled": False}}).get_json()["id"])
-    assert d1["state"] == "done" and [x["name"] for x in d1["stages"]][0] == "c1_netmhcpan", d1
+# one class switched off is a normal single-class run through the same form (class I stub only, so it runs anywhere)
+d1 = wait_job(c.post("/api/pipeline/run", json={**both, "c2": {"enabled": False}}).get_json()["id"])
+assert d1["state"] == "done" and [x["name"] for x in d1["stages"]][0] == "c1_netmhcpan", d1
 assert c.post("/api/pipeline/run", json={**both, "c1": {"enabled": False}, "c2": {"enabled": False}}).status_code == 400
 
 # ---- workspace: every run is kept and can be reopened after a restart; single-model runs ----------------------------------
