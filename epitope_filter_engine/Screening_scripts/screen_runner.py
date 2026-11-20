@@ -3,7 +3,7 @@
 These are not MHC predictors and they do not vote in the binding consensus. They answer the
 questions that decide whether a designed construct is usable at all:
 
-    toxicity        is this peptide / protein toxic?            ToxinPred3 / ToxinPred2
+    toxicity        is this peptide or construct toxic?         ToxinPred3
     allergenicity   will it be seen as an allergen?             AlgPred2
     IFN-gamma       will this HTL epitope induce IFN-gamma?     IFNepitope2
     haemolysis      will it lyse red blood cells? (optional)    HemoPI2
@@ -32,14 +32,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # key -> console script, extra flags, the column holding the score, and what a positive call
 # looks like in the Prediction column
 TOOLS = {
-    "toxinpred3": {"cmd": "toxinpred3", "label": "ToxinPred3 (peptide toxicity)",
+    "toxinpred3": {"cmd": "toxinpred3", "label": "ToxinPred3 (toxicity)",
                    "flags": ["-d", "2"], "score": ("Hybrid Score", "ML Score", "ML_Score"), "positive": "toxin",
                    "column": "Toxicity", "default_threshold": 0.38, "adverse": True,
                    "cite": "Rathore AS et al. (2024) Brief Bioinform 25(5):bbae208"},
-    "toxinpred2": {"cmd": "toxinpred2", "label": "ToxinPred2 (protein toxicity)",
-                   "flags": ["-d", "2"], "score": ("Hybrid Score", "ML_Score", "ML Score"), "positive": "toxin",
-                   "column": "Toxicity_Protein", "default_threshold": 0.6, "adverse": True,
-                   "cite": "Sharma N et al. (2022) Brief Bioinform 23(5):bbac174"},
     "algpred2": {"cmd": "algpred2", "label": "AlgPred2 (allergenicity)",
                  "flags": ["-d", "2"], "score": ("Hybrid Score", "ML_Score", "ML Score"), "positive": "allergen",
                  "column": "Allergenicity", "default_threshold": 0.3, "adverse": True,
@@ -119,7 +115,7 @@ def predict(tool, peptides, cfg, threshold=None, timeout=1800):
     if not os.path.exists(exe):
         raise ScreenError(f"{spec['label']} is not installed. " + HINT)
 
-    # ToxinPred3, ToxinPred2 and AlgPred2 all fail on a batch of ONE: their feature matrix
+    # ToxinPred3 and AlgPred2 both fail on a batch of ONE: their feature matrix
     # collapses to a single row and numpy/scikit-learn reject it ("axis 1 is out of bounds",
     # "Reshape your data... if it contains a single sample"). Send a filler alongside and
     # drop it afterwards; the mapping is by id, so the filler is never looked up.

@@ -318,8 +318,13 @@ shorten_bundle() {                             # shorten_bundle <dir> <glob> <sh
 }
 
 do_screen() {
-  # Safety and function screens: ToxinPred3 (peptide toxicity), ToxinPred2 (protein
-  # toxicity), AlgPred2 (allergenicity), IFNepitope2 (IFN-gamma induction).
+  # Safety and function screens: ToxinPred3 (toxicity), AlgPred2 (allergenicity),
+  # IFNepitope2 (IFN-gamma induction).
+  #
+  # ToxinPred2 is deliberately NOT installed. It is the previous version of ToxinPred3,
+  # trained on whole proteins, and running it over epitopes misfires: it called GILGFVFTL,
+  # a benign and very well characterised influenza epitope, a toxin. ToxinPred3 accepts
+  # proteins as well as peptides, so one model covers both.
   #
   # The version pins are not cosmetic, they are what makes these run at all:
   #   * scikit-learn 1.2.x — the shipped models are pickled trees from before scikit-learn
@@ -342,7 +347,7 @@ do_screen() {
   PY="$ipy" ensure_env vaxscreen "$DIR/vaxscreen-env" 3.11 pandas '"numpy<2" "pandas==1.5.3" joblib tqdm' || return 1   # tqdm: IFNepitope2 needs it and --no-deps skips it
   local py="$REPLY_PY"
   [ "$DRY" = 1 ] || [ -n "$py" ] || return 1
-  env_pip vaxscreen "$DIR/vaxscreen-env" toxinpred3 toxinpred3 toxinpred2 algpred2 || return 1
+  env_pip vaxscreen "$DIR/vaxscreen-env" toxinpred3 toxinpred3 algpred2 || return 1
   if [ "$DRY" = 1 ]; then
     info '$ pip install --no-deps ifnepitope2'
   elif ! "$py" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('ifnepitope2') else 1)" 2>/dev/null; then

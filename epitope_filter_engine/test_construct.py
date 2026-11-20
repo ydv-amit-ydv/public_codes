@@ -194,7 +194,10 @@ for call, token, want in (("Toxin", "toxin", True), ("Non-Toxin", "toxin", False
 
 # every tool declares whether a positive call is bad news or good news
 eq(sorted(k for k, v in sr.TOOLS.items() if v["adverse"]),
-   ["algpred2", "hemopi2", "toxinpred2", "toxinpred3"], "adverse screens")
+   ["algpred2", "hemopi2", "toxinpred3"], "adverse screens")
+# ToxinPred2 is the older, protein-trained version of ToxinPred3 and must not come back:
+# two versions of one model, and on epitopes it calls benign ones toxic
+eq("toxinpred2" in sr.TOOLS, False, "ToxinPred2 is not shipped")
 eq([k for k, v in sr.TOOLS.items() if not v["adverse"]], ["ifnepitope2"], "IFN-gamma is a benefit, not a flag")
 
 import pandas as _pd                                                             # noqa: E402
