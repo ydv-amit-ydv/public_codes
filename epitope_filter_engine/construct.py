@@ -1,0 +1,368 @@
+"""Multi-epitope vaccine construct: assembly, properties, junction screening, VaxiJen.
+
+Pure functions over strings and tables, like comparative.py: no GUI, no jobs, so the same
+code backs the web tab, the headless runner and the tests.
+
+The part that is not in the usual assembler is **junction screening**. Joining epitopes with
+linkers creates peptides that exist in neither the epitopes nor the linkers: every window
+that straddles a seam is new sequence, invented by the assembly. Those junctional peptides
+can be immunogenic (competing with the epitopes you chose), allergenic, or toxic, and they
+are routinely left unchecked. `junctions()` enumerates exactly the windows that cross a seam
+so the engine's own predictors can score them, which is the whole reason this lives inside
+the engine rather than in a separate tool.
+
+Physicochemistry follows the published definitions, with the references in PROPERTY_NOTES.
+"""
+import re
+
+AA = set("ACDEFGHIKLMNPQRSTVWY")
+
+# ---------------------------------------------------------------- linkers
+#
+# Sequence, what it joins, why, and the paper it comes from. The notes are shown in the page,
+# so a construct can be justified without leaving the tool.
+LINKERS = {
+    "adjuvant_to_epitope": ("EAAAK", "adjuvant -> first epitope",
+                            "Rigid alpha-helix; keeps the adjuvant domain from interfering with the epitope region.",
+                            "Arai R et al. (2001) Protein Eng 14(8):529-532"),
+    "CTL_intra":           ("AAY", "between CTL epitopes",
+                            "Proteasomal cleavage signal; Y is favoured at P1 of the chymotryptic-like site, so the "
+                            "upstream epitope is liberated cleanly.",
+                            "Tenzer S et al. (2005) Nat Immunol 6(9):928-937"),
+    "HTL_intra":           ("GPGPG", "between HTL epitopes",
+                            "Flexible, breaks secondary structure and keeps the MHC-II groove accessible.",
+                            "Ojha R, Prajapati VK (2023) Front Immunol 14:1101679"),
+    "Bcell_intra":         ("KK", "between B-cell epitopes",
+                            "Charged dibasic spacer; favours an extended, surface-accessible conformation. Also a "
+                            "cathepsin B cleavage site.",
+                            "Nezafat N et al. (2016) Chem Biol Drug Des 87(5):678-686"),
+    "block_to_block":      ("GGGS", "between epitope blocks",
+                            "Short flexible glycine-serine junction between structurally different blocks.",
+                            "Chen X, Zaro JL, Shen WC (2013) Adv Drug Deliv Rev 65(10):1357-1369"),
+    "epitope_to_Ctag":     ("GGGS", "last epitope -> C-terminal tag",
+                            "Flexible junction before the purification tag.",
+                            "Chen X, Zaro JL, Shen WC (2013) Adv Drug Deliv Rev 65(10):1357-1369"),
+}
+
+ADJUVANTS = {
+    "RS09":        ("APPHALS", "TLR4 agonist peptide", "Shanmugam A et al. (2012) PLoS One 7(2):e30839"),
+    "PADRE":       ("AKFVAAWTLKAAA", "universal pan-DR helper epitope", "Alexander J et al. (1994) Immunity 1(9):751-761"),
+    "beta-defensin-3": ("GIINTLQKYYCRVRGGRCAVLSCLPKEEQIGKCSTRGRKCCRRKK",
+                        "human beta-defensin 3; TLR1/2 agonist, links innate and adaptive",
+                        "Ferris LK et al. (2013) J Invest Dermatol 133(2):460-468"),
+    "flagellin-D1": ("MAQVINTNSLSLLTQNNLNKSQSALGTAIERLSSGLRINSAKDDAAGQAIANRFTANIKGLTQASRNANDGISIAQTTEGALNEINNNLQRVRELAVQSAN",
+                     "Salmonella flagellin D1 domain; TLR5 agonist", "Mizel SB, Bates JT (2010) J Immunol 185(10):5677-5682"),
+}
+
+CTAGS = {
+    "His6":    ("HHHHHH", "Ni-NTA affinity purification"),
+    "His8":    ("HHHHHHHH", "Ni-NTA, tighter binding"),
+    "Strep-II": ("WSHPQFEK", "gentle elution; good for labile proteins"),
+    "FLAG":    ("DYKDDDDK", "high-affinity antibody available"),
+}
+
+# ---------------------------------------------------------------- physicochemistry
+
+# free amino acid molecular weights (Da); a peptide loses one water per bond
+AA_MW = {'A': 89.09, 'R': 174.20, 'N': 132.12, 'D': 133.10, 'C': 121.16, 'E': 147.13,
+         'Q': 146.15, 'G': 75.07, 'H': 155.16, 'I': 131.17, 'L': 131.17, 'K': 146.19,
+         'M': 149.21, 'F': 165.19, 'P': 115.13, 'S': 105.09, 'T': 119.12, 'W': 204.23,
+         'Y': 181.19, 'V': 117.15}
+WATER = 18.02
+
+AA_PKA = {'N_term': 8.00, 'C_term': 3.10, 'D': 3.65, 'E': 4.25, 'H': 6.00,
+          'C': 8.18, 'Y': 10.07, 'K': 10.53, 'R': 12.48}
+
+KD = {'I': 4.5, 'V': 4.2, 'L': 3.8, 'F': 2.8, 'C': 2.5, 'M': 1.9, 'A': 1.8, 'G': -0.4,
+      'T': -0.7, 'S': -0.8, 'W': -0.9, 'Y': -1.3, 'P': -1.6, 'H': -3.2, 'D': -3.5,
+      'E': -3.5, 'N': -3.5, 'Q': -3.5, 'K': -3.9, 'R': -4.5}
+
+PROPERTY_NOTES = {
+    "mw": "Sum of residue weights minus one water per peptide bond. Fasman GD (1989) CRC Handbook.",
+    "pi": "pH where the net charge is zero, by bisection on the Henderson-Hasselbalch sum. "
+          "Free-amino-acid pKa values, so it is accurate to about 0.1-0.2 pH units; a folded "
+          "protein shifts individual pKa values. Bjellqvist B et al. (1993) Electrophoresis 14:1023.",
+    "gravy": "Mean Kyte-Doolittle hydropathy. Below 0 is hydrophilic and usually what a soluble "
+             "construct wants. Kyte J, Doolittle RF (1982) J Mol Biol 157:105.",
+    "instability": "(10/N) x sum of dipeptide instability weights. Under 40 predicts stability in "
+                   "vitro. Trained on 44 proteins, so it is a heuristic: disordered and short "
+                   "sequences often exceed 40 while being perfectly usable. "
+                   "Guruprasad K et al. (1990) Protein Eng 4:155.",
+    "aliphatic": "Relative volume of aliphatic side chains (A, V, I, L). Higher means more "
+                 "thermostable; above about 80 is comfortable. Ikai A (1980) J Biochem 88:1895.",
+}
+
+
+def mw(seq):
+    if not seq:
+        return 0.0
+    return round(sum(AA_MW.get(a, 110.0) for a in seq) - WATER * (len(seq) - 1), 2)
+
+
+def pi(seq):
+    """Isoelectric point by bisection on the net-charge curve."""
+    if not seq:
+        return 0.0
+    n = {a: seq.count(a) for a in "DEHCYKR"}
+
+    def charge(ph):
+        q = 1.0 / (1.0 + 10 ** (ph - AA_PKA["N_term"]))
+        q -= 1.0 / (1.0 + 10 ** (AA_PKA["C_term"] - ph))
+        for a in ("K", "R", "H"):
+            q += n.get(a, 0) / (1.0 + 10 ** (ph - AA_PKA[a]))
+        for a in ("D", "E", "C", "Y"):
+            q -= n.get(a, 0) / (1.0 + 10 ** (AA_PKA[a] - ph))
+        return q
+
+    lo, hi = 0.0, 14.0
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if charge(mid) > 0:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2, 2)
+
+
+def gravy(seq):
+    return round(sum(KD.get(a, 0.0) for a in seq) / len(seq), 3) if seq else 0.0
+
+
+def aliphatic_index(seq):
+    """Ikai's aliphatic index: 100 x (A% + 2.9 V% + 3.9 (I% + L%))."""
+    if not seq:
+        return 0.0
+    n = len(seq)
+    a, v, i, l = (seq.count(x) / n for x in "AVIL")
+    return round(100 * (a + 2.9 * v + 3.9 * (i + l)), 2)
+
+
+def instability(seq, diwv):
+    """Guruprasad instability index. `diwv` is the 400-entry dipeptide weight table."""
+    if len(seq) < 2:
+        return 0.0
+    return round((10.0 / len(seq)) * sum(diwv.get(seq[i:i + 2], 1.0) for i in range(len(seq) - 1)), 2)
+
+
+def properties(seq, diwv=None):
+    out = {"length": len(seq), "mw": mw(seq), "pi": pi(seq), "gravy": gravy(seq),
+           "aliphatic_index": aliphatic_index(seq)}
+    if diwv:
+        out["instability"] = instability(seq, diwv)
+    return out
+
+
+def verdicts(p):
+    """The design checklist, as (ok, message) pairs. Thresholds from the usual design papers."""
+    out = []
+    if "instability" in p:
+        out.append((p["instability"] < 40,
+                    f"Instability index {p['instability']}: "
+                    + ("under 40, predicted stable in vitro" if p["instability"] < 40
+                       else "40 or more, may degrade; re-ordering epitopes or changing linkers often fixes it")))
+    out.append((p["gravy"] < 0, f"GRAVY {p['gravy']}: "
+                + ("negative, good aqueous solubility expected" if p["gravy"] < 0
+                   else "positive, may be hard to express solubly")))
+    out.append((4.5 <= p["pi"] <= 9.5, f"pI {p['pi']}: "
+                + ("in the workable 4.5-9.5 range" if 4.5 <= p["pi"] <= 9.5
+                   else "extreme; solubility is worst at the pI, so keep buffers away from it")))
+    out.append((p["aliphatic_index"] >= 80, f"Aliphatic index {p['aliphatic_index']}: "
+                + ("80 or above, thermostable" if p["aliphatic_index"] >= 80 else "below 80, less thermostable")))
+    out.append((20 <= p["mw"] / 1000 <= 150, f"Molecular weight {p['mw'] / 1000:.1f} kDa: "
+                + ("in the usual 20-150 kDa range" if 20 <= p["mw"] / 1000 <= 150
+                   else "outside the usual 20-150 kDa range; check the construct is complete")))
+    return out
+
+
+# ---------------------------------------------------------------- assembly
+
+PREFERRED_C_TERM = set("LVIFMA")      # favoured at P1 by the proteasome's chymotryptic-like site
+
+
+def order_ctl(epitopes):
+    """CTL epitopes ending in a favoured proteasomal P1 residue first, order otherwise kept."""
+    return sorted(epitopes, key=lambda e: (not e or e[-1] not in PREFERRED_C_TERM))
+
+
+def assemble(ctl=(), htl=(), bcell=(), adjuvant="", ctag="", optimise_ctl=True, linkers=None):
+    """Build the construct. Returns (sequence, parts) where parts are the labelled pieces in order.
+
+    Each part is {kind, label, seq, start, end} with 1-based inclusive coordinates, so the page
+    can colour the construct and every downstream table can say which piece a position is in.
+    """
+    L = {k: (linkers or {}).get(k, v[0]) for k, v in LINKERS.items()}
+    ctl = order_ctl([e for e in ctl if e]) if optimise_ctl else [e for e in ctl if e]
+    htl = [e for e in htl if e]
+    bcell = [e for e in bcell if e]
+
+    parts, blocks = [], []
+    for kind, eps, intra in (("CTL", ctl, "CTL_intra"), ("HTL", htl, "HTL_intra"), ("Bcell", bcell, "Bcell_intra")):
+        if not eps:
+            continue
+        block = []
+        for i, e in enumerate(eps, 1):
+            if i > 1:
+                block.append(("linker", intra, L[intra]))
+            block.append(("epitope", f"{kind} {i}", e))
+        blocks.append((kind, block))
+
+    seq_parts = []
+    if adjuvant:
+        seq_parts.append(("adjuvant", "adjuvant", adjuvant))
+        if blocks or ctag:
+            seq_parts.append(("linker", "adjuvant_to_epitope", L["adjuvant_to_epitope"]))
+    for i, (_kind, block) in enumerate(blocks):
+        if i:
+            seq_parts.append(("linker", "block_to_block", L["block_to_block"]))
+        seq_parts.extend(block)
+    if ctag:
+        if blocks or adjuvant:
+            seq_parts.append(("linker", "epitope_to_Ctag", L["epitope_to_Ctag"]))
+        seq_parts.append(("tag", "C-terminal tag", ctag))
+
+    seq, pos = [], 1
+    for kind, label, s in seq_parts:
+        parts.append({"kind": kind, "label": label, "seq": s, "start": pos, "end": pos + len(s) - 1})
+        seq.append(s)
+        pos += len(s)
+    return "".join(seq), parts
+
+
+# ---------------------------------------------------------------- junction screening
+
+def junctions(parts, lengths=(9, 15)):
+    """Peptides created by the joining itself: every window that crosses a seam.
+
+    A window lying entirely inside one epitope is something you already chose and already
+    screened. A window spanning a seam is new sequence that the assembly invented, and it is
+    what has to be checked for unintended immunogenicity, allergenicity and toxicity.
+
+    Returns [{peptide, length, start, end, spans, seam}] de-duplicated by (peptide, start).
+    """
+    seq = "".join(p["seq"] for p in parts)
+    if not seq or not parts:
+        return []
+    # which part each 0-based position belongs to
+    owner = []
+    for i, p in enumerate(parts):
+        owner.extend([i] * len(p["seq"]))
+
+    # Sequence that is already in the construct as a part is not new, however the window
+    # falls: an epitope flanked by a linker that repeats its residues (AAAAAAAAA + AAY) can
+    # be re-spelled by a window that crosses the seam. It was chosen and screened already.
+    known = {p["seq"] for p in parts if p["kind"] != "linker"}
+
+    out, seen = [], set()
+    for k in sorted({int(x) for x in lengths if int(x) > 1}):
+        for s in range(0, len(seq) - k + 1):
+            span = owner[s:s + k]
+            if span[0] == span[-1]:
+                continue                                    # inside a single part
+            idx = sorted(set(span))
+            if all(parts[i]["kind"] == "linker" for i in idx):
+                continue                                    # pure linker, nothing new to present
+            if seq[s:s + k] in known:
+                continue                                    # not new sequence
+            key = (seq[s:s + k], s)
+            if key in seen:
+                continue
+            seen.add(key)
+            names = [parts[i]["label"] for i in idx]
+            out.append({"peptide": seq[s:s + k], "length": k, "start": s + 1, "end": s + k,
+                        "spans": names, "seam": " | ".join(names)})
+    return out
+
+
+def junction_summary(parts, lengths=(9, 15)):
+    j = junctions(parts, lengths)
+    return {"n": len(j), "unique_peptides": len({x["peptide"] for x in j}),
+            "by_length": {k: sum(1 for x in j if x["length"] == k) for k in sorted({x["length"] for x in j})}}
+
+
+# ---------------------------------------------------------------- VaxiJen (online only)
+
+def to_fasta(seqs, prefix="seq"):
+    """Peptides (or (name, seq) pairs) -> FASTA text, for pasting into a web service."""
+    lines = []
+    for i, item in enumerate(seqs, 1):
+        name, s = item if isinstance(item, (tuple, list)) else (f"{prefix}_{i}", item)
+        s = str(s).strip().upper()
+        if not s:
+            continue
+        lines.append(f">{name}")
+        lines.extend(s[j:j + 60] for j in range(0, len(s), 60))
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+# VaxiJen's wording has changed between versions and between the protein and tumour models,
+# so several shapes are accepted rather than one. Score may be a bare number or a percentage.
+_VJ_PATTERNS = (
+    # "Overall Prediction for the Protective Antigen = 0.4521 ( Probable NON-ANTIGEN )"
+    re.compile(r"(?:=|:)\s*([-+]?\d*\.?\d+)\s*\(\s*Probable\s+(ANTIGEN|NON-?ANTIGEN|IMMUNOGEN|NON-?IMMUNOGEN)",
+               re.I),
+    # "Probable IMMUNOGEN with a probability of 87%"
+    re.compile(r"Probable\s+(ANTIGEN|NON-?ANTIGEN|IMMUNOGEN|NON-?IMMUNOGEN)\s*,?\s*with a probability of\s*"
+               r"([-+]?\d*\.?\d+)\s*%?", re.I),
+    # bare "... = 0.4521" with the verdict elsewhere on the line
+    re.compile(r"Probable\s+(ANTIGEN|NON-?ANTIGEN|IMMUNOGEN|NON-?IMMUNOGEN)", re.I),
+)
+_VJ_NAME = re.compile(r">\s*(\S+)|\bseq[_\s]?(\d+)\b", re.I)
+
+
+def parse_vaxijen(text, threshold=0.4):
+    """VaxiJen output (pasted or saved) -> [{name, antigen, score, verdict}] plus warnings.
+
+    Handles the formats VaxiJen has used: "= 0.4521 ( Probable ANTIGEN )", "Probable IMMUNOGEN
+    with a probability of 87%", and a verdict with no number. A percentage is divided by 100 so
+    `score` is always on VaxiJen's 0-1 scale, comparable with the threshold (0.4 for the default
+    protein model; 0.5 for tumour and some virus models, so it is a parameter).
+    """
+    warns, rows = [], []
+    blocks = re.split(r"(?=^\s*>)", text or "", flags=re.M)
+    if len(blocks) <= 1:                                     # no FASTA headers: split per line
+        blocks = [b for b in (text or "").splitlines() if b.strip()]
+
+    auto = 0
+    for block in blocks:
+        if not block.strip():
+            continue
+        score, label = None, None
+        for pat in _VJ_PATTERNS:
+            m = pat.search(block)
+            if not m:
+                continue
+            groups = [g for g in m.groups() if g is not None]
+            for g in groups:
+                if re.fullmatch(r"[-+]?\d*\.?\d+", g):
+                    score = float(g)
+                    if "%" in block[m.start():m.end() + 1] or score > 1.0:
+                        score /= 100.0
+                else:
+                    label = g.upper().replace("NONANTIGEN", "NON-ANTIGEN").replace("NONIMMUNOGEN", "NON-IMMUNOGEN")
+            break
+        if label is None and score is None:
+            continue
+        nm = _VJ_NAME.search(block)
+        if nm and nm.group(1):
+            name = nm.group(1)
+        elif nm and nm.group(2):
+            name = f"seq_{nm.group(2)}"
+        else:
+            auto += 1
+            name = f"seq_{auto}"
+        antigen = None
+        if label:
+            antigen = not label.startswith("NON")
+        elif score is not None:
+            antigen = score >= threshold
+        rows.append({"name": name, "antigen": bool(antigen),
+                     "score": None if score is None else round(score, 4),
+                     "verdict": label or ("ANTIGEN" if antigen else "NON-ANTIGEN")})
+    if not rows:
+        warns.append("Nothing recognisable in that text. Paste VaxiJen's result page, including the "
+                     "'Probable ANTIGEN / NON-ANTIGEN' lines.")
+    missing = [r["name"] for r in rows if r["score"] is None]
+    if missing:
+        warns.append(f"{len(missing)} entr(y/ies) had a verdict but no score; the threshold could not be "
+                     f"re-applied to them ({', '.join(missing[:4])}).")
+    return rows, warns
