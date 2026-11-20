@@ -181,13 +181,15 @@ step() {                                       # step <name> <label> <function>
 
 do_mixmhcpred() {
   # needs only numpy and pandas, which the engine's own environment already has
-  clone https://github.com/GfellerLab/MixMHCpred.git "$DIR/gfeller/MixMHCpred"
+  clone https://github.com/GfellerLab/MixMHCpred.git "$DIR/gfeller/MixMHCpred" || return 1
+  return 0
 }
 
 do_prime() {
   need g++ g++ || info "PRIME needs g++ to rebuild lib/PRIME.x on first use"
   clone https://github.com/GfellerLab/PRIME.git "$DIR/gfeller/PRIME" || return 1
   info "PRIME calls MixMHCpred, so keep that one installed too"
+  return 0
 }
 
 do_mixmhc2pred() {
@@ -214,12 +216,14 @@ do_mixmhc2pred() {
     run "unzip -ojq '$m/PWMdef_$sp.zip' -d '$m/PWMdef'" || return 1
     run "rm -f '$m/PWMdef_$sp.zip'"
   done
+  return 0
 }
 
 do_bigmhc() {
   clone https://github.com/KarchinLab/bigmhc.git "$DIR/bigmhc" || return 1
   ensure_env bigmhc "$DIR/bigmhc/.venv" 3.11 pandas numpy pandas psutil || return 1
-  ensure_torch bigmhc "$DIR/bigmhc/.venv"
+  ensure_torch bigmhc "$DIR/bigmhc/.venv" || return 1
+  return 0
 }
 
 do_mhcflurry() {
@@ -239,6 +243,7 @@ do_mhcflurry() {
     run "'$dl' fetch models_class1_presentation" || return 1   # 160 MB
   fi
   [ -n "$CONDA" ] || info "no clone to find: export MHCFLURRY_PYTHON=$py"
+  return 0
 }
 
 do_immuscope() {
@@ -263,7 +268,8 @@ do_immuscope() {
     fi
   fi
   ensure_env immuscope "$h/.venv" 3.11 h5py numpy pandas h5py scikit-learn ruamel.yaml tqdm click || return 1
-  ensure_torch immuscope "$h/.venv"
+  ensure_torch immuscope "$h/.venv" || return 1
+  return 0
 }
 
 do_tlimmuno2() {
@@ -287,7 +293,8 @@ do_tlimmuno2() {
     info "install conda (INSTALL.md 3) or: sudo apt install -y python3.11-venv"
     return 1
   fi
-  PY="$py" ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow '"tensorflow-cpu==2.15.1" "numpy<2" pandas'
+  PY="$py" ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow '"tensorflow-cpu==2.15.1" "numpy<2" pandas' || return 1
+  return 0
 }
 
 # NetCTL refuses to run if its own executable path is longer than 77 characters, and
@@ -347,6 +354,7 @@ do_screen() {
   run "'${py:-python3}' -m pip install -q 'scikit-learn==1.2.2'" || return 1
   info "HemoPI2 (haemolysis) is not installed by default: it needs torch. Add it with"
   info "  '${py:-<screening python>}' -m pip install hemopi2 torch --index-url $TORCH_CPU"
+  return 0
 }
 
 do_iedb1() {
@@ -376,6 +384,7 @@ do_iedb1() {
     local probe="$h/method/nctl/nctle/netCTL.1"
     [ ${#probe} -gt 77 ] && info "WARNING: $probe is ${#probe} characters; NetCTL needs 77 or fewer. Use --dir with a shorter path."
   fi
+  return 0
 }
 
 do_iedb2() {
@@ -411,6 +420,7 @@ do_iedb2() {
       && info "applied the CD4episcore R-path fix (INSTALL.md 8.1a)"
   fi
   info "if CD4episcore segfaults on a very new Intel CPU, apply INSTALL.md 8.1(b) (qemu-user)"
+  return 0
 }
 
 # ---------------------------------------------------------------- run

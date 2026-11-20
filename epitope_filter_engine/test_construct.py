@@ -211,6 +211,11 @@ eq(list(_tbl.columns), ["Peptide"], "a missing tool contributes no columns")
 assert _notes and "not installed" in _notes[0], _notes
 ok += 1
 eq(sr.screen([], {"python": ""})[0].empty, True, "no peptides, no rows")
+# ToxinPred3/2 and AlgPred2 reject a batch of one ("axis 1 is out of bounds", "Reshape your
+# data... single sample"), so a filler is sent alongside and dropped. It must never surface,
+# including when the peptide being screened IS the filler.
+eq(sr.FILLER != sr.FILLER2, True, "two fillers, so a peptide equal to one still gets padding")
+eq(len(sr.FILLER) >= 8 and set(sr.FILLER) <= set("ACDEFGHIKLMNPQRSTVWY"), True, "the filler is a real peptide")
 try:
     sr.predict("nosuchtool", ["AAA"], {"python": "x"})
     raise AssertionError("an unknown screen must be refused")

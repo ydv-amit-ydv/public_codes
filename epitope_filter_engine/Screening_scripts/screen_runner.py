@@ -54,6 +54,10 @@ TOOLS = {
                 "cite": "Rathore AS et al. (2025) Nucleic Acids Res, HemoPI2.0"},
 }
 
+# padding for the batch-of-one bug above; any valid peptide does, it is never reported
+FILLER = "AAAAAAAAAA"
+FILLER2 = "CCCCCCCCCC"
+
 HINT = ("Install the screening tools: bash start.sh --redo-setup, or press "
         "'Repair / install predictors' in Settings. They need scikit-learn 1.2.x, which the "
         "installer pins, because their models cannot be unpickled by newer versions.")
@@ -115,11 +119,19 @@ def predict(tool, peptides, cfg, threshold=None, timeout=1800):
     if not os.path.exists(exe):
         raise ScreenError(f"{spec['label']} is not installed. " + HINT)
 
+    # ToxinPred3, ToxinPred2 and AlgPred2 all fail on a batch of ONE: their feature matrix
+    # collapses to a single row and numpy/scikit-learn reject it ("axis 1 is out of bounds",
+    # "Reshape your data... if it contains a single sample"). Send a filler alongside and
+    # drop it afterwards; the mapping is by id, so the filler is never looked up.
+    sent = list(peptides)
+    if len(sent) < 2:
+        sent = sent + [FILLER if sent[0] != FILLER else FILLER2]
+
     # its own directory: ToxinPred3 drops a file named Sequence_1 in the working directory
     with tempfile.TemporaryDirectory(prefix=f"screen_{tool}_") as d:
         fin, fout = os.path.join(d, "in.fa"), os.path.join(d, "out.csv")
         with open(fin, "w") as f:
-            f.write(_fasta(peptides))
+            f.write(_fasta(sent))
         cmd = [exe, "-i", fin, "-o", fout, *spec["flags"]]
         if threshold is not None:
             cmd += ["-t", str(threshold)]
@@ -136,7 +148,7 @@ def predict(tool, peptides, cfg, threshold=None, timeout=1800):
     if not rows:
         raise ScreenError(f"{spec['label']} returned an empty table for {len(peptides)} peptide(s)")
 
-    by_id = {f"s{i}": p for i, p in enumerate(peptides, 1)}
+    by_id = {f"s{i}": p for i, p in enumerate(sent, 1)}
     score_key = next((k for k in spec["score"] if rows and k in rows[0]), None)
     # "Subject" is what ToxinPred3 calls it under the hybrid model, where there is also no
     # Sequence column, so the id is the only way back to the peptide
@@ -147,7 +159,7 @@ def predict(tool, peptides, cfg, threshold=None, timeout=1800):
     for row in rows:
         pid = (row.get(id_key) or "").strip()
         pep = by_id.get(pid) or (row.get("Sequence") or "").strip().upper()
-        if not pep:
+        if not pep or pep not in set(peptides):          # the padding row, if one was added
             continue
         try:
             score = float(row.get(score_key)) if score_key and row.get(score_key) not in (None, "") else None

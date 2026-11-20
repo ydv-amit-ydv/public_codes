@@ -1178,7 +1178,8 @@ buildSingle();
 })();
 
 /* ---------- settings ---------- */
-const MODELS = ["netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_bundle", "bigmhc", "mixmhc2pred", "iedb_bundle_ii", "immuscope", "tlimmuno2"];
+const MODELS = ["netmhcpan", "mixmhcpred", "mhcflurry", "prime", "iedb_bundle", "bigmhc", "mixmhc2pred",
+                "iedb_bundle_ii", "immuscope", "tlimmuno2", "screen"];   /* screen = toxicity, allergenicity, IFN-gamma */
 async function loadCfg(){
   const d = await (await fetch("api/config")).json();
   $("path").textContent = d.path; $("cfg").value = d.text;
