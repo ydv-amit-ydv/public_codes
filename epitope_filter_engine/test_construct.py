@@ -179,4 +179,42 @@ eq(fa.count(">"), 2, "two records to submit")
 back, _ = cn.parse_vaxijen(">seq_1\n= 0.61 ( Probable ANTIGEN )\n>seq_2\n= 0.30 ( Probable NON-ANTIGEN )")
 eq([r["name"] for r in back], ["seq_1", "seq_2"], "names line up with the submitted FASTA")
 
-print(f"construct tests passed ({ok} checks)")
+# ---------------------------------------------------------------- screening wrappers
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "Screening_scripts"))
+import screen_runner as sr                                                       # noqa: E402
+
+# "Non-Allergen" contains "allergen": a substring test would call everything positive, which
+# is what the first version did
+for call, token, want in (("Toxin", "toxin", True), ("Non-Toxin", "toxin", False),
+                          ("Allergen", "allergen", True), ("Non-Allergen", "allergen", False),
+                          ("IFN-γ inducer", "inducer", True), ("Non-inducer", "inducer", False),
+                          ("Hemolytic", "hemolytic", True), ("Non-Hemolytic", "hemolytic", False),
+                          ("", "toxin", False), (None, "toxin", False)):
+    eq(sr.is_positive(call, token), want, f"is_positive({call!r})")
+
+# every tool declares whether a positive call is bad news or good news
+eq(sorted(k for k, v in sr.TOOLS.items() if v["adverse"]),
+   ["algpred2", "hemopi2", "toxinpred2", "toxinpred3"], "adverse screens")
+eq([k for k, v in sr.TOOLS.items() if not v["adverse"]], ["ifnepitope2"], "IFN-gamma is a benefit, not a flag")
+
+import pandas as _pd                                                             # noqa: E402
+_t = _pd.DataFrame({"Peptide": ["A", "B"], "Toxicity": ["Toxin", "Non-Toxin"],
+                    "Allergenicity": ["Non-Allergen", "Non-Allergen"],
+                    "IFN_gamma": ["IFN-γ inducer", "Non-inducer"]})
+eq(sr.flags(_t), {"A": ["Toxicity"]}, "only adverse calls are flagged")
+eq(sr.benefits(_t), {"A": ["IFN_gamma"]}, "IFN-gamma reported separately as a benefit")
+eq(sr.flags(_pd.DataFrame({"Peptide": []})), {}, "an empty table flags nothing")
+
+# a screen that is not installed is a note, never an exception that sinks the others
+_tbl, _notes = sr.screen(["GILGFVFTL"], {"python": "/nonexistent/python"}, tools=["toxinpred3"])
+eq(list(_tbl.columns), ["Peptide"], "a missing tool contributes no columns")
+assert _notes and "not installed" in _notes[0], _notes
+ok += 1
+eq(sr.screen([], {"python": ""})[0].empty, True, "no peptides, no rows")
+try:
+    sr.predict("nosuchtool", ["AAA"], {"python": "x"})
+    raise AssertionError("an unknown screen must be refused")
+except sr.ScreenError:
+    ok += 1
+
+print(f"construct + screening tests passed ({ok} checks)")

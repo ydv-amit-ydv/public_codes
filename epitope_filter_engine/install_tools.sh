@@ -23,7 +23,7 @@
 #   --dir DIR      where the tool folders go (default ~/local_engines)
 #   --iedb         also download the two IEDB bundles (large)
 #   --only LIST    install only these, comma separated:
-#                  mixmhcpred,prime,mixmhc2pred,bigmhc,mhcflurry,immuscope,tlimmuno2,iedb1,iedb2
+#                  mixmhcpred,prime,mixmhc2pred,bigmhc,mhcflurry,immuscope,tlimmuno2,screen,iedb1,iedb2
 #   --venv         use python3 -m venv instead of conda
 #   --dry-run      print what would happen, change nothing
 
@@ -132,6 +132,18 @@ env_pip() {                                    # env_pip <name> <vdir> <import c
 # comes from PyPI normally.
 ensure_torch() {                               # ensure_torch <name> <vdir>
   env_pip "$1" "$2" torch "torch --index-url $TORCH_CPU"
+}
+
+# Echo a python3.9-3.11, or nothing. Several pinned wheels (pandas 1.5.x, TensorFlow 2.15)
+# stop at 3.11, and building them from source on a newer interpreter fails.
+older_python() {
+  local c
+  if "$PY" -c 'import sys; sys.exit(0 if sys.version_info[:2] <= (3,11) else 1)' 2>/dev/null; then
+    echo "$PY"; return 0
+  fi
+  for c in python3.11 python3.10 python3.9; do
+    command -v "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }
+  done
 }
 
 need() {                                       # need <cmd> <apt package>
@@ -298,6 +310,45 @@ shorten_bundle() {                             # shorten_bundle <dir> <glob> <sh
   fi
 }
 
+do_screen() {
+  # Safety and function screens: ToxinPred3 (peptide toxicity), ToxinPred2 (protein
+  # toxicity), AlgPred2 (allergenicity), IFNepitope2 (IFN-gamma induction).
+  #
+  # The version pins are not cosmetic, they are what makes these run at all:
+  #   * scikit-learn 1.2.x — the shipped models are pickled trees from before scikit-learn
+  #     1.3 added missing_go_to_left to the node dtype; a newer one refuses to unpickle them.
+  #     It is installed LAST because the other packages pull a newer one in.
+  #   * pandas 1.5.3 — ToxinPred3 writes a temporary FASTA with to_csv(sep="\n"), which
+  #     pandas 2+ rejects as a bad delimiter.
+  #   * IFNepitope2 hard-pins pandas==1.4.0 and scikit-learn==1.2.1, neither of which has a
+  #     wheel here, so it goes in with --no-deps; 1.5.3 and 1.2.2 run it fine.
+  local ipy="$PY"
+  if [ -z "$CONDA" ]; then
+    ipy="$(older_python)"
+    if [ -z "$ipy" ]; then
+      info "these tools pin pandas 1.5.x and scikit-learn 1.2.x, which have no wheel for"
+      info "$("$PY" -V 2>&1). Install an older interpreter (sudo apt install -y python3.11-venv)"
+      info "and run again, or install conda, which the installer uses to make a 3.11 environment."
+      return 1
+    fi
+  fi
+  PY="$ipy" ensure_env vaxscreen "$DIR/vaxscreen-env" 3.11 pandas '"numpy<2" "pandas==1.5.3" joblib tqdm' || return 1   # tqdm: IFNepitope2 needs it and --no-deps skips it
+  local py="$REPLY_PY"
+  [ "$DRY" = 1 ] || [ -n "$py" ] || return 1
+  env_pip vaxscreen "$DIR/vaxscreen-env" toxinpred3 toxinpred3 toxinpred2 algpred2 || return 1
+  if [ "$DRY" = 1 ]; then
+    info '$ pip install --no-deps ifnepitope2'
+  elif ! "$py" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('ifnepitope2') else 1)" 2>/dev/null; then
+    run "'$py' -m pip install -q --no-deps ifnepitope2" || info "IFNepitope2 did not install; the others still work"
+  else
+    info "already installed: ifnepitope2"
+  fi
+  # last word on scikit-learn, whatever the packages above pulled in
+  run "'${py:-python3}' -m pip install -q 'scikit-learn==1.2.2'" || return 1
+  info "HemoPI2 (haemolysis) is not installed by default: it needs torch. Add it with"
+  info "  '${py:-<screening python>}' -m pip install hemopi2 torch --index-url $TORCH_CPU"
+}
+
 do_iedb1() {
   local d="$DIR/iedb" t=IEDB_NG_TC1-v0.2-beta.tar.gz h="$DIR/iedb/tc1"
   need tcsh tcsh; need gawk gawk
@@ -387,6 +438,7 @@ step bigmhc      "BigMHC - class I EL + IM (torch)"                 do_bigmhc
 step mhcflurry   "MHCflurry 2 - class I affinity and processing"    do_mhcflurry
 step immuscope   "ImmuScope-IM - class II immunogenicity (torch)"   do_immuscope
 step tlimmuno2   "TLimmuno2 - class II immunogenicity (TF 2.15)"    do_tlimmuno2
+step screen      "Safety screens - toxicity, allergenicity, IFN-gamma" do_screen
 step iedb1       "IEDB class I bundle - NetCTLpan, NetChop"         do_iedb1
 step iedb2       "IEDB class II bundle - NetMHCIIpan, CD4episcore"  do_iedb2
 

@@ -113,6 +113,24 @@ def find_env_python(home, forced_var, mods, hint):
     return None
 
 
+def find_screen_python(root):
+    """Interpreter of the screening environment (ToxinPred, AlgPred2, IFNepitope2, HemoPI2).
+
+    Identified by the console scripts sitting next to it rather than by an importable module:
+    these tools are command-line programs, not libraries. SCREEN_PYTHON wins.
+    """
+    forced = os.environ.get("SCREEN_PYTHON")
+    if forced:
+        return os.path.expanduser(forced)
+    cands = [os.path.join(root, "vaxscreen-env", "bin", "python")]
+    envs = _conda_pythons()
+    envs.sort(key=lambda p: ("vaxscreen" not in p.lower(), "screen" not in p.lower(), p))
+    for py in cands + envs:
+        if os.path.isfile(py) and os.path.exists(os.path.join(os.path.dirname(py), "toxinpred3")):
+            return py
+    return None
+
+
 def find_iedb_bundle_ii(root):
     """IEDB next-generation T Cell Class II standalone: src/tcell_mhcii.py beside pyproject.toml."""
     hits = [dp for dp, dns, fns in _walk(root)

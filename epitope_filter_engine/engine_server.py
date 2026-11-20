@@ -16,7 +16,7 @@ from werkzeug.serving import run_simple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts", "MHC1/Processing_scripts",
-            "MHC2/BA_EL_scripts", "MHC2/Immunogenicity_scripts"):
+            "MHC2/BA_EL_scripts", "MHC2/Immunogenicity_scripts", "Screening_scripts"):
     sys.path.insert(0, os.path.join(HERE, sub))
 sys.path.insert(0, HERE)
 
@@ -241,6 +241,31 @@ def _health_pair_tool(name, label, files, mods, runner, deep):
     return checks
 
 
+def health_screen(deep):
+    """The safety / function screens: toxicity, allergenicity, IFN-gamma, haemolysis."""
+    import screen_runner as _sr
+    m = config.model("screen")
+    py = m.get("python") or ""
+    checks = [_check("screening environment", bool(py),
+                     (py or "not found; " + _sr.HINT) + _auto(m, "python"))]
+    if not checks[0]["ok"]:
+        return checks
+    for key, (ok, detail) in _sr.available(m).items():
+        spec = _sr.TOOLS[key]
+        if not ok and spec.get("optional"):
+            checks.append(_check(spec["label"] + " (optional)", True, "not installed; it needs torch"))
+            continue
+        checks.append(_check(spec["label"], ok, "ok" if ok else detail))
+    if deep:
+        try:
+            df = _sr.predict("toxinpred3", ["GILGFVFTL"], m)
+            got = str(df.iloc[0]["Toxicity"])
+            checks.append(_check("GILGFVFTL toxicity", "toxin" in got.lower(), got or "no result"))
+        except Exception as e:
+            checks.append(_check("GILGFVFTL toxicity", False, e))
+    return checks
+
+
 def health_immuscope(deep):
     return _health_pair_tool("immuscope", "ImmuScope", [("ImmuScope", "models", "ImmuScope.py"), ("weights", "IM", "ImmuScope-IM-0.pt"),
                                                         ("data", "raw", "pseudosequence.2023.dat")],
@@ -284,7 +309,7 @@ def health_iedb_bundle_ii(deep):
 HEALTH = {"netmhcpan": health_netmhcpan, "mixmhcpred": health_mixmhcpred, "mhcflurry": health_mhcflurry,
           "prime": health_prime, "iedb_bundle": health_iedb_bundle, "bigmhc": health_bigmhc,
           "mixmhc2pred": health_mixmhc2pred, "iedb_bundle_ii": health_iedb_bundle_ii,
-          "immuscope": health_immuscope, "tlimmuno2": health_tlimmuno2}
+          "screen": health_screen, "immuscope": health_immuscope, "tlimmuno2": health_tlimmuno2}
 
 
 @main.get("/api/config")
