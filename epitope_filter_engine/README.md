@@ -186,22 +186,30 @@ Every run ends with a consensus step (`consensus.py`, tested in `test_consensus.
 
 ## Copy, paste, run
 
-Put the folders for the models and this code side by side:
-
-```
-~/local_engines/
-    runner_codes/     <- copy the CONTENTS of this directory here (from GitHub)
-    netmhc/           <- the NetMHCpan tarball extracted anywhere below (even nested)
-    bigmhc/           <- the BigMHC clone anywhere below
-```
+> **Full install instructions for a new machine, conda-based and WSL-focused, are in
+> [`INSTALL.md`](INSTALL.md)**: every predictor, its licence, verification and the known
+> faults. `bash install_tools.sh` sets up the open-licence ones in one command. The rest of
+> this section is the short version.
 
 ```bash
-cd ~/local_engines/runner_codes
-bash start.sh                     # http://127.0.0.1:5000
+git clone https://github.com/ydv-amit-ydv/public_codes.git ~/public_codes
+conda env create -f ~/public_codes/epitope_filter_engine/environment.yml
+mkdir -p ~/local_engines                     # the tools go here, beside each other
+cd ~/public_codes/epitope_filter_engine
+ENGINE_MODELS_DIR=~/local_engines bash start.sh         # http://127.0.0.1:5000
 ```
 
-`start.sh` makes its own `.venv` (flask + pandas) on first run, so no conda env is
-needed for the server. With no config file the server **discovers everything**:
+```
+~/local_engines/        <- ENGINE_MODELS_DIR
+    netmhc/             <- the NetMHCpan tarball extracted anywhere below (even nested)
+    bigmhc/             <- the BigMHC clone anywhere below
+    ...                 <- one folder per tool; names do not matter
+```
+
+`start.sh` uses `$ENGINE_PYTHON`, else the active conda env, else the conda env
+`epitope-engine` (from `environment.yml`), else a `./.venv` it creates with flask + pandas.
+Each predictor runs in its own environment, found by name, so the server never imports
+torch or TensorFlow. With no config file the server **discovers everything**:
 
 | What | How it is found |
 |---|---|

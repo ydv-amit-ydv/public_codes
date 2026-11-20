@@ -1,24 +1,30 @@
 #!/usr/bin/env bash
 # Install the open-licence predictors for the Epitope Filter Engine.
 #
+# Conda-based by default: each predictor gets its own conda environment, named so that
+# the engine finds it on its own (discover.py prefers an environment whose name contains
+# the tool's name). With --venv, or when conda is absent, a virtualenv is made inside
+# each tool's folder instead.
+#
 # Covers the tools that can be fetched without accepting a licence form:
 #   MixMHCpred 3.0, PRIME 2.1, MixMHC2pred 2.1, BigMHC, MHCflurry 2, ImmuScope-IM, TLimmuno2
 # and, with --iedb, IEDB's two next-generation standalones (NetCTLpan/NetChop and
 # NetMHCIIpan/CD4episcore; about 2.4 GB together).
 #
 # NetMHCpan 4.2 is NOT installed here: DTU require you to accept their licence on their
-# own site, so it cannot be scripted. See INSTALL.md section 4.1.
+# own site, so it cannot be scripted. See INSTALL.md section 6.1.
 #
 # Every step is skipped when its result is already there, so re-running is safe.
-# Nothing is installed system-wide; INSTALL.md section 2 lists the apt packages.
+# Tested on Ubuntu under WSL2. INSTALL.md section 2.2 lists the apt packages.
 #
 # Usage:
-#   bash install_tools.sh [--dir DIR] [--iedb] [--only NAME,NAME] [--dry-run]
+#   bash install_tools.sh [--dir DIR] [--iedb] [--only NAME,NAME] [--venv] [--dry-run]
 #
-#   --dir DIR      where the tools go (default ~/local_engines)
+#   --dir DIR      where the tool folders go (default ~/local_engines)
 #   --iedb         also download the two IEDB bundles (large)
 #   --only LIST    install only these, comma separated:
 #                  mixmhcpred,prime,mixmhc2pred,bigmhc,mhcflurry,immuscope,tlimmuno2,iedb1,iedb2
+#   --venv         use python3 -m venv instead of conda
 #   --dry-run      print what would happen, change nothing
 
 set -u -o pipefail
@@ -27,6 +33,7 @@ DIR="$HOME/local_engines"
 WANT_IEDB=0
 ONLY=""
 DRY=0
+FORCE_VENV=0
 PY="${PYTHON:-python3}"
 TORCH_CPU="https://download.pytorch.org/whl/cpu"
 
@@ -35,6 +42,7 @@ while [ $# -gt 0 ]; do
     --dir)     DIR="${2:?--dir needs a path}"; shift 2 ;;
     --iedb)    WANT_IEDB=1; shift ;;
     --only)    ONLY="${2:?--only needs a list}"; shift 2 ;;
+    --venv)    FORCE_VENV=1; shift ;;
     --dry-run) DRY=1; shift ;;
     -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
@@ -48,33 +56,63 @@ say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
 run()  { if [ "$DRY" = 1 ]; then printf '    $ %s\n' "$*"; else eval "$@"; fi; }
 
-wanted() {                                     # wanted <name>
-  if [ -n "$ONLY" ]; then
-    case ",$ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac
+# ---------------------------------------------------------------- conda or venv
+
+CONDA=""
+if [ "$FORCE_VENV" = 0 ]; then
+  if command -v mamba >/dev/null 2>&1; then CONDA="mamba"            # same CLI, much faster solver
+  elif command -v conda >/dev/null 2>&1; then CONDA="conda"
+  elif [ -n "${CONDA_EXE:-}" ] && [ -x "$CONDA_EXE" ]; then CONDA="$CONDA_EXE"
   fi
-  case "$1" in
-    iedb1|iedb2) [ "$WANT_IEDB" = 1 ] ;;       # large: only with --iedb
-    *) return 0 ;;
-  esac
+fi
+
+env_exists() {                                 # env_exists <name>
+  [ -n "$CONDA" ] || return 1
+  "$CONDA" env list 2>/dev/null | awk '{print $1}' | grep -qx "$1"
+}
+
+# ensure_env <conda name> <venv dir> <python version> <import check> <pip args...>
+#
+# Creates the environment if missing and installs the packages if the import check
+# fails. Returns the interpreter path in REPLY_PY.
+ensure_env() {
+  local name="$1" vdir="$2" pyver="$3" check="$4"; shift 4
+  REPLY_PY=""
+  if [ -n "$CONDA" ]; then
+    if env_exists "$name"; then
+      info "conda env exists: $name"
+    else
+      run "'$CONDA' create -y -q -n '$name' python='$pyver'" || return 1
+    fi
+    if [ "$DRY" != 1 ] && "$CONDA" run -n "$name" python -c "import $check" >/dev/null 2>&1; then
+      info "packages already installed in $name ($check)"
+    else
+      run "'$CONDA' run -n '$name' pip install -q $*" || return 1
+    fi
+    [ "$DRY" = 1 ] || REPLY_PY="$("$CONDA" run -n "$name" python -c 'import sys; print(sys.executable)' 2>/dev/null)"
+    info "environment: conda env '$name' (found by the engine automatically)"
+  else
+    if [ -x "$vdir/bin/python" ]; then
+      info "environment exists: $vdir/"
+    else
+      run "'$PY' -m venv '$vdir'" || return 1
+    fi
+    if [ "$DRY" != 1 ] && "$vdir/bin/python" -c "import $check" >/dev/null 2>&1; then
+      info "packages already installed in $vdir ($check)"
+    else
+      run "'$vdir/bin/pip' install -q --upgrade pip" || true
+      run "'$vdir/bin/pip' install -q $*" || return 1
+    fi
+    REPLY_PY="$vdir/bin/python"
+    info "environment: $vdir/"
+  fi
+  return 0
 }
 
 need() {                                       # need <cmd> <apt package>
   command -v "$1" >/dev/null 2>&1 && return 0
   info "missing: $1   (sudo apt install -y $2)"
   return 1
-}
-
-mkvenv() {                                     # mkvenv <dir> [interpreter]
-  local d="$1" py="${2:-$PY}"
-  if [ -x "$d/bin/python" ]; then info "environment exists: $d/"; return 0; fi
-  run "'$py' -m venv '$d'"
-}
-
-pipin() {                                      # pipin <dir> <stamp> <pip args...>
-  local d="$1" stamp="$2"; shift 2
-  if [ -f "$d/.installed-$stamp" ]; then info "packages already installed: $stamp"; return 0; fi
-  run "'$d/bin/pip' install -q $*" || return 1
-  [ "$DRY" = 1 ] || : > "$d/.installed-$stamp"
 }
 
 clone() {                                      # clone <url> <target>
@@ -86,6 +124,16 @@ fetch() {                                      # fetch <url> <output file>
   run "curl -fsSL --retry 3 -o '$2' '$1'"
 }
 
+wanted() {                                     # wanted <name>
+  if [ -n "$ONLY" ]; then
+    case ",$ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac
+  fi
+  case "$1" in
+    iedb1|iedb2) [ "$WANT_IEDB" = 1 ] ;;       # large: only with --iedb
+    *) return 0 ;;
+  esac
+}
+
 step() {                                       # step <name> <label> <function>
   if ! wanted "$1"; then SKIPPED+=("$1"); return 0; fi
   say "$2"
@@ -95,13 +143,14 @@ step() {                                       # step <name> <label> <function>
 # ---------------------------------------------------------------- the tools
 
 do_mixmhcpred() {
+  # needs only numpy and pandas, which the engine's own environment already has
   clone https://github.com/GfellerLab/MixMHCpred.git "$DIR/gfeller/MixMHCpred"
 }
 
 do_prime() {
   need g++ g++ || info "PRIME needs g++ to rebuild lib/PRIME.x on first use"
   clone https://github.com/GfellerLab/PRIME.git "$DIR/gfeller/PRIME" || return 1
-  info "PRIME calls MixMHCpred, so keep that installed too"
+  info "PRIME calls MixMHCpred, so keep that one installed too"
 }
 
 do_mixmhc2pred() {
@@ -122,23 +171,26 @@ do_mixmhc2pred() {
 
 do_bigmhc() {
   clone https://github.com/KarchinLab/bigmhc.git "$DIR/bigmhc" || return 1
-  mkvenv "$DIR/bigmhc/.venv" || return 1
-  pipin  "$DIR/bigmhc/.venv" torch "torch --index-url $TORCH_CPU" || return 1
-  pipin  "$DIR/bigmhc/.venv" deps numpy pandas psutil
+  ensure_env bigmhc "$DIR/bigmhc/.venv" 3.11 torch \
+    "torch --index-url $TORCH_CPU numpy pandas psutil" || return 1
 }
 
 do_mhcflurry() {
-  local e="$DIR/mhcflurry-env"
-  mkvenv "$e" || return 1
-  pipin  "$e" mhcflurry "mhcflurry --extra-index-url $TORCH_CPU" || return 1
+  # MHCflurry has no repository to clone: the conda env (or MHCFLURRY_PYTHON) is all there is
+  ensure_env mhcflurry "$DIR/mhcflurry-env" 3.11 mhcflurry \
+    "mhcflurry --extra-index-url $TORCH_CPU" || return 1
+  local py="$REPLY_PY" dl
   if [ "$DRY" = 1 ]; then
     info '$ mhcflurry-downloads fetch models_class1_presentation'
-  elif "$e/bin/mhcflurry-downloads" path models_class1_presentation >/dev/null 2>&1; then
+    return 0
+  fi
+  dl="$(dirname "$py")/mhcflurry-downloads"
+  if "$dl" path models_class1_presentation >/dev/null 2>&1; then
     info "models_class1_presentation already downloaded"
   else
-    run "'$e/bin/mhcflurry-downloads' fetch models_class1_presentation" || return 1
+    run "'$dl' fetch models_class1_presentation" || return 1   # 160 MB
   fi
-  info "found automatically; MHCFLURRY_PYTHON=$e/bin/python overrides"
+  [ -n "$CONDA" ] || info "no clone to find: export MHCFLURRY_PYTHON=$py"
 }
 
 do_immuscope() {
@@ -148,7 +200,7 @@ do_immuscope() {
     info "weights already present"
   else
     fetch https://zenodo.org/api/records/14810445/files/ImmuScope-weights.tar.gz/content "$h/w.tgz" || return 1
-    run "tar -xzf '$h/w.tgz' -C '$h'" || return 1
+    run "tar -xzf '$h/w.tgz' -C '$h'" || return 1      # 149.8 MB -> weights/IM, EL, CD4
     run "rm -f '$h/w.tgz'"
   fi
   if [ -f "$h/data/raw/pseudosequence.2023.dat" ]; then
@@ -162,16 +214,20 @@ do_immuscope() {
       [ -n "$f" ] && run "mv '$f' '$h/data/raw/'"
     fi
   fi
-  mkvenv "$h/.venv" || return 1
-  pipin  "$h/.venv" torch "torch --index-url $TORCH_CPU" || return 1
-  pipin  "$h/.venv" deps numpy pandas h5py scikit-learn ruamel.yaml tqdm click
+  ensure_env immuscope "$h/.venv" 3.11 torch \
+    "torch --index-url $TORCH_CPU numpy pandas h5py scikit-learn ruamel.yaml tqdm click" || return 1
 }
 
 do_tlimmuno2() {
   local h="$DIR/TLimmuno2" py="" c
   clone https://github.com/XSLiuLab/TLimmuno2.git "$h" || return 1
-  # TensorFlow 2.15 (Keras 2) is required: Keras 3 cannot load these models. TF 2.15 has
-  # no wheel above Python 3.11, so prefer an older interpreter when one is installed.
+  # TensorFlow 2.15 (Keras 2) is required: Keras 3 cannot load these models. With conda the
+  # environment is simply built on Python 3.11; with venv we must find such an interpreter.
+  if [ -n "$CONDA" ]; then
+    ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow \
+      '"tensorflow-cpu==2.15.1" "numpy<2" pandas' || return 1
+    return 0
+  fi
   if "$PY" -c 'import sys; sys.exit(0 if sys.version_info[:2] <= (3,11) else 1)' 2>/dev/null; then
     py="$PY"
   else
@@ -180,12 +236,12 @@ do_tlimmuno2() {
     done
   fi
   if [ -z "$py" ]; then
-    info "no python3.9-3.11 found, and tensorflow-cpu 2.15.1 has no wheel for $("$PY" -V 2>&1 | cut -d' ' -f2)"
-    info "install one (sudo apt install -y python3.11-venv), then: bash $0 --only tlimmuno2"
+    info "tensorflow-cpu 2.15.1 has no wheel for $("$PY" -V 2>&1 | cut -d' ' -f2), and no python3.9-3.11 was found"
+    info "install conda (INSTALL.md 3) or: sudo apt install -y python3.11-venv"
     return 1
   fi
-  mkvenv "$h/.venv" "$py" || return 1
-  pipin  "$h/.venv" tf '"tensorflow-cpu==2.15.1" "numpy<2" pandas'
+  PY="$py" ensure_env tlimmuno2 "$h/.venv" 3.11 tensorflow \
+    '"tensorflow-cpu==2.15.1" "numpy<2" pandas'
 }
 
 do_iedb1() {
@@ -196,6 +252,7 @@ do_iedb1() {
   run "mkdir -p '$d'" || return 1
   run "curl -fL --retry 3 -o '$d/$t' 'https://downloads.iedb.org/nextgen-tools/tcell_mhci/LATEST/$t'" || return 1
   run "tar -xzf '$d/$t' -C '$d'" || return 1
+  # the bundle keeps its own uv environment; the engine drives its tcell_mhci.py through it
   run "cd '$d/ng_tc1-v0.2-beta' && uv sync && ./configure" || return 1
   run "rm -f '$d/$t'"
 }
@@ -213,26 +270,36 @@ do_iedb2() {
     run "cd '$h' && uv sync" || return 1
     run "rm -f '$d/$t'"
   fi
-  # INSTALL.md 7.1(a): src/imscore.py builds the R path from bytes, giving "-R b/usr/bin/R",
+  # INSTALL.md 8.1(a): src/imscore.py builds the R path from bytes, giving "-R b/usr/bin/R",
   # and CD4episcore then returns nothing. Applied once, guarded by the grep.
   if [ "$DRY" = 1 ]; then
     info '$ sed -i ... src/imscore.py ...   (CD4episcore R-path fix)'
   elif [ ! -f "$h/src/imscore.py" ]; then
-    info "src/imscore.py not found: check the bundle version, then INSTALL.md 7.1"
+    info "src/imscore.py not found: check the bundle version, then INSTALL.md 8.1"
   elif grep -q 'rstrip().decode()' "$h/src/imscore.py"; then
     info "CD4episcore R-path fix already applied"
   else
     sed -i 's|R_path = subprocess.check_output("which R", shell=True).rstrip()$|R_path = subprocess.check_output("which R", shell=True).rstrip().decode()|' "$h/src/imscore.py" \
-      && info "applied the CD4episcore R-path fix (INSTALL.md 7.1a)"
+      && info "applied the CD4episcore R-path fix (INSTALL.md 8.1a)"
   fi
-  info "if CD4episcore still segfaults on a very new Intel CPU, apply INSTALL.md 7.1(b) (qemu-user)"
+  info "if CD4episcore segfaults on a very new Intel CPU, apply INSTALL.md 8.1(b) (qemu-user)"
 }
 
 # ---------------------------------------------------------------- run
 
 say "Epitope Filter Engine: installing predictors into $DIR"
 [ "$DRY" = 1 ] && info "(dry run: nothing will be changed)"
-need git git  || exit 1
+if [ -n "$CONDA" ]; then
+  info "environments: conda ($CONDA), one per predictor, found by the engine by name"
+else
+  if [ "$FORCE_VENV" = 1 ]; then
+    info "environments: python3 -m venv inside each tool folder (--venv)"
+  else
+    info "environments: python3 -m venv inside each tool folder"
+    info "conda was not found; install Miniforge for the smoother path (INSTALL.md 3)"
+  fi
+fi
+need git git   || exit 1
 need curl curl || exit 1
 run "mkdir -p '$DIR'" || exit 1
 
@@ -254,7 +321,7 @@ say "Summary"
 
 cat <<EOF
 
-    NetMHCpan 4.2 is not installed by this script (DTU licence form): INSTALL.md 4.1
+    NetMHCpan 4.2 is not installed by this script (DTU licence form): INSTALL.md 6.1
 
     Next:
       cd "$(cd "$(dirname "$0")" && pwd)" && ENGINE_MODELS_DIR="$DIR" bash start.sh
