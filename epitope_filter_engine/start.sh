@@ -41,6 +41,11 @@ done
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
+# uv and other user-level tools live here. Export it for every run, not just the first:
+# the server runs the installer too (Settings -> Repair), and without this the IEDB
+# bundles fail with "missing: uv" even though uv is installed.
+[ -d "$HOME/.local/bin" ] && case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
+
 # ---------------------------------------------------------------- where the predictors live
 #
 # Discovery looks beside this folder unless ENGINE_MODELS_DIR says otherwise. A fresh clone

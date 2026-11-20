@@ -1008,6 +1008,19 @@ _MGR._jobs.pop(_fake.id, None)
 st = c.get("/api/update/repair").get_json()
 assert st["running"] is False and st["lines"] == 0 and st["log"] == [], st
 assert _su._ANSI.sub("", "\x1b[1m==> x\x1b[0m") == "==> x", "the installer's colours must not reach the page"
+# a local change the update does NOT touch must not block it: this repository holds several
+# projects, and an edit under a sibling one stopped the engine updating until this was fixed
+_st = {"available": True, "error": None, "dirty": ["D other/app.py"], "blocking": [],
+       "commit": "a" * 12, "is_git": True}
+assert not (_st.get("blocking") or []), "a sibling change must not block"
+ok_paths = _su.status(check_remote=False)
+assert "dirty_paths" in ok_paths or not ok_paths["dirty"], ok_paths
+# porcelain output is stripped, so a fixed slice ate the first character of the first path
+import re as _re                                                                 # noqa: E402
+_lines = "M engine/VERSION\n D other/app.py".splitlines()
+eq_paths = [_re.sub(r"^\s*\S{1,2}\s+", "", l).strip('"').split(" -> ")[-1] for l in _lines]
+assert eq_paths == ["engine/VERSION", "other/app.py"], eq_paths
+
 # a folder that is not a clone says so instead of trying, and gives the manual command
 _root = _su.ROOT
 try:

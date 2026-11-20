@@ -94,6 +94,10 @@ def status(check_remote=True):
     ok, out, _ = _git("status", "--porcelain", "--untracked-files=no", timeout=30)
     if ok and out:
         d["dirty"] = [l.strip() for l in out.splitlines()[:20]]
+        # porcelain is "XY path", but the output has been stripped, so the first line has lost
+        # its leading space and a fixed slice would eat the first character of the path
+        d["dirty_paths"] = [re.sub(r"^\s*\S{1,2}\s+", "", l).strip('"').split(" -> ")[-1]
+                            for l in out.splitlines()]
     if not check_remote:
         return d
 
@@ -110,6 +114,15 @@ def status(check_remote=True):
     d["latest"] = head
     if head == d["commit"]:
         return d                                       # already current
+
+    # Only the local changes the update would actually touch can block it. This repository
+    # holds several projects, so an edit under another one is none of the engine's business:
+    # git merges around it and keeps it. Blocking on every change in the tree meant a deleted
+    # file in a sibling project stopped the engine updating, which is what happened.
+    ok, names, _ = _git("diff", "--name-only", "HEAD..FETCH_HEAD", timeout=30)
+    incoming = set(names.splitlines()) if ok and names else set()
+    d["incoming"] = len(incoming)
+    d["blocking"] = sorted(set(d.get("dirty_paths") or []) & incoming)
     behind, ahead = _count(f"HEAD..FETCH_HEAD"), _count(f"FETCH_HEAD..HEAD")
     d["behind"], d["ahead"] = behind, ahead
     if behind is None:                                 # shallow clone: counting can fail
@@ -160,7 +173,13 @@ def repair_start(models_dir=None, light=False):
     def work():
         rc = 1
         try:
-            env = dict(os.environ, ENGINE_FROM_START="1", PYTHONUNBUFFERED="1")
+            # ~/.local/bin holds uv, which the IEDB bundles need; a server started
+            # outside start.sh may not have it on PATH
+            local_bin = os.path.join(os.path.expanduser("~"), ".local", "bin")
+            path = os.environ.get("PATH", "")
+            if os.path.isdir(local_bin) and local_bin not in path.split(os.pathsep):
+                path = local_bin + os.pathsep + path
+            env = dict(os.environ, ENGINE_FROM_START="1", PYTHONUNBUFFERED="1", PATH=path)
             p = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  stdin=subprocess.DEVNULL, text=True, bufsize=1, env=env)
             for line in p.stdout:
@@ -189,10 +208,13 @@ def apply():
         return {"ok": False, "error": st["error"], "status": st}
     if not st["available"]:
         return {"ok": False, "error": "Already up to date.", "status": st}
-    if st["dirty"]:
+    blocking = st.get("blocking") or []
+    if blocking:
         return {"ok": False, "status": st,
-                "error": ("This folder has local changes, so an update would overwrite them: "
-                          + ", ".join(st["dirty"][:5]) + ". Commit, stash or undo them first.")}
+                "error": ("The update changes files you have edited locally, so it would "
+                          "overwrite them: " + ", ".join(blocking[:5])
+                          + (f" and {len(blocking) - 5} more" if len(blocking) > 5 else "")
+                          + ". Commit, stash or undo those, then update.")}
     before = st["commit"]
     ok, out, err = _git("merge", "--ff-only", "FETCH_HEAD", timeout=TIMEOUT)
     if not ok:
