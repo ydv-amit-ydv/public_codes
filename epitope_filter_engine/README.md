@@ -157,6 +157,52 @@ compared with UniProt's reference proteome of the host (human by default; `host_
   candidates are checked. The index takes about 8 s to build and a few hundred MB of memory for human, built on first use.
 - This checks the sequence of the peptide, not whether the host protein is expressed in a relevant tissue.
 
+## A wet-lab panel inside a normal run: new and known epitopes in one list
+
+The Pipeline form has an optional **wet-lab panel** box (same format as the Comparison tab).
+Fill it and a normal whole-protein run becomes a discovery run anchored to experiment: every
+candidate is marked
+
+| `Epitope_Status` | meaning |
+|---|---|
+| `validated` | this exact peptide was tested and worked |
+| `overlaps validated` | shares the MHC-bound core (8-mer class I, 9-mer class II) with one that worked, so it is the same epitope at another offset or length |
+| `tested negative` | this exact peptide was tested and did **not** work |
+| `novel` | nothing in the panel says anything about it |
+
+so the final candidate list is your new peptides and the known ones **together**, clustered and
+ranked as usual. A novel peptide that shares a core with a validated one inherits its
+credibility, which is exactly the mixed list that is worth taking into a vaccine design.
+
+**The panel never changes the scan's own ranking.** Five tools (BigMHC-IM, Calis, CD4episcore,
+ImmuScope, TLimmuno2) have no absolute scale and vote "top q % of the binders in this run", so a
+panel dropped into the run would move the denominator the scan is judged by — invisibly. The
+panel peptides are therefore scored by the same models in the same run, but the percentile
+baseline is taken from the scan alone and the panel is then placed on that same scale. A run
+with a panel ranks the scan identically to a run without one, and the tests assert it. Panel
+peptides are not candidates from your protein and never appear in the candidate list.
+
+**You decide what the flags do** (Pipeline form, or `validated_mode` / `validated_negative` /
+`validated_bonus` in the rules):
+
+| A validated epitope | |
+|---|---|
+| `flag` | columns only, ranking untouched |
+| `prefer` *(default)* | wins ties, and peptides that failed sink to the bottom |
+| `boost` | its priority score gains `validated_bonus` (the untouched value is kept as `Priority_Score_Raw`) |
+| `top` | every validated epitope first, whatever it scored |
+
+| A peptide that failed in the wet lab | |
+|---|---|
+| `flag` *(default)* | columns only |
+| `demote` | priority lowered by `validated_bonus` |
+| `remove` | dropped from the candidates |
+
+The likelihood ratio against the panel is reported but **never folded into `Priority_Score`**: it
+is computed from the same predictor scores that produced that score, so using it to re-rank
+would count the same evidence twice. Whether a peptide worked in a wet lab is *independent*
+evidence, and that is what these rules act on.
+
 ## The Comparison tab: judging a peptide against wet-lab results
 
 Every predictor here is calibrated against **random** peptides, not against real epitopes: a

@@ -13,6 +13,8 @@ import os, time
 
 import pandas as pd
 
+import comparative
+
 import consensus
 import funnel
 import report
@@ -59,11 +61,13 @@ def normalise(params):
     if p.get("mode", "scan") != "peptides" and not lengths:
         raise ValueError("Select at least one peptide length (11-25).")
     nm.check_input_text(p.get("text", ""), p.get("mode", "scan"))
+    panel_peptides, panel_warns = _panel(p, 2, PEPTIDE_BOUNDS)
     version = (p.get("nii") or {}).get("version", "4.3")
     if version not in nn.VERSIONS:
         raise ValueError(f"NetMHCIIpan version must be one of {nn.VERSIONS}.")
     f = {k: _num((p.get("filters") or {}).get(k)) for k in FILTER_KEYS}
-    return {"text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths, "alleles": alleles,
+    return {"panel": p.get("panel") or "", "panel_peptides": panel_peptides, "panel_warnings": panel_warns,
+            "text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths, "alleles": alleles,
             "models": models, "chain": bool(p.get("chain", True)) and fun["mode"] == "auto", "funnel": fun, "filters": f, "version": version,
             "preset": p.get("preset") or "balanced", "rules": p.get("rules") or {}}
 
@@ -71,7 +75,7 @@ def normalise(params):
 def preview(params):
     p = normalise(params)
     m = p["models"]
-    peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"], PEPTIDE_BOUNDS)
+    peps, warns = _peptides(p)
     n_pep = int(peps["Peptide"].nunique()) if not peps.empty else 0
     n_win = int(len(peps))
     notes = []
@@ -98,8 +102,37 @@ def _binding_pass(df, f):
     return ok
 
 
+
+
+def _panel(p, cls, bounds):
+    """Parse the optional wet-lab panel and return its peptides of this class as run rows."""
+    text = p.get("panel") or ""
+    if not text.strip():
+        return [], []
+    panel, warns = comparative.parse_panel(text)
+    rows = comparative.panel_rows(panel, cls, bounds)
+    tag = "I" if cls == 1 else "II"
+    if len(panel) and not rows:
+        warns = warns + [f"the wet-lab panel has no class {tag} peptide of an accepted length "
+                         f"({bounds[0]}-{bounds[1]} aa), so this class has nothing to compare with"]
+    return rows, warns
+
+
+def _peptides(p):
+    """The run's peptide table, with any wet-lab panel peptides appended.
+
+    Panel rows carry the reserved Protein name, so they are scored by the same models in the
+    same run but stay out of the scan's ranking and out of the candidate list.
+    """
+    peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"], PEPTIDE_BOUNDS)
+    extra = p.get("panel_peptides") or []
+    if extra:
+        peps = pd.concat([peps, pd.DataFrame(extra, columns=["Protein", "Start", "Peptide"])], ignore_index=True)
+    return peps, warns
+
+
 def n_unique(p):
-    peps, _ = nm.build_peptides(p["text"], p["mode"], p["lengths"], PEPTIDE_BOUNDS)
+    peps, _ = _peptides(p)
     return int(peps["Peptide"].nunique()) if not peps.empty else 0
 
 
@@ -132,7 +165,7 @@ def run(params, job):
     p = normalise(params)
     m, f = p["models"], p["filters"]
     kinds = tuple(k for k, on in (("el", m["netmhciipan_el"]), ("ba", m["netmhciipan_ba"])) if on)
-    peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"], PEPTIDE_BOUNDS)
+    peps, warns = _peptides(p)
     if peps.empty:
         raise ValueError("No valid peptides in the input.")
     peps = peps.drop_duplicates()

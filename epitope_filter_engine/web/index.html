@@ -135,6 +135,32 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <select id="r_host_mode" style="width:100%"><option value="">as the strategy says</option><option value="off">do not check</option><option value="flag">flag only</option><option value="exclude_identical">remove identical 9-mers</option><option value="exclude_near">remove identical and 1-mismatch</option></select>
   <div id="hostline" class="muted sm" style="margin:4px 0"></div>
 
+  <h3>6 &middot; Wet-lab panel <span class="muted sm">(optional)</span> <span class="q" data-h="wetpanel">?</span></h3>
+  <div class="muted sm">Peptides whose wet-lab outcome you know. They are scored in this same run, so every candidate
+   is marked <b>validated</b>, <b>overlaps validated</b>, <b>tested negative</b> or <b>novel</b>, and gets a confidence
+   against them. They never take part in this run's own ranking and are not candidates themselves.</div>
+  <textarea id="wetpanel" rows="4" spellcheck="false" placeholder="1, GILGFVFTL, HLA-A*02:01, positive
+1, AAAAAAAAA, HLA-A*02:01, negative
+2, PKYVKQNTLKLATGM, HLA-DRB1*01:01, positive"></textarea>
+  <div id="wetpanelinfo" class="muted sm"></div>
+  <div id="wetrules" style="display:none;margin-top:6px">
+   <div class="sm">A validated epitope <span class="q" data-h="validated_mode">?</span>
+    <select id="r_validated_mode" style="width:100%">
+     <option value="">as the strategy says (prefer)</option>
+     <option value="flag">flag only: change no ranking</option>
+     <option value="prefer">prefer it: wins ties, sinks tested failures</option>
+     <option value="boost">add a bonus to its priority score</option>
+     <option value="top">put all validated epitopes on top</option></select></div>
+   <div class="sm" style="margin-top:4px">A peptide that was tested and did <b>not</b> work <span class="q" data-h="validated_negative">?</span>
+    <select id="r_validated_negative" style="width:100%">
+     <option value="">as the strategy says (flag)</option>
+     <option value="flag">flag only</option>
+     <option value="demote">lower its priority score</option>
+     <option value="remove">drop it from the candidates</option></select></div>
+   <div class="sm" style="margin-top:4px">Bonus / penalty size <span class="q" data-h="validated_bonus">?</span>
+    <input type="number" id="r_validated_bonus" step="0.05" min="0" max="1" placeholder="0.10" style="width:100px"></div>
+  </div>
+
   <h3>Performance <span class="q" data-h="profile">?</span></h3>
   <select id="profile" style="width:100%"></select>
   <div id="profinfo" class="muted sm" style="margin:4px 0"></div>
@@ -363,6 +389,10 @@ const HELP = {
  imm_top_q: "An immunogenicity tool votes yes when the pair ranks in this top share of the binders in this run (it needs at least 8 binder pairs).",
  min_alleles: "A peptide is a candidate only if it passes for at least this many alleles.",
  min_coverage: "A peptide is a candidate only if the share of the population presenting it is at least this (needs the population file).",
+ wetpanel: "Optional. Peptides whose wet-lab outcome you already know, in the same format as the Comparison tab: <b>MHC class, epitope, alleles</b> (optional), then optionally <b>outcome</b> (positive / negative), assay, name. They are predicted in this same run, by the same models and alleles, which is what makes them comparable with the scan. They are kept out of this run's own ranking (several tools vote \'top q % of this run\', so a panel would otherwise shift the scan's results) and they are not candidates themselves. Every scan candidate is then marked validated / overlaps validated / tested negative / novel, so the final list is your new peptides and the known ones together, clustered as usual.",
+ validated_mode: "What a wet-lab <i>positive</i> does to the final list. <b>Flag only</b>: columns, no change to the ranking. <b>Prefer</b> (default): a validated epitope wins ties and peptides that failed sink to the bottom. <b>Bonus</b>: its priority score gains the amount below (the untouched score is kept as Priority_Score_Raw). <b>On top</b>: every validated epitope comes first, whatever it scored. The likelihood ratio against the panel is never folded into the score, because it is computed from the same predictors that made the score and would count the same evidence twice; whether a peptide worked in a wet lab is independent evidence, which is what these options act on.",
+ validated_negative: "What a peptide that was tested and did <b>not</b> elicit a response does. <b>Flag only</b>, <b>lower its priority</b> by the amount below, or <b>drop it</b> from the candidates. Dropping is the honest default for vaccine design once a peptide has actually failed, but it is off by default because one negative assay is not always the last word.",
+ validated_bonus: "How much the bonus or penalty moves a priority score (0-1, default 0.10). Priority scores are on a 0-1 scale, so 0.10 is a nudge and 0.50 is decisive.",
  k_panel: "Peptides whose wet-lab outcome you already know. One per line: <b>MHC class</b> (1/2 or I/II), the <b>epitope</b>, and its <b>alleles</b> comma separated (may be left empty, and a class II pair such as HLA-DQA1*05:01/DQB1*02:01 counts as one allele). Then optionally the <b>outcome</b> (positive / negative), the assay and a name. A bare list of peptides works too (every row counts as positive, and the class is taken from the length). A pasted IEDB export is understood by its header (Description, MHC - Allele Names, Qualitative Measure, Assay - Method) &mdash; keep its <i>Negative</i> rows: those are the comparison group.",
  k_queries: "The peptides you want judged, one per line or comma separated. They are scored in the same run as the panel, with the same alleles and models, so nothing differs between them except the peptide itself.",
  k_run: "Each class present in the panel runs its own comparison, so a peptide that could belong to either is never judged against a mixed baseline. Nothing is filtered and every model scores every peptide, otherwise the baseline would have holes. Peptides are used exactly as given and never cut: a validated epitope is a specific peptide.",
@@ -646,6 +676,8 @@ function advRules(){
   num("r_min_coverage","min_coverage",.01); num("r_panel_target","panel_target",.01);
   if ($("r_collapse").value) o.collapse = $("r_collapse").value == "1";
   if ($("r_cluster_by").value) o.cluster_by = $("r_cluster_by").value;
+  for (const [id, k] of [["r_validated_mode","validated_mode"],["r_validated_negative","validated_negative"]]) if ($(id) && $(id).value) o[k] = $(id).value;
+  num("r_validated_bonus","validated_bonus");
   return o;
 }
 function armParams(c){
@@ -658,8 +690,11 @@ function armParams(c){
   return a;
 }
 function params(){
-  return {reuse: $("reuse").checked, profile: $("profile").value || undefined, text: $("text").value, mode: mode(), preset: $("strat").value || "balanced", rules: advRules(), title: $("title").value,
+  const panel = $("wetpanel").value.trim();
+  const base = {reuse: $("reuse").checked, profile: $("profile").value || undefined, text: $("text").value, mode: mode(), preset: $("strat").value || "balanced", rules: advRules(), title: $("title").value,
           c1: armParams(1), c2: armParams(2)};
+  if (panel) { base.panel = panel; base.c1.panel = panel; base.c2.panel = panel; }
+  return base;
 }
 function applyParams(p){
   if (p.text != null) $("text").value = p.text;
@@ -1219,6 +1254,31 @@ async function deepTest(m){
 loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
+
+/* ---------- optional wet-lab panel in the pipeline form ---------- */
+let wpTimer = null;
+function wetPanelChanged(){
+  const txt = $("wetpanel").value.trim();
+  $("wetrules").style.display = txt ? "" : "none";
+  clearTimeout(wpTimer);
+  if (!txt) { $("wetpanelinfo").textContent = ""; queuePreview(); return; }
+  wpTimer = setTimeout(async () => {
+    /* the comparison preview parses the same format, so reuse it just to count the rows */
+    try {
+      const d = await (await fetch("api/comparative/preview", {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({panel: txt, queries: "AAAAAAAAA", classes: [1, 2],
+                                c1: {alleles: ["HLA-A*02:01"], models: {iedb_imm: true}},
+                                c2: {alleles: ["HLA-DRB1*01:01"], models: {mixmhc2pred: true}}})})).json();
+      const per = Object.entries(d.classes || {}).map(([k, v]) =>
+        `${k == "c1" ? "class I" : "class II"}: ${v.n_positive} positive, ${v.n_negative} negative`);
+      $("wetpanelinfo").textContent = per.length ? "Panel read \u2014 " + per.join("; ") : (d.hint || "");
+    } catch(e) { $("wetpanelinfo").textContent = ""; }
+    queuePreview();
+  }, 400);
+}
+$("wetpanel").oninput = wetPanelChanged;
+["r_validated_mode", "r_validated_negative", "r_validated_bonus"].forEach(id => { if ($(id)) $(id).onchange = $(id).oninput = queuePreview; });
+wetPanelChanged();
 
 /* ---------- comparison with tested peptides ---------- */
 SELS.k1 = SELS.k1 || ["HLA-A*02:01"]; SELS.k2 = SELS.k2 || ["HLA-DRB1*01:01"];

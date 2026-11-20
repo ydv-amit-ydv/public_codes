@@ -920,6 +920,35 @@ try:
 finally:
     _runs.BUILD = _saved
 
+# ---- a wet-lab panel riding along in a normal scan -------------------------------------------------------------------
+_wet = {**params, "filters": {}, "panel": "1, GILGFVFTL,, positive\n1, AAAAAAAAA,, negative"}
+d = wait_job(c.post("/api/pipeline/run", json=_wet).get_json()["id"])
+assert d["state"] == "done", d.get("error")
+pepw = c.get(f"/api/jobs/{d['id']}/result?table=peptides&limit=500").get_json()
+rows = {r["Peptide"]: r for r in pepw["rows"]}
+assert {"Validated", "Validated_Negative", "Overlaps_Validated", "Epitope_Status"} <= set(pepw["columns"]), pepw["columns"]
+assert rows["GILGFVFTL"]["Epitope_Status"] == "validated", rows["GILGFVFTL"]
+assert rows["GILGFVFTL"]["Validated"] in (True, 1), rows["GILGFVFTL"]
+# the panel's own peptides are scored but are not candidates from this protein
+assert all(r["Protein"] != "__panel__" for r in pepw["rows"]), "panel rows must not appear in the peptide table"
+assert any("wet-lab panel" in w for w in d["summary"]["warnings"]), d["summary"]["warnings"]
+# without a panel there are no flag columns at all, and the scan is unchanged
+d0 = wait_job(c.post("/api/pipeline/run", json={**params, "filters": {}}).get_json()["id"])
+pep0 = c.get(f"/api/jobs/{d0['id']}/result?table=peptides&limit=500").get_json()
+assert "Validated" not in pep0["columns"], pep0["columns"]
+_k = [x for x in ("Peptide", "Priority_Score", "Bind_Consensus_Best", "Coverage_Binder") if x in pep0["columns"]]
+assert sorted([tuple(r[x] for x in _k) for r in pep0["rows"]]) == \
+       sorted([tuple(r[x] for x in _k) for r in pepw["rows"]]), "a panel must not change the scan's own scores"
+# the flag rules are validated like any other rule
+for bad in ({"validated_mode": "nope"}, {"validated_negative": "nuke"}):
+    r = c.post("/api/pipeline/run", json={**_wet, "rules": bad})
+    assert r.status_code == 400, (bad, r.status_code)
+# dropping peptides that failed in the wet lab takes them out of the candidates
+_wet2 = {**params, "filters": {}, "panel": "1, GILGFVFTL,, negative", "rules": {"validated_negative": "remove"}}
+d2 = wait_job(c.post("/api/pipeline/run", json=_wet2).get_json()["id"])
+rows2 = {r["Peptide"]: r for r in c.get(f"/api/jobs/{d2['id']}/result?table=peptides&limit=500").get_json()["rows"]}
+assert rows2["GILGFVFTL"]["Candidate"] in (False, 0), rows2["GILGFVFTL"]
+
 # ---- comparison against peptides with a known wet-lab outcome --------------------------------------------------------
 _pos9 = ("GILGFVFTL", "NLVPMVATV", "GLCTLVAML", "CLGGLLTMV", "YLLEMLWRL", "KLGGALQAK", "ILRGSVAHK", "RMFPNAPYL", "VLFSSDFRI")
 _neg9 = ("AAAAAAAAA", "CCCCCCCCC", "DDDDDDDDD", "EEEEEEEEE", "FFFFFFFFF", "GGGGGGGGG", "HHHHHHHHH", "IIIIIIIII", "KKKKKKKKK")

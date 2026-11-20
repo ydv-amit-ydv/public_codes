@@ -5,6 +5,7 @@ import time
 
 import pandas as pd
 
+import comparative
 import consensus
 from common import config, hostself, population
 
@@ -30,6 +31,16 @@ def host_stage(cls, p, n_pep):
             "weight": timing.expected_seconds("host", n)}
 
 
+
+def _panel_frame(p):
+    """The wet-lab panel of a run, parsed back from the settings it was stored with."""
+    text = (p or {}).get("panel") or ""
+    if not str(text).strip():
+        return pd.DataFrame(columns=["Class", "Peptide", "Alleles", "Outcome", "Assay", "Name"]), ""
+    panel, warns = comparative.parse_panel(text)
+    return panel, "; ".join(warns)
+
+
 def finish(base, cls, p, job, info, warns, filters_ok):
     """base: the pair table (all tool columns). Writes CSVs, returns the dict stored in job.result."""
     pop, msg = population.load(config.load().get("population"), config.search_root())
@@ -40,7 +51,22 @@ def finish(base, cls, p, job, info, warns, filters_ok):
         job.update("host", msg="loading the host proteome index", state="running")
         hostself.index()
         job.update("host", msg="comparing the candidates with the host proteome", state="running")
+    # peptides that rode along from a wet-lab panel are scored, but they are not candidates
+    # from this protein: they leave the tables here, after the scoring that needed them
+    base, panel_pairs = comparative.split_panel(base)
     res = consensus.analyse(base, cls, rules, pop, filters_ok)
+    panel_df, panel_note = _panel_frame(p)
+    if len(panel_df):
+        res["peptides"] = comparative.annotate(res["peptides"], panel_df, cls)
+        res["peptides"], note = comparative.score_flags(res["peptides"], rules)
+        if note:
+            warns.append("wet-lab panel: " + note)
+        res["candidates"] = res["peptides"][res["peptides"]["Candidate"].astype(bool)].reset_index(drop=True)
+        n_val = int(res["peptides"]["Validated"].sum())
+        n_ov = int(res["peptides"]["Overlaps_Validated"].sum())
+        warns.append(f"wet-lab panel: {len(panel_df)} tested peptide(s) scored alongside; "
+                     f"{n_val} scan peptide(s) are validated epitopes and {n_ov} overlap one. "
+                     f"The panel did not take part in this run's own ranking.")
     cur = {"candidates": int(res["peptides"]["Candidate"].sum()), "regions": int(res["peptides"]["Is_Representative"].sum()),
            "panel": len(res["panel"]), "panel_coverage": (res["panel"][-1]["cumulative_coverage"] if res["panel"] else 0.0)}
     pp = res["peptides"]

@@ -39,6 +39,8 @@ import pandas as pd
 from common import hostself
 
 from common import peptide_props
+import comparative
+from comparative import PANEL_PROTEIN     # a row with this Protein rode along from a wet-lab panel
 
 KEYS = ["Protein", "Start", "Peptide"]
 MIN_RELATIVE = 8          # a "top q %" vote needs enough binder pairs to rank among
@@ -80,7 +82,8 @@ GROUP_PREFIX = {"binding": "Bind", "immunogenicity": "Imm", "processing": "Proc"
 # ---------------------------------------------------------------------------------------------- rules
 RULE_FIELDS = ("bind_rank_max", "strong_rank_max", "bigmhc_el_min", "bind_min_agree", "imm_top_q", "imm_abs_rank_max",
                "imm_min_agree", "ctlpan_rank_max", "netchop_min", "require_processing", "min_alleles", "min_coverage",
-               "collapse", "overlap_fraction", "cluster_by", "host_mode", "host_near_min", "panel_target", "panel_cap", "rank_by", "rank_weights")
+               "collapse", "overlap_fraction", "cluster_by", "host_mode", "host_near_min", "panel_target", "panel_cap", "rank_by", "rank_weights",
+               "validated_mode", "validated_bonus", "validated_negative")
 RANK_BY = ("consensus", "coverage", "promiscuity", "binding", "immunogenicity")
 DEFAULT_WEIGHTS = {"coverage": 0.35, "agreement": 0.25, "binding": 0.20, "immunogenicity": 0.20}
 
@@ -90,7 +93,9 @@ def _rules(cls, **over):
             "bind_min_agree": "majority", "imm_top_q": 0.25, "imm_abs_rank_max": 5.0, "imm_min_agree": "any",
             "ctlpan_rank_max": 1.0, "netchop_min": None, "require_processing": False, "min_alleles": 1,
             "min_coverage": 0.0, "host_mode": "flag", "host_near_min": 8 / 9, "collapse": True, "overlap_fraction": 0.7, "cluster_by": "core" if cls == 2 else "peptide", "panel_target": 0.95, "panel_cap": 25,
-            "rank_by": "consensus", "rank_weights": dict(DEFAULT_WEIGHTS)}
+            "rank_by": "consensus", "rank_weights": dict(DEFAULT_WEIGHTS),
+            # how a wet-lab panel's flags affect the final list (only used when a panel was given)
+            "validated_mode": "prefer", "validated_bonus": 0.10, "validated_negative": "flag"}
     base.update(over)
     return base
 
@@ -139,6 +144,14 @@ def resolve_rules(cls, preset="balanced", overrides=None):
         raise ValueError("cluster_by must be peptide or core")
     if r["rank_by"] not in RANK_BY:
         raise ValueError(f"rank_by must be one of {RANK_BY}")
+    if r.get("validated_mode") not in comparative.VALIDATED_MODES:
+        raise ValueError(f"validated_mode must be one of {comparative.VALIDATED_MODES}")
+    if r.get("validated_negative") not in comparative.NEGATIVE_MODES:
+        raise ValueError(f"validated_negative must be one of {comparative.NEGATIVE_MODES}")
+    try:
+        r["validated_bonus"] = max(0.0, min(1.0, float(r.get("validated_bonus", 0.10))))
+    except (TypeError, ValueError):
+        raise ValueError("validated_bonus must be a number between 0 and 1")
     for k in ("bind_min_agree", "imm_min_agree"):
         v = r[k]
         if not (v in ("any", "majority", "all", "off") or (isinstance(v, (int, float)) and v >= 1)):
@@ -200,6 +213,29 @@ def gate_mask(df, cls, rules, pending=0):
     return votes >= np.maximum(1, need - pending)
 
 
+def _place_on(values, reference, groups, asc):
+    """Where each value falls in `reference`, as rank(pct=True) would put it (0-1).
+
+    Used for peptides that ride along in a run without belonging to it: they are given a
+    standing on the scan's distribution without being part of it.
+    """
+    def one(v, ref):
+        ref = np.sort(ref[~np.isnan(ref)])
+        if not len(ref):
+            return np.full(len(v), np.nan)
+        pos = np.searchsorted(ref, v, side="right") if asc else len(ref) - np.searchsorted(ref, v, side="left")
+        return np.clip(pos / len(ref), 1.0 / (len(ref) + 1), 1.0)
+
+    out = pd.Series(np.nan, index=values.index)
+    if groups is None:
+        out[:] = one(values.to_numpy(dtype=float), reference.to_numpy(dtype=float))
+    else:
+        for g, idx in values.groupby(groups).groups.items():
+            out.loc[idx] = one(values.loc[idx].to_numpy(dtype=float),
+                               reference[groups == g].to_numpy(dtype=float))
+    return out.where(values.notna())
+
+
 def binder_mask(df, cls, rules):
     """Binder call from the binding tools present now (used to decide which pairs the immunogenicity tools must score)."""
     tools = [t for t in active_tools(df, cls) if t.group == "binding"]
@@ -234,12 +270,23 @@ def add_votes(d, cls, rules):
             tools = [x for x in tools if x is not t]
             continue
         asc = t.direction == "low"
+        # Peptides riding along from a wet-lab panel must not move the scan's own ranking:
+        # these tools vote "top q % of the binders in this run", so adding a panel would
+        # change the denominator the scan is judged by. The baseline is therefore taken from
+        # the scan alone, and panel peptides are then placed on that same scale so the two
+        # stay comparable. With no panel this is exactly the ranking computed before.
+        from_panel = d["Protein"].astype(str).eq(PANEL_PROTEIN) if "Protein" in d.columns else None
+        base = s.where(~from_panel) if from_panel is not None and from_panel.any() else s
         if t.allele_dependent:
-            pct = s.groupby(d["Allele"]).rank(pct=True, ascending=asc, method="average")
+            pct = base.groupby(d["Allele"]).rank(pct=True, ascending=asc, method="average")
+            if from_panel is not None and from_panel.any():
+                pct = pct.fillna(_place_on(s, base, d["Allele"], asc).where(from_panel))
         else:
-            u = d.loc[s.notna(), KEYS + [t.col]].drop_duplicates(KEYS)
+            u = d.loc[base.notna(), KEYS + [t.col]].drop_duplicates(KEYS)
             u["_p"] = u[t.col].rank(pct=True, ascending=asc, method="average")
             pct = d[KEYS].merge(u[KEYS + ["_p"]], on=KEYS, how="left")["_p"].set_axis(d.index)
+            if from_panel is not None and from_panel.any():
+                pct = pct.fillna(_place_on(s, base, None, asc).where(from_panel))
         d[f"TopPct_{t.key}"] = (pct * 100).round(4)
         if t.kind == "rel":
             d[f"Vote_{t.key}"] = _vote(d[f"TopPct_{t.key}"] <= rules["imm_top_q"] * 100, d[f"TopPct_{t.key}"])

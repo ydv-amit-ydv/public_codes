@@ -13,6 +13,8 @@ import os, time
 
 import pandas as pd
 
+import comparative
+
 from common import alleles as allele_lib, config
 import bigmhc_runner as bm
 import calis_immunogenicity as ci
@@ -55,6 +57,7 @@ def normalise(params):
     if p.get("mode", "scan") != "peptides" and not lengths:
         raise ValueError("Select at least one peptide length (8-14).")
     nm.check_input_text(p.get("text", ""), p.get("mode", "scan"))
+    panel_peptides, panel_warns = _panel(p, 1, (8, 14))
     f = {k: _num((p.get("filters") or {}).get(k)) for k in FILTER_KEYS}
     nmp = {"ba": bool((p.get("nmp") or {}).get("ba", True)),
            "rankS": float((p.get("nmp") or {}).get("rankS", 0.5)),
@@ -69,7 +72,8 @@ def normalise(params):
         raise ValueError("Positions to mask must be default, by_allele or custom.")
     if models["iedb_imm"] and iedb["mask_choice"] == "custom":
         ci.parse_positions(iedb["positions"])                  # ValueError with a readable message
-    return {"text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths,
+    return {"panel": p.get("panel") or "", "panel_peptides": panel_peptides, "panel_warnings": panel_warns,
+            "text": p.get("text", ""), "mode": p.get("mode", "scan"), "lengths": lengths,
             "alleles": alleles, "models": models, "chain": bool(p.get("chain", True)) and fun["mode"] == "auto", "funnel": fun,
             "filters": f, "nmp": nmp, "iedb": iedb,
             "preset": p.get("preset") or "balanced", "rules": p.get("rules") or {}}
@@ -108,7 +112,7 @@ def _supported(alleles, m):
 def preview(params):
     p = normalise(params)
     m = p["models"]
-    peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"])
+    peps, warns = _peptides(p)
     nm_ok, bm_ok, notes = _supported(p["alleles"], m)
     n_pep = int(peps["Peptide"].nunique()) if not peps.empty else 0
     n_win = int(len(peps))
@@ -140,8 +144,37 @@ def _binding_pass(df, f):
     return ok
 
 
+
+
+def _panel(p, cls, bounds):
+    """Parse the optional wet-lab panel and return its peptides of this class as run rows."""
+    text = p.get("panel") or ""
+    if not text.strip():
+        return [], []
+    panel, warns = comparative.parse_panel(text)
+    rows = comparative.panel_rows(panel, cls, bounds)
+    tag = "I" if cls == 1 else "II"
+    if len(panel) and not rows:
+        warns = warns + [f"the wet-lab panel has no class {tag} peptide of an accepted length "
+                         f"({bounds[0]}-{bounds[1]} aa), so this class has nothing to compare with"]
+    return rows, warns
+
+
+def _peptides(p):
+    """The run's peptide table, with any wet-lab panel peptides appended.
+
+    Panel rows carry the reserved Protein name, so they are scored by the same models in the
+    same run but stay out of the scan's ranking and out of the candidate list.
+    """
+    peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"])
+    extra = p.get("panel_peptides") or []
+    if extra:
+        peps = pd.concat([peps, pd.DataFrame(extra, columns=["Protein", "Start", "Peptide"])], ignore_index=True)
+    return peps, warns
+
+
 def n_unique(p):
-    peps, _ = nm.build_peptides(p["text"], p["mode"], p["lengths"])
+    peps, _ = _peptides(p)
     return int(peps["Peptide"].nunique()) if not peps.empty else 0
 
 
@@ -171,7 +204,7 @@ def run(params, job):
     use_bm = m["bigmhc_el"] or m["bigmhc_im"]
     bm_models = [x for x, on in (("el", m["bigmhc_el"]), ("im", m["bigmhc_im"])) if on]
 
-    peps, warns = nm.build_peptides(p["text"], p["mode"], p["lengths"])
+    peps, warns = _peptides(p)
     if peps.empty:
         raise ValueError("No valid peptides in the input.")
     peps = peps.drop_duplicates()

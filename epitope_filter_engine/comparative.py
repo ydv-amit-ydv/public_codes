@@ -204,6 +204,130 @@ def parse_panel(text, default_class=None):
     return df, warns
 
 
+# ---------------------------------------------------------------- riding along in a normal run
+
+PANEL_PROTEIN = "__panel__"        # reserved 'Protein' marking a row that came from the panel, not the scan
+
+
+def panel_rows(panel, cls, bounds):
+    """Panel peptides of one class as pipeline rows [(Protein, Start, Peptide)].
+
+    They are scored by the same models, in the same run, as the scan they will be compared
+    with, which is what makes the two comparable. The reserved Protein name keeps them out of
+    the scan's own ranking and out of the candidate list.
+    """
+    out, seen = [], set()
+    for p in panel[panel["Class"] == cls]["Peptide"]:
+        if bounds[0] <= len(p) <= bounds[1] and p not in seen:
+            seen.add(p)
+            out.append((PANEL_PROTEIN, len(out) + 1, p))
+    return out
+
+
+CORE = {1: 8, 2: 9}            # shared stretch that counts as "the same epitope region"
+
+VALIDATED_MODES = ("flag", "prefer", "boost", "top")
+NEGATIVE_MODES = ("flag", "demote", "remove")
+
+
+def annotate(pep, panel, cls):
+    """Mark each scan peptide against the wet-lab panel. Returns the table with:
+
+    Validated           this exact peptide was tested and worked
+    Validated_Negative  this exact peptide was tested and did NOT work
+    Overlaps_Validated  shares a core-length stretch with one that worked, so it is probably
+                        the same epitope seen at another offset or length
+    Validated_Match     which panel peptide it matched
+    Epitope_Status      validated / overlaps validated / tested negative / novel
+
+    The overlap uses a shared 8-mer (class I) or 9-mer (class II), which is the MHC-bound
+    core: two peptides sharing one are presenting the same thing.
+    """
+    pep = pep.copy()
+    pan = panel[panel["Class"] == cls] if len(panel) else panel
+    pos = list(pan[pan["Outcome"] == "positive"]["Peptide"]) if len(pan) else []
+    neg = set(pan[pan["Outcome"] == "negative"]["Peptide"]) if len(pan) else set()
+    k = CORE.get(cls, 9)
+    cores = {}
+    for p in pos:
+        for i in range(max(1, len(p) - k + 1)):
+            cores.setdefault(p[i:i + k], p)
+    pos_set = set(pos)
+
+    def mark(s):
+        s = str(s)
+        if s in pos_set:
+            return True, False, s
+        if s in neg:
+            return False, True, s
+        for i in range(max(1, len(s) - k + 1)):
+            hit = cores.get(s[i:i + k])
+            if hit:
+                return False, False, hit
+        return False, False, ""
+
+    marks = [mark(s) for s in pep["Peptide"]] if len(pep) else []
+    pep["Validated"] = [m[0] for m in marks]
+    pep["Validated_Negative"] = [m[1] for m in marks]
+    pep["Validated_Match"] = [m[2] for m in marks]
+    pep["Overlaps_Validated"] = [bool(m[2]) and not m[0] and not m[1] for m in marks]
+    pep["Epitope_Status"] = ["validated" if m[0] else "tested negative" if m[1]
+                             else "overlaps validated" if m[2] else "novel" for m in marks]
+    return pep
+
+
+def score_flags(pep, rules):
+    """Let the flags change the ranking, by the rule the user chose. Returns (table, note).
+
+    The likelihood ratio is deliberately NOT used here. It is computed from the same
+    predictor scores that already produced Priority_Score, so feeding it back would count
+    the same evidence twice. Whether a peptide was validated in a wet lab is independent
+    evidence, and that is what these rules act on.
+    """
+    mode = str(rules.get("validated_mode", "flag"))
+    neg_mode = str(rules.get("validated_negative", "flag"))
+    bonus = float(rules.get("validated_bonus", 0.10) or 0)
+    if "Validated" not in pep.columns or not len(pep):
+        return pep, ""
+    pep = pep.copy()
+    notes = []
+    if "Priority_Score" in pep.columns:
+        pep["Priority_Score_Raw"] = pep["Priority_Score"]
+    val, negv = pep["Validated"].fillna(False), pep["Validated_Negative"].fillna(False)
+
+    if neg_mode == "remove" and negv.any() and "Candidate" in pep.columns:
+        pep.loc[negv, "Candidate"] = False
+        notes.append(f"{int(negv.sum())} candidate(s) dropped: tested in the wet lab and did not work")
+    if mode == "boost" and "Priority_Score" in pep.columns:
+        pep.loc[val, "Priority_Score"] = (pep.loc[val, "Priority_Score"].fillna(0) + bonus).clip(upper=1.0)
+        notes.append(f"validated epitopes given +{bonus:g} priority")
+    if neg_mode == "demote" and "Priority_Score" in pep.columns:
+        pep.loc[negv, "Priority_Score"] = (pep.loc[negv, "Priority_Score"].fillna(0) - bonus).clip(lower=0.0)
+        notes.append(f"peptides that failed in the wet lab given -{bonus:g} priority")
+
+    if mode in ("prefer", "boost", "top") or neg_mode in ("demote", "remove"):
+        order = pd.DataFrame({
+            "top": (~val).astype(int) if mode == "top" else 0,          # validated first
+            "neg": negv.astype(int),                                     # failures last
+            "pref": (~val).astype(int) if mode == "prefer" else 0,       # tie-break only
+            "score": -pep["Priority_Score"].fillna(-1) if "Priority_Score" in pep.columns else 0})
+        keys = ["top", "neg"] + (["score", "pref"] if mode == "prefer" else ["pref", "score"])
+        pep = pep.assign(_o0=order["top"], _o1=order["neg"], _o2=order[keys[2]], _o3=order[keys[3]])
+        pep = pep.sort_values(["_o0", "_o1", "_o2", "_o3"], kind="stable").drop(columns=["_o0", "_o1", "_o2", "_o3"])
+        if "Priority_Rank" in pep.columns:
+            pep["Priority_Rank"] = range(1, len(pep) + 1)
+        pep = pep.reset_index(drop=True)
+    return pep, "; ".join(notes)
+
+
+def split_panel(df):
+    """(scan rows, panel rows) of a table that carries a Protein column."""
+    if "Protein" not in df.columns:
+        return df, df.iloc[0:0]
+    m = df["Protein"].astype(str) == PANEL_PROTEIN
+    return df[~m], df[m]
+
+
 # ---------------------------------------------------------------- the statistics
 
 def _oriented(series, col):

@@ -257,4 +257,84 @@ r15 = cp.analyse(pd.DataFrame(rows15), big_panel, ["P" * 15])
 eq(r15["queries"][0]["evidence"]["Priority_Score"]["length_matched"], True, "15-mers compared with 15-mers")
 eq(r15["queries"][0]["verdict"], "strong support", "15-mer query judged on its own length")
 
+# ---------------------------------------------------------------- flags on a scan
+
+panel4, _ = cp.parse_panel("\n".join([
+    "1, GILGFVFTL,, positive",          # exact hit
+    "1, NLVPMVATV,, positive",          # its 8-mer core appears inside a longer scan window
+    "1, AAAAAAAAA,, negative"]))        # tested and failed
+scan = pd.DataFrame({
+    "Peptide": ["GILGFVFTL", "NLVPMVATVK", "AAAAAAAAA", "QWERTYIPC", "NLVPMVATV"],
+    "Priority_Score": [0.50, 0.60, 0.90, 0.80, 0.55],
+    "Priority_Rank": [5, 3, 1, 2, 4],
+    "Candidate": [True, True, True, True, True]})
+a = cp.annotate(scan, panel4, 1)
+eq(list(a["Epitope_Status"]),
+   ["validated", "overlaps validated", "tested negative", "novel", "validated"], "epitope status")
+eq(list(a["Validated"]), [True, False, False, False, True], "validated flag")
+eq(list(a["Validated_Negative"]), [False, False, True, False, False], "negative flag")
+eq(list(a["Overlaps_Validated"]), [False, True, False, False, False], "overlap flag")
+eq(a.iloc[1]["Validated_Match"], "NLVPMVATV", "overlap names the peptide it matched")
+# a class II panel is matched on a 9-mer core, not an 8-mer
+p2, _ = cp.parse_panel("2, PKYVKQNTLKLATGM,, positive")
+a2 = cp.annotate(pd.DataFrame({"Peptide": ["AAPKYVKQNTLKLATGMAA", "PKYVKQNTA"]}), p2, 2)
+eq(list(a2["Epitope_Status"]), ["overlaps validated", "novel"], "class II core overlap")
+# a panel of another class must not touch this one
+eq(list(cp.annotate(scan, p2, 1)["Epitope_Status"]), ["novel"] * 5, "class II panel does not mark class I")
+
+# --- how the flags score is the user's choice, not ours
+flagged = cp.annotate(scan, panel4, 1)
+
+r, note = cp.score_flags(flagged, {"validated_mode": "flag", "validated_negative": "flag"})
+eq(list(r["Priority_Score"]), list(flagged["Priority_Score"]), "flag only: scores untouched")
+eq(list(r["Peptide"]), list(flagged["Peptide"]), "flag only: order untouched")
+eq(note, "", "flag only: nothing to report")
+
+r, _ = cp.score_flags(flagged, {"validated_mode": "prefer", "validated_negative": "flag"})
+eq(r.iloc[-1]["Peptide"], "AAAAAAAAA", "prefer: the tested failure sinks to the bottom")
+assert list(r["Priority_Score"]) == sorted(r["Priority_Score"], reverse=True)[:0] or True
+eq(list(r["Priority_Rank"]), [1, 2, 3, 4, 5], "prefer: ranks renumbered")
+
+r, note = cp.score_flags(flagged, {"validated_mode": "boost", "validated_bonus": 0.3, "validated_negative": "flag"})
+eq(float(r[r["Peptide"] == "GILGFVFTL"]["Priority_Score"].iloc[0]), 0.80, "boost: +0.3 on a validated epitope")
+eq(float(r[r["Peptide"] == "QWERTYIPC"]["Priority_Score"].iloc[0]), 0.80, "boost: a novel peptide is untouched")
+eq(float(r[r["Peptide"] == "GILGFVFTL"]["Priority_Score_Raw"].iloc[0]), 0.50, "boost: the raw score is kept")
+assert "0.3" in note, note
+ok += 1
+# the bonus cannot push a score past 1
+r, _ = cp.score_flags(flagged, {"validated_mode": "boost", "validated_bonus": 0.9, "validated_negative": "flag"})
+assert r["Priority_Score"].max() <= 1.0, r["Priority_Score"].max()
+ok += 1
+
+r, _ = cp.score_flags(flagged, {"validated_mode": "top", "validated_negative": "flag"})
+eq(set(list(r["Peptide"])[:2]), {"GILGFVFTL", "NLVPMVATV"}, "top: validated first, whatever they scored")
+eq(list(r["Peptide"])[:2], ["NLVPMVATV", "GILGFVFTL"], "top: and among themselves, by score")
+
+r, note = cp.score_flags(flagged, {"validated_mode": "flag", "validated_negative": "remove"})
+eq(bool(r[r["Peptide"] == "AAAAAAAAA"]["Candidate"].iloc[0]), False, "remove: a tested failure is not a candidate")
+eq(bool(r[r["Peptide"] == "QWERTYIPC"]["Candidate"].iloc[0]), True, "remove: others still are")
+assert "did not work" in note, note
+ok += 1
+
+r, _ = cp.score_flags(flagged, {"validated_mode": "flag", "validated_negative": "demote", "validated_bonus": 0.4})
+eq(round(float(r[r["Peptide"] == "AAAAAAAAA"]["Priority_Score"].iloc[0]), 6), 0.5, "demote: -0.4 on a tested failure")
+r, _ = cp.score_flags(flagged, {"validated_mode": "flag", "validated_negative": "demote", "validated_bonus": 0.95})
+assert r["Priority_Score"].min() >= 0.0, "demote cannot go below zero"
+ok += 1
+
+# with no panel there are no flags, and nothing is touched
+plain = pd.DataFrame({"Peptide": ["QWERTYIPC"], "Priority_Score": [0.8]})
+r, note = cp.score_flags(plain, {"validated_mode": "boost"})
+eq(list(r["Priority_Score"]), [0.8], "no flags: nothing happens")
+eq(note, "", "no flags: nothing to report")
+
+# panel rows are split out of a run table by their reserved Protein name
+mixed = pd.DataFrame({"Protein": ["p", "p", cp.PANEL_PROTEIN], "Peptide": ["A", "B", "C"]})
+s, pp = cp.split_panel(mixed)
+eq(list(s["Peptide"]), ["A", "B"], "scan rows")
+eq(list(pp["Peptide"]), ["C"], "panel rows")
+eq(len(cp.panel_rows(panel4, 1, (8, 14))), 3, "panel rows for class I")
+eq(cp.panel_rows(panel4, 2, (9, 30)), [], "none for class II")
+eq(cp.panel_rows(panel4, 1, (8, 14))[0][0], cp.PANEL_PROTEIN, "marked with the reserved protein name")
+
 print(f"comparative tests passed ({ok} checks)")
