@@ -887,6 +887,28 @@ from MHC1.BA_EL_scripts import netmhcpan_app as _nm                             
 assert _nm.nucleotide_message("x", "ASNENMETM") is None and _nm.nucleotide_message("x", DNA)
 assert "RNA" in _nm.nucleotide_message("x", RNA) and "DNA" in _nm.nucleotide_message("x", DNA)
 
+# ---- self update: the page can see its version and install a newer one -----------------------------------------------
+u = c.get("/api/update?check=0").get_json()                    # no network on the first paint
+assert u["version"] and u["checked"] is None and "is_git" in u and u["manual"].startswith("git -C"), u
+from common import selfupdate as _su                                             # noqa: E402
+assert _su.version() == u["version"]
+# a run must not be interrupted by an update: both endpoints refuse while a job is alive
+from common.jobs import Job as _Job                                              # noqa: E402
+_fake = _Job("pipeline"); _fake.state = "running"; _MGR._jobs[_fake.id] = _fake
+for path in ("/api/update/apply", "/api/update/restart"):
+    r = c.post(path)
+    assert r.status_code == 409 and "run is going" in r.get_json()["error"], (path, r.status_code, r.get_json())
+_MGR._jobs.pop(_fake.id, None)
+# a folder that is not a clone says so instead of trying, and gives the manual command
+_root = _su.ROOT
+try:
+    _su.ROOT = os.path.join(TMP, "notaclone"); os.makedirs(_su.ROOT, exist_ok=True)
+    d = _su.status()
+    assert not d["is_git"] and not d["available"] and "not a git clone" in d["error"], d
+    assert not _su.apply()["ok"]
+finally:
+    _su.ROOT = _root
+
 # ---- nothing hangs: a silent program is killed, a busy one is not, a runaway one hits the time limit ---------------------
 from common.jobs import run_cmd as _rc, ToolHung as _TH                          # noqa: E402
 import time as _t                                                                # noqa: E402

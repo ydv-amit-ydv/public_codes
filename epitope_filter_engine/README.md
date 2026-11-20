@@ -157,6 +157,21 @@ compared with UniProt's reference proteome of the host (human by default; `host_
   candidates are checked. The index takes about 8 s to build and a few hundred MB of memory for human, built on first use.
 - This checks the sequence of the peptide, not whether the host protein is expressed in a relevant tissue.
 
+## Updating the engine from the page
+
+Settings shows the installed version and commit and a **Check for updates** button; when the
+repository it was cloned from has something newer, an *Update available* badge appears in the
+header. **Update now** fast-forwards the code folder, lists the files that changed, and then the
+server has to be restarted (**Restart to finish** does it and reloads the page).
+
+- Only the code folder changes. Runs, settings, caches and the learned timings are in the
+  workspace, so **an update never changes a finished run**, and every stored run keeps the
+  version and commit it was produced with.
+- An update is refused while a run is going, and if you have edited tracked files in the code
+  folder yourself (it says which). Untracked files such as `.venv` or `__pycache__` are ignored.
+- A copy installed by copying files rather than cloning cannot update itself; the card says so
+  and gives the command.
+
 ## Single model and Projects
 
 - **Single model** runs one tool on its own (any of the twelve) and keeps everything it reports, with each peptide's position, sorted by the tool's

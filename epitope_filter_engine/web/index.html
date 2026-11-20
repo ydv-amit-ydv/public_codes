@@ -86,7 +86,7 @@ details>summary{cursor:pointer}
 #pj_tbl td{white-space:normal;vertical-align:top}#pj_tbl .act button{margin:1px}
 @media (max-width:820px){.pane.on{flex-direction:column}#form{width:100%;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
-<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Documentation</a>
+<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><button id="updbadge" class="b" style="display:none;font-size:11px;padding:1px 7px;margin-right:8px;background:#2b5c2b;border-color:#3d7a3d" title="A newer version of the engine is available">Update available</button><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Documentation</a>
 <button data-t="pipeline">Pipeline</button>
 <button data-t="single">Single model</button>
 <button data-t="projects">Projects</button>
@@ -243,6 +243,16 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
 
 <!-- ============================ SETTINGS ============================ -->
 <div class="pane" id="settings">
+ <div class="card" id="updcard">
+  <b>Engine version</b> <span class="q" data-h="update">?</span> <span class="muted sm" id="updnow"></span>
+  <div style="margin-top:8px">
+   <button class="b" id="updcheck">Check for updates</button>
+   <button class="b" id="updapply" style="display:none;background:#2b5c2b;border-color:#3d7a3d">Update now</button>
+   <button class="b" id="updrestart" style="display:none;background:#2b5c2b;border-color:#3d7a3d">Restart to finish</button>
+   <span id="updmsg" class="sm" style="margin-left:6px"></span>
+  </div>
+  <div id="upddetail" class="sm muted" style="margin-top:8px"></div>
+ </div>
  <div class="card" id="hostcard">
   <b>Host proteome</b> <span class="q" data-h="host_mode">?</span> <span class="muted sm" id="hostinfo"></span>
   <div style="margin-top:8px"><select id="host_org" disabled title="set host_proteome.organism in the settings file"><option value="human">Human (Homo sapiens)</option><option value="mouse">Mouse (Mus musculus)</option></select>
@@ -306,6 +316,7 @@ const HELP = {
  imm_top_q: "An immunogenicity tool votes yes when the pair ranks in this top share of the binders in this run (it needs at least 8 binder pairs).",
  min_alleles: "A peptide is a candidate only if it passes for at least this many alleles.",
  min_coverage: "A peptide is a candidate only if the share of the population presenting it is at least this (needs the population file).",
+ update: "The engine checks the public repository it was cloned from for a newer version. <b>Update now</b> fast-forwards the code folder and lists what changed; the server then has to be restarted to load it. Your runs, settings and caches are in the workspace, outside the code folder, so an update never changes a finished run, and every stored run keeps the version and commit it was produced with. An update is refused while a run is going, and if you have edited tracked files yourself. A copy that was installed by copying files rather than cloning cannot update itself, and the card gives the command instead.",
  host_mode: "Compares each candidate with the host's own proteins (UniProt reference proteome, downloaded once in Settings). <b>Identical</b>: one of its 9-mers occurs exactly in a host protein. <b>Near</b>: a 9-mer with one mismatch. Such peptides may be tolerated or risk autoimmunity. <b>Flag only</b> adds the columns Host_Self, Host_Best_Identity, Host_Best_Protein; the remove options also take them out of the candidates.",
  cluster_by: "What decides that two candidates are the same epitope. <b>Whole peptide</b>: their windows overlap by 70 %. <b>Binding core</b> (class II default): their predicted 9-aa cores overlap by 70 %, so the many 15-25-mers built around one core become one cluster; falls back to the whole peptide when no core was predicted.",
  collapse: "Windows that overlap the best one by 70 % or more become one region; the best peptide represents it.",
@@ -1155,6 +1166,54 @@ async function deepTest(m){
 loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
+
+/* ---------- self update ---------- */
+function updRender(d, msg){
+  $("updnow").textContent = "installed: " + (d.version || "unknown") + (d.commit ? "  (" + d.commit.slice(0,8) + (d.branch ? " on " + d.branch : "") + ")" : "");
+  $("updmsg").textContent = msg || "";
+  $("updmsg").className = "sm" + (d.error ? " bad" : "");
+  const bits = [];
+  if (d.error) bits.push(esc(d.error) + (d.is_git ? "" : "<br>By hand: <code>" + esc(d.manual) + "</code>"));
+  else if (d.available) bits.push("<b>A newer version is available"
+      + (d.behind ? " (" + d.behind + " commit" + (d.behind > 1 ? "s" : "") + " behind)" : "") + ".</b> "
+      + (d.note ? esc(d.note) + " " : "")
+      + "Your runs and settings are in the workspace and are not touched.");
+  else if (d.checked) bits.push("Up to date.");
+  if (d.dirty && d.dirty.length) bits.push("Local changes in the code folder: <code>" + d.dirty.map(esc).join("</code>, <code>") + "</code>");
+  $("upddetail").innerHTML = bits.join("<br>");
+  $("updapply").style.display = d.available && !d.error ? "" : "none";
+  $("updbadge").style.display = d.available && !d.error ? "" : "none";
+}
+function updCheck(net){
+  $("updmsg").textContent = net ? "checking..." : "";
+  return fetch("api/update?check=" + (net ? 1 : 0)).then(r => r.json())
+    .then(d => { updRender(d); return d; })
+    .catch(e => { $("updmsg").textContent = "could not check: " + e; });
+}
+$("updcheck").onclick = () => updCheck(1);
+$("updbadge").onclick = () => { document.querySelector('nav button[data-t=settings]').click(); $("updcard").scrollIntoView({block: "center"}); };
+$("updapply").onclick = () => {
+  $("updapply").disabled = true; $("updmsg").textContent = "updating...";
+  fetch("api/update/apply", {method: "POST"}).then(r => r.json()).then(d => {
+    $("updapply").disabled = false;
+    if (!d.ok) { $("updmsg").textContent = d.error || "update failed"; $("updmsg").className = "sm bad"; return; }
+    $("updmsg").textContent = "updated to " + (d.version || "").split(" ")[0]; $("updmsg").className = "sm";
+    $("updapply").style.display = "none"; $("updbadge").style.display = "none"; $("updrestart").style.display = "";
+    $("upddetail").innerHTML = "<b>Updated.</b> " + d.n_files + " file(s) changed"
+      + (d.files && d.files.length ? ": <code>" + d.files.slice(0,12).map(esc).join("</code>, <code>") + "</code>"
+         + (d.n_files > 12 ? " and " + (d.n_files - 12) + " more" : "") : "")
+      + ".<br>Restart the server to load it. Finished runs are unchanged.";
+  }).catch(e => { $("updapply").disabled = false; $("updmsg").textContent = "update failed: " + e; });
+};
+$("updrestart").onclick = () => {
+  $("updrestart").disabled = true; $("updmsg").textContent = "restarting...";
+  fetch("api/update/restart", {method: "POST"}).then(r => r.json()).then(d => {
+    if (!d.ok) { $("updrestart").disabled = false; $("updmsg").textContent = d.error; $("updmsg").className = "sm bad"; return; }
+    const wait = () => fetch("api/version").then(() => location.reload()).catch(() => setTimeout(wait, 1000));
+    setTimeout(wait, 1500);
+  }).catch(() => { const wait = () => fetch("api/version").then(() => location.reload()).catch(() => setTimeout(wait, 1000)); setTimeout(wait, 1500); });
+};
+updCheck(0);                                  /* from disk on load; the network check is a click away */
 let HOSTPOLL = null;
 async function hostStatus(){
   const d = await (await fetch("api/host")).json();

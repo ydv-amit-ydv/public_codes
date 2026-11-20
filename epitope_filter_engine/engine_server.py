@@ -8,7 +8,7 @@ only needs flask and pandas. Settings are re-read on every request, so saving in
 the GUI takes effect immediately.
 """
 import json
-import os, subprocess, sys
+import os, subprocess, sys, threading, time
 
 from flask import Flask, jsonify, request, send_file
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
@@ -22,7 +22,7 @@ sys.path.insert(0, HERE)
 
 from common import alleles as allele_lib, config, population            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
-from common import runs, predcache, hostself                           # noqa: E402
+from common import runs, predcache, hostself, selfupdate                # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
 import mixmhcpred_runner as mx, prime_runner as pr           # noqa: E402
 import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
@@ -663,6 +663,45 @@ def _version():
 @main.get("/api/version")
 def api_version():
     return jsonify(version=_version())
+
+
+@main.get("/api/update")
+def api_update():
+    """What is installed and whether a newer engine is on the remote.
+
+    `?check=0` answers from disk without touching the network, for the page's first paint.
+    """
+    return jsonify(selfupdate.status(check_remote=request.args.get("check", "1") != "0"))
+
+
+def _job_running():
+    return any(j.state in ("queued", "running") for j in list(MANAGER._jobs.values()))
+
+
+@main.post("/api/update/apply")
+def api_update_apply():
+    """Fast-forward the code folder. Refused while a run is going, because the run is
+    importing this code; the workspace is never touched, so finished runs are unaffected."""
+    if _job_running():
+        return jsonify(ok=False, error="A run is going. Wait for it to finish (or cancel it) before updating."), 409
+    r = selfupdate.apply()
+    return jsonify(r), (200 if r.get("ok") else 400)
+
+
+@main.post("/api/update/restart")
+def api_update_restart():
+    """Restart the server so the new code is loaded. The reply is sent first, then the
+    process replaces itself; the page polls /api/version until it answers again."""
+    if _job_running():
+        return jsonify(ok=False, error="A run is going. Wait for it to finish before restarting."), 409
+
+    def bye():
+        time.sleep(0.7)                                  # let the response reach the browser
+        os.chdir(HERE)
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    threading.Thread(target=bye, daemon=True).start()
+    return jsonify(ok=True, message="Restarting; the page will come back in a few seconds.")
 
 
 @main.get("/guide")
