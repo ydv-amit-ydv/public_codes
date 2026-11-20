@@ -357,8 +357,10 @@ do_screen() {
   fi
   # last word on scikit-learn, whatever the packages above pulled in
   run "'${py:-python3}' -m pip install -q 'scikit-learn==1.2.2'" || return 1
-  info "HemoPI2 (haemolysis) is not installed by default: it needs torch. Add it with"
-  info "  '${py:-<screening python>}' -m pip install hemopi2 torch --index-url $TORCH_CPU"
+  info "Allergen homology (FAO/WHO rule) uses AlgPred2's own blastp and database: nothing to add."
+  info "Two heavier screens are optional, both need torch:"
+  info "  HemoPI2 (haemolysis) and NTxPred2 (neurotoxicity). Install both with"
+  info "  '${py:-<screening python>}' -m pip install hemopi2 ntxpred2 transformers torch --index-url $TORCH_CPU"
   return 0
 }
 

@@ -194,10 +194,24 @@ for call, token, want in (("Toxin", "toxin", True), ("Non-Toxin", "toxin", False
 
 # every tool declares whether a positive call is bad news or good news
 eq(sorted(k for k, v in sr.TOOLS.items() if v["adverse"]),
-   ["algpred2", "hemopi2", "toxinpred3"], "adverse screens")
+   ["algpred2", "hemopi2", "ntxpred2", "toxinpred3"], "adverse screens")
 # ToxinPred2 is the older, protein-trained version of ToxinPred3 and must not come back:
 # two versions of one model, and on epitopes it calls benign ones toxic
 eq("toxinpred2" in sr.TOOLS, False, "ToxinPred2 is not shipped")
+# the two heavy screens are optional, so a missing one is not a failure
+eq(sorted(k for k, v in sr.TOOLS.items() if v.get("optional")), ["hemopi2", "ntxpred2"], "optional screens")
+eq(sorted(k for k, v in sr.TOOLS.items() if not v.get("optional")),
+   ["algpred2", "ifnepitope2", "toxinpred3"], "screens installed by default")
+# allergen homology is a second, independent allergenicity method, not another model
+assert hasattr(sr, "allergen_homology"), "homology check missing"
+_h = sr.allergen_homology([], {"python": ""})
+eq(list(_h.columns), ["Peptide", "Allergen_Homology", "Allergen_Identity", "Allergen_Match",
+                      "Allergen_Align_Len", "Allergen_Evalue"], "homology columns")
+try:
+    sr.allergen_homology(["GILGFVFTL"], {"python": "/nonexistent/python"})
+    raise AssertionError("homology must refuse without AlgPred2's blastp")
+except sr.ScreenError:
+    ok += 1
 eq([k for k, v in sr.TOOLS.items() if not v["adverse"]], ["ifnepitope2"], "IFN-gamma is a benefit, not a flag")
 
 import pandas as _pd                                                             # noqa: E402

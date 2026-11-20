@@ -44,6 +44,11 @@ TOOLS = {
                     "flags": ["-d", "2", "-j", "1"], "score": ("Total_Score", "ML_Score"),
                     "positive": "inducer", "column": "IFN_gamma", "default_threshold": 0.5, "adverse": False,
                     "cite": "Dhall A et al. (2023) Brief Bioinform 24(6):bbad354"},
+    "ntxpred2": {"cmd": "ntxpred2", "label": "NTxPred2 (neurotoxicity)",
+                 "flags": ["-d", "2"], "score": ("ML_Score", "Score", "ML Score"), "positive": "neurotoxin",
+                 "column": "Neurotoxicity", "default_threshold": 0.5, "optional": True, "adverse": True,
+                 "needs": "transformers and torch (it is an ESM model)",
+                 "cite": "Rathore AS et al. (2024) NTxPred2, Raghava lab"},
     "hemopi2": {"cmd": "hemopi2_classification", "label": "HemoPI2 (haemolytic activity)",
                 "flags": ["-d", "2"], "score": ("ML_Score", "Score", "ML Score"), "positive": "hemolytic",
                 "column": "Haemolysis", "default_threshold": 0.5, "optional": True, "adverse": True,
@@ -172,7 +177,117 @@ def predict(tool, peptides, cfg, threshold=None, timeout=1800):
     return pd.DataFrame(data, columns=["Peptide", col, f"{col}_Score"])
 
 
-def screen(peptides, cfg, tools=None, thresholds=None):
+# ---------------------------------------------------------------- allergen homology (no ML)
+#
+# A second, independent allergenicity check: sequence similarity to known allergens, which is
+# the regulatory criterion rather than a model's opinion. FAO/WHO Codex alimentarius asks for
+#
+#     >= 35 % identity over a window of 80 amino acids, or
+#     >= 6 contiguous identical amino acids
+#
+# with a known allergen. The first limb only means anything for construct-length sequences;
+# the second is the one that bites for epitopes.
+#
+# It needs no download: AlgPred2 ships both a blastp binary and its allergen database. That
+# database also holds AlgPred2's NON-allergen training sequences, named N_*, so only P_*
+# subjects may be counted - treating an N_ hit as allergen homology would invert the answer.
+#
+# Known limitation, and it is the rule's rather than this code's: the 6-contiguous limb
+# over-calls on low-complexity sequence. A poly-aspartate stretch matches an acidic run in
+# some allergen at 100 % and is flagged, which is why this is reported next to AlgPred2's
+# opinion rather than instead of it. Two methods agreeing means something; either alone is
+# a prompt to look, not a verdict.
+
+def _algpred_dir(cfg):
+    py = _python(cfg)
+    if not py:
+        return None
+    import glob
+    root = os.path.dirname(os.path.dirname(py))
+    for pat in (os.path.join(root, "lib", "python*", "site-packages", "algpred2"),
+                os.path.join(root, "lib", "site-packages", "algpred2")):
+        hit = glob.glob(pat)
+        if hit:
+            return hit[0]
+    return None
+
+
+def _blastp(cfg):
+    d = _algpred_dir(cfg)
+    if not d:
+        return None, None
+    import platform
+    plat = {"Linux": "linux", "Darwin": "mac", "Windows": "windows"}.get(platform.system(), "linux")
+    exe = os.path.join(d, "blast_binaries", plat, "blastp" + (".exe" if plat == "windows" else ""))
+    db = os.path.join(d, "blast_db", "data")
+    return (exe if os.path.exists(exe) else None), (db if os.path.exists(db + ".phr") else None)
+
+
+def allergen_homology(peptides, cfg, min_identity=35.0, min_window=80, contiguous=6, evalue=10.0):
+    """Best allergen match per peptide, and whether it meets the FAO/WHO criterion.
+
+    Returns DataFrame[Peptide, Allergen_Homology, Allergen_Identity, Allergen_Match,
+    Allergen_Align_Len, Allergen_Evalue].
+    """
+    cols = ["Peptide", "Allergen_Homology", "Allergen_Identity", "Allergen_Match",
+            "Allergen_Align_Len", "Allergen_Evalue"]
+    peptides = [str(p).strip().upper() for p in peptides if str(p).strip()]
+    if not peptides:
+        return pd.DataFrame(columns=cols)
+    exe, db = _blastp(cfg)
+    if not exe or not db:
+        raise ScreenError("allergen homology needs AlgPred2's blastp and database. " + HINT)
+
+    with tempfile.TemporaryDirectory(prefix="screen_homology_") as d:
+        fin = os.path.join(d, "in.fa")
+        with open(fin, "w") as f:
+            f.write(_fasta(peptides))
+        # short queries need the short-word-size task, or BLAST finds nothing at all
+        task = "blastp-short" if max(len(p) for p in peptides) < 30 else "blastp"
+        cmd = [exe, "-query", fin, "-db", db, "-task", task, "-evalue", str(evalue),
+               "-max_target_seqs", "50", "-outfmt", "6 qseqid sseqid pident length evalue"]
+        try:
+            r = subprocess.run(cmd, cwd=d, capture_output=True, text=True,
+                               stdin=subprocess.DEVNULL, timeout=1800)
+        except subprocess.TimeoutExpired:
+            raise ScreenError("the allergen homology search timed out")
+        if r.returncode != 0 and not r.stdout:
+            raise ScreenError("blastp failed: " + (r.stderr or "").strip().splitlines()[-1:][0]
+                              if (r.stderr or "").strip() else "blastp failed")
+
+    by_id = {f"s{i}": p for i, p in enumerate(peptides, 1)}
+    best = {}
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 5:
+            continue
+        qid, sid, pident, length, ev = parts[0], parts[1], parts[2], parts[3], parts[4]
+        if not sid.startswith("P_"):          # N_* are AlgPred2's non-allergens
+            continue
+        pep = by_id.get(qid)
+        if not pep:
+            continue
+        try:
+            pident, length, ev = float(pident), int(length), float(ev)
+        except ValueError:
+            continue
+        hit = (pident >= min_identity and length >= min_window) or (pident >= 99.9 and length >= contiguous)
+        prev = best.get(pep)
+        rank = (hit, pident * length)         # a qualifying hit first, then the strongest
+        if prev is None or rank > prev[0]:
+            best[pep] = (rank, {"Allergen_Homology": bool(hit), "Allergen_Identity": round(pident, 2),
+                                "Allergen_Match": sid, "Allergen_Align_Len": length,
+                                "Allergen_Evalue": ev})
+    rows = []
+    for p in peptides:
+        v = best.get(p)
+        rows.append({"Peptide": p, **(v[1] if v else {"Allergen_Homology": False, "Allergen_Identity": None,
+                                                      "Allergen_Match": "", "Allergen_Align_Len": None,
+                                                      "Allergen_Evalue": None})})
+    return pd.DataFrame(rows, columns=cols)
+
+
+def screen(peptides, cfg, tools=None, thresholds=None, homology=True):
     """Run several screens and return one table, plus per-tool notes.
 
     A tool that is missing or fails does not stop the others: its columns are left out and the
@@ -191,6 +306,13 @@ def screen(peptides, cfg, tools=None, thresholds=None):
             notes.append(msg if TOOLS[t]["label"] in msg else f"{TOOLS[t]['label']}: {msg}")
         except Exception as e:                            # noqa: BLE001 - one screen must not sink the rest
             notes.append(f"{TOOLS[t]['label']} failed: {type(e).__name__}: {e}")
+    if homology:
+        try:
+            table = table.merge(allergen_homology(peptides, cfg), on="Peptide", how="left")
+        except ScreenError as e:
+            notes.append(str(e))
+        except Exception as e:                            # noqa: BLE001
+            notes.append(f"allergen homology failed: {type(e).__name__}: {e}")
     return table, notes
 
 
@@ -222,6 +344,9 @@ def flags(table, adverse_only=True):
                if (spec["adverse"] or not adverse_only)
                and spec["column"] in table.columns
                and is_positive(row.get(spec["column"]), spec["positive"])]
+        # the homology check is not an ML tool, but it is adverse evidence all the same
+        if "Allergen_Homology" in table.columns and bool(row.get("Allergen_Homology")):
+            why.append("Allergen_Homology")
         if why:
             bad[row["Peptide"]] = why
     return bad
