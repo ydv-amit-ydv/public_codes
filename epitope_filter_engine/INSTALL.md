@@ -444,6 +444,14 @@ Files ending in `:Zone.Identifier` are Windows metadata that came along with a c
 `/mnt/c`. They are ignored, and `find ~/local_engines -name '*Zone.Identifier*' -delete`
 clears them.
 
+A copy taken off a Windows drive loses the execute bit on **everything**, the `netMHCpan`
+script included, not only the program in `bin/`. The engine sets it back across the whole
+install before every run; by hand it is:
+
+```bash
+chmod +x ~/local_engines/netMHCpan-4.2/netMHCpan ~/local_engines/netMHCpan-4.2/Linux_x86_64/bin/*
+```
+
 ### 6.2 NetCTLpan 1.1 and NetChop 3.1 — class I antigen processing
 
 DTU programs that IEDB redistributes inside its next-generation T Cell Class I standalone

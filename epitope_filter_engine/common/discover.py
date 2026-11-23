@@ -43,13 +43,25 @@ def netmhcpan_binary(home):
     """Check (and where possible repair) the compiled program DTU's script needs.
 
     The script itself does nothing but `if ( ! -x $NMHOME/Linux_x86_64/bin/netMHCpan )`,
-    so "no binaries found for Linux_x86_64" means exactly one of: the file is not there,
-    or it is there without the execute bit (what an extraction onto a Windows drive, or
-    `tar` run without the right flags, leaves behind). The second case is repaired here,
-    because the file is the user's own and a missing +x is never intentional.
+    so "no binaries found for Linux_x86_64" means the file is not there, or it is there
+    without the execute bit. Two repairs are made here, because both are unambiguous and
+    the files are the user's own: a missing execute bit is put back across the install (a
+    copy taken off a Windows drive has none anywhere), and 4.2's program, which ships under
+    its version name, is linked to the name the script asks for.
 
-    Returns (state, detail) where state is one of ok / fixed / missing / nested / foreign.
+    Returns (state, detail) where state is one of ok / fixed / linked / missing / nested / foreign.
+    `fixed` means an execute bit was restored; it is what the user sees instead of a failure.
     """
+    was_broken = not os.access(os.path.join(home, "Linux_x86_64", "bin", "netMHCpan"), os.X_OK)
+    # the tcsh script itself, and every program the tarball ships: a copy taken off a Windows
+    # drive arrives with no execute bit anywhere, and none of it is meant to be unexecutable
+    for f in [os.path.join(home, "netMHCpan")] + sorted(glob.glob(os.path.join(home, "Linux_x86_64", "bin", "*"))):
+        if ":" in os.path.basename(f) or not os.path.isfile(f) or os.access(f, os.X_OK):
+            continue
+        try:
+            os.chmod(f, os.stat(f).st_mode | 0o111)
+        except OSError:
+            pass
     want = os.path.join(home, "Linux_x86_64", "bin", "netMHCpan")
     if not os.path.exists(want):
         # 4.2 ships the program under its version name (netMHCpan-4.2) while the script asks
@@ -67,12 +79,8 @@ def netmhcpan_binary(home):
                                    f"&& ln -s {os.path.basename(sibling[-1])} netMHCpan")
     if os.path.isfile(want):
         if os.access(want, os.X_OK):
-            return "ok", want
-        try:
-            os.chmod(want, os.stat(want).st_mode | 0o111)
-        except OSError as e:
-            return "missing", f"{want} is not executable and chmod failed: {e}"
-        return ("fixed", want) if os.access(want, os.X_OK) else ("missing", f"{want} is not executable")
+            return ("fixed" if was_broken else "ok"), want
+        return "missing", f"{want} cannot be made executable; check the permissions on {home}"
     # the usual wrong turns: one directory too deep, or the macOS tarball
     if os.path.islink(want):
         return "missing", f"{want} is a link to {os.readlink(want)}, which is not there"

@@ -1167,7 +1167,13 @@ assert _dis.netmhcpan_data(_h)[0] is True
 _h4 = tempfile.mkdtemp(); _b4 = os.path.join(_h4, "Linux_x86_64", "bin"); os.makedirs(_b4)
 for _n in ["netMHCpan-4.2", "netMHCpan-4.2:Zone.Identifier"]: open(os.path.join(_b4, _n), "w").write("x")
 os.chmod(os.path.join(_b4, "netMHCpan-4.2"), 0o644)
+open(os.path.join(_h4, "netMHCpan"), "w").write("#!/bin/tcsh\n"); os.chmod(os.path.join(_h4, "netMHCpan"), 0o644)
+for _n in ["estimate_PCC"]: open(os.path.join(_b4, _n), "w").write("x"); os.chmod(os.path.join(_b4, _n), 0o644)
 assert _dis.netmhcpan_binary(_h4)[0] == "linked"
+# a copy taken off a Windows drive loses the execute bit on the whole tree, not just one file
+assert os.access(os.path.join(_h4, "netMHCpan"), os.X_OK), "the tcsh script must be runnable too"
+assert os.access(os.path.join(_b4, "estimate_PCC"), os.X_OK), "the other shipped programs too"
+assert not os.access(os.path.join(_b4, "netMHCpan-4.2:Zone.Identifier"), os.X_OK), "side files left alone"
 assert os.readlink(os.path.join(_b4, "netMHCpan")) == "netMHCpan-4.2"
 assert os.access(os.path.join(_b4, "netMHCpan"), os.X_OK), "the link must point at something runnable"
 assert _dis.netmhcpan_binary(_h4)[0] == "ok", "a second look must not relink"

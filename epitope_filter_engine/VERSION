@@ -1,1 +1,1 @@
-2026.11.20-u  (NetMHCpan 4.2: link the versioned binary to the name the script asks for)
+2026.11.20-v  (NetMHCpan: restore the execute bit across the whole install, not one file)
