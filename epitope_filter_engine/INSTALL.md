@@ -597,6 +597,12 @@ fixed CD4episcore failing with the ufunc error. If you still see it, `perl -v` a
 This is the one real friction between conda and these tools, and it is handled; it is not a
 reason to avoid conda.
 
+**"allele list (-listMHC)" on the NetMHCpan card in Settings** is the same thing: the script
+ran but printed nothing usable, and the card now shows NetMHCpan's own last line (missing
+`NMHOME`, no `tcsh`, and so on). It is a warning, not a failure — NetMHCpan still predicts,
+your alleles are simply passed to it without being checked against its list first. Fix it by
+making `tcsh` work outside conda and by setting `NMHOME` in the `netMHCpan` script (§3.1).
+
 ### 8.4 WSL-specific
 
 - **Everything is slow.** The tools are probably installed under `/mnt/c`. Move them into

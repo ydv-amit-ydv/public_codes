@@ -17,7 +17,7 @@ import pandas as pd
 from flask import Flask, jsonify, request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from common import config, discover, predcache, alleles as allele_lib   # noqa: E402
+from common import config, envclean, discover, predcache, alleles as allele_lib   # noqa: E402
 from common.jobs import run_cmd                              # noqa: E402
 
 AA = set("ACDEFGHIKLMNPQRSTVWY")
@@ -36,11 +36,36 @@ def netmhc_path():
 
 
 def nm_env():
-    """Clean env: system tcsh, not conda's (avoids the libtinfo warning); settings re-read per call."""
-    env = {k: v for k, v in os.environ.items() if k not in ("LD_LIBRARY_PATH", "PYTHONPATH", "PYTHONHOME")}
-    env["PATH"] = "/usr/bin:/bin"
+    """Clean env for NetMHCpan's tcsh script; settings re-read per call.
+
+    The same cleaning as every other shell-based tool (common/envclean.py). Dropping only
+    LD_LIBRARY_PATH left CONDA_*, PERL* and R_* in place, and with conda active that is
+    enough for tcsh to misbehave and for -listMHC to print nothing at all - which then looks
+    like "NetMHCpan knows no alleles" rather than an environment problem.
+    """
+    env = envclean.clean()
     env["TMPDIR"] = config.tmp_dir()
     return env
+
+
+def listmhc_debug():
+    """(names, detail) from `-listMHC`, with the reason when it gives nothing."""
+    path = netmhc_path()
+    if not path:
+        return [], "no netMHCpan script found"
+    try:
+        r = subprocess.run([path, "-listMHC"], capture_output=True, text=True, env=nm_env(), timeout=120)
+    except OSError as e:
+        return [], f"could not run it: {e}"
+    except subprocess.TimeoutExpired:
+        return [], "it did not finish in 120 s"
+    names = _list_alleles(path)
+    if names:
+        return names, f"{len(names)} alleles"
+    err = (r.stderr or "").strip().splitlines()
+    out = (r.stdout or "").strip().splitlines()
+    why = (err[-1] if err else out[-1] if out else "no output at all")
+    return [], f"exit {r.returncode}, nothing usable came back. Last line: {why[:160]}"
 
 
 app = Flask(__name__)

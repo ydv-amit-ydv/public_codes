@@ -37,8 +37,12 @@ import pandas as pd                                          # noqa: E402
 main = Flask(__name__)
 
 
-def _check(name, ok, detail=""):
-    return {"name": name, "ok": bool(ok), "detail": str(detail)[:600]}
+def _check(name, ok, detail="", warn=False):
+    """One line on a model's card. warn=True means "worth saying, but the model still runs"."""
+    c = {"name": name, "ok": bool(ok), "detail": str(detail)[:600]}
+    if warn and not c["ok"]:
+        c["warn"] = True
+    return c
 
 
 def _auto(m, key):
@@ -54,20 +58,21 @@ def health_netmhcpan(deep):
     if not checks[-1]["ok"]:
         return checks
     netmhcpan_app._list_alleles.cache_clear()
-    n = len(netmhcpan_app.list_alleles())
-    checks.append(_check("-listMHC", n > 0, f"{n} alleles" if n else "no output: is tcsh installed and NMHOME set in the script?"))
-    if deep and n:
+    names, why = netmhcpan_app.listmhc_debug()
+    n = len(names)
+    # a failing -listMHC does not stop NetMHCpan from predicting (the alleles are then passed
+    # straight through), so it is reported as a warning, not as "not ready"
+    checks.append(_check("allele list (-listMHC)", n > 0, why if n else
+                         why + ". Alleles are passed straight to NetMHCpan instead, so runs still work."
+                         " The usual cause is an active conda environment; see INSTALL.md 8.3.",
+                         warn=True))
+    if deep:
         res, _ = netmhcpan_app.run_netmhcpan(["GILGFVFTL"], ["HLA-A02:01"],
                                              dict(rankS=0.5, rankW=2.0, ba=True, t=None, raw=""))
         hit = res[res["Peptide"] == "GILGFVFTL"] if not res.empty else res
         got = (not hit.empty) and "SB" in str(hit["NMP_BindLevel"].iloc[0])
         checks.append(_check("GILGFVFTL / A02:01 -> strong binder", got,
                              "ok" if got else "unexpected or empty result"))
-    n_known = len(netmhcpan_app.list_alleles())
-    # a name count makes the "knows none of your alleles" case diagnosable at a glance
-    checks.append(_check("allele list (-listMHC)", n_known > 0,
-                         f"{n_known} alleles" if n_known else
-                         "no usable names came back; alleles are passed straight to NetMHCpan"))
     return checks
 
 
@@ -354,7 +359,7 @@ def health(name):
         checks = [_check("settings", False, e)]
     except Exception as e:                                  # health must never 500 the page
         checks = [_check("unexpected error", False, e)]
-    return jsonify(ok=all(c["ok"] for c in checks), checks=checks)
+    return jsonify(ok=all(c["ok"] or c.get("warn") for c in checks), checks=checks)
 
 
 # ---- pipeline API ----------------------------------------------------------------------
@@ -948,6 +953,29 @@ def api_cache_get():
 def api_cache_clear():
     predcache.clear()
     return jsonify(ok=True)
+
+
+@main.delete("/api/reset")
+def api_reset():
+    """Forget what earlier runs computed: the prediction cache and the reusable class results.
+
+    Stored runs are NOT touched: those are finished results and deleting them here would be a
+    surprise. Projects deletes a run.
+    """
+    what = (request.args.get("what") or "all").lower()
+    done = {}
+    if what in ("all", "cache"):
+        predcache.clear()
+        done["prediction_cache"] = True
+    if what in ("all", "checkpoints"):
+        import shutil
+        d = os.path.join(config.workspace(), "checkpoints")
+        n = 0
+        if os.path.isdir(d):
+            n = len([x for x in os.listdir(d)])
+            shutil.rmtree(d, ignore_errors=True)
+        done["reusable_class_results"] = n
+    return jsonify(ok=True, cleared=done)
 
 
 def _profiles():

@@ -77,7 +77,16 @@ td.detail{white-space:normal;background:var(--bg)}
 .dl:hover{filter:brightness(.95)}
 .pv{margin:8px 0;padding:8px 10px;border-radius:6px;background:var(--bg);border:1px solid var(--line);font-size:13px}
 details>summary{cursor:pointer}
-#settings{padding:14px;flex-direction:column;gap:8px;overflow:auto}
+#settings{padding:14px;flex-direction:column;gap:10px;overflow:auto}
+#settings .tabs{position:sticky;top:-14px;background:var(--bg);padding:4px 0 8px;z-index:2;border-bottom:1px solid var(--line);margin:0 0 4px}
+#setnav button.on .ok,#setnav button.on .bad{color:#fff}
+.sgroup{display:none;max-width:1100px}.sgroup.on{display:block}
+#s_models{max-width:none}
+#s_data .grid2 button{justify-self:start}
+.sgroup .card{margin-bottom:0}
+#cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px;align-items:start}
+#cards .cardm{margin:0}
+#settings h3:first-child{margin-top:0}
 #cfg{width:100%;height:240px}
 .cardm{border:1px solid var(--line);border-radius:6px;padding:8px;margin:6px 0;background:var(--card)}
 .cardm .c{margin-left:14px}
@@ -175,6 +184,12 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
   <div style="margin-top:10px" class="sm">
    <button class="b" id="saveset">Save settings</button> <button class="b" id="loadset">Load settings</button>
    <input type="file" id="setfile" accept=".json" style="display:none"> <span class="q" data-h="automate">?</span>
+   <div style="margin-top:6px">
+    <button class="b" id="resetform" title="Put this form back to its defaults">Reset the form</button>
+    <button class="b" id="resetcache" title="Forget the stored predictions and reusable results, so the next run computes everything again">Clear cached data</button>
+    <span class="q" data-h="resetcache">?</span>
+    <span id="resetmsg" class="sm"></span>
+   </div>
    <details style="margin-top:6px"><summary class="muted">Run it without the page</summary>
     <pre id="cmd" style="max-height:none"></pre></details>
   </div>
@@ -373,6 +388,16 @@ KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
 
 <!-- ============================ SETTINGS ============================ -->
 <div class="pane" id="settings">
+ <div class="tabs" id="setnav">
+  <button data-s="s_engine" class="on">Engine &amp; updates</button>
+  <button data-s="s_models">Model checks <span class="muted sm" id="setnav_models"></span></button>
+  <button data-s="s_perf">Performance</button>
+  <button data-s="s_host">Host proteome</button>
+  <button data-s="s_data">Stored data</button>
+  <button data-s="s_file">Config file</button>
+ </div>
+
+ <div class="sgroup on" id="s_engine">
  <div class="card" id="updcard">
   <b>Engine version</b> <span class="q" data-h="update">?</span> <span class="muted sm" id="updnow"></span>
   <div style="margin-top:8px">
@@ -388,15 +413,20 @@ KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
    <pre id="updrepairlog" style="max-height:260px;overflow:auto"></pre>
   </div>
  </div>
- <div class="card" id="hostcard">
-  <b>Host proteome</b> <span class="q" data-h="host_mode">?</span> <span class="muted sm" id="hostinfo"></span>
-  <div style="margin-top:8px"><select id="host_org" disabled title="set host_proteome.organism in the settings file"><option value="human">Human (Homo sapiens)</option><option value="mouse">Mouse (Mus musculus)</option></select>
-   <button class="b" id="host_dl">Download</button> <span id="host_msg" class="sm"></span></div>
-  <div style="margin-top:10px"><b class="sm">Check peptides now</b> <span class="muted sm">(one per line; the same comparison a run does)</span><br>
-   <textarea id="host_txt" rows="3" spellcheck="false" style="width:100%;max-width:520px" placeholder="PKYVKQNTLKLATGM"></textarea><br>
-   <button class="b" id="host_chk">Check</button> <span id="host_chkmsg" class="sm"></span><div id="host_res" style="overflow:auto;max-height:260px"></div></div>
-  <div class="muted sm" style="margin-top:4px">UniProt reference proteome, one sequence per gene (about 8 MB, downloaded once into the workspace). In the settings file, <code>host_proteome.organism</code> picks human or mouse and <code>host_proteome.fasta</code> uses your own FASTA instead.</div>
  </div>
+
+ <div class="sgroup" id="s_models">
+  <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px">
+   <div class="muted sm" style="flex:1;min-width:260px">One card per predictor: where it was found, whether it runs, and what is missing.
+    Use <b>Repair / install predictors</b> under Engine &amp; updates to install anything that is not ready.</div>
+   <label class="sm"><input type="checkbox" id="setcards_bad"> only what is not ready</label>
+   <button class="b" id="setcards_refresh">Refresh</button>
+   <span id="setcards_msg" class="sm"></span>
+  </div>
+  <div id="cards"></div>
+ </div>
+
+ <div class="sgroup" id="s_perf">
  <div class="card" id="perfcard">
   <b>Performance</b> <span class="muted sm" id="perfinfo"></span>
   <div class="grid2" style="margin-top:8px;max-width:620px;grid-template-columns:1fr 110px">
@@ -410,13 +440,45 @@ KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
   </div>
   <div style="margin-top:8px"><button class="b" id="pf_save">Save</button> <button class="b" id="pf_fast">Use all cores</button> <button class="b" id="pf_gentle">Keep the machine usable</button> <span id="pf_msg" class="sm"></span></div>
  </div>
+ </div>
+
+ <div class="sgroup" id="s_host">
+ <div class="card" id="hostcard">
+  <b>Host proteome</b> <span class="q" data-h="host_mode">?</span> <span class="muted sm" id="hostinfo"></span>
+  <div style="margin-top:8px"><select id="host_org" disabled title="set host_proteome.organism in the settings file"><option value="human">Human (Homo sapiens)</option><option value="mouse">Mouse (Mus musculus)</option></select>
+   <button class="b" id="host_dl">Download</button> <span id="host_msg" class="sm"></span></div>
+  <div style="margin-top:10px"><b class="sm">Check peptides now</b> <span class="muted sm">(one per line; the same comparison a run does)</span><br>
+   <textarea id="host_txt" rows="3" spellcheck="false" style="width:100%;max-width:520px" placeholder="PKYVKQNTLKLATGM"></textarea><br>
+   <button class="b" id="host_chk">Check</button> <span id="host_chkmsg" class="sm"></span><div id="host_res" style="overflow:auto;max-height:260px"></div></div>
+  <div class="muted sm" style="margin-top:4px">UniProt reference proteome, one sequence per gene (about 8 MB, downloaded once into the workspace). In the settings file, <code>host_proteome.organism</code> picks human or mouse and <code>host_proteome.fasta</code> uses your own FASTA instead.</div>
+ </div>
+ </div>
+
+ <div class="sgroup" id="s_data">
+  <div class="card">
+   <b>Stored data</b> <span class="q" data-h="storeddata">?</span>
+   <div class="muted sm" style="margin-top:4px">The workspace: <code id="st_ws" class="sm"></code></div>
+   <div class="grid2" style="margin-top:10px;grid-template-columns:1fr auto;max-width:620px">
+    <span>Prediction cache <span class="muted sm" id="st_cache"></span></span>
+    <button class="b" id="st_clearcache">Clear</button>
+    <span>Reusable finished results <span class="muted sm">(what "Reuse finished results" picks up)</span></span>
+    <button class="b" id="st_clearckpt">Clear</button>
+    <span>Both of the above</span>
+    <button class="b" id="st_clearall">Clear everything cached</button>
+   </div>
+   <div id="st_msg" class="sm" style="margin-top:8px"></div>
+   <div class="muted sm" style="margin-top:8px">Saved runs in <b>Projects</b> are never touched here &mdash; those are finished results with their
+    own inputs and settings. Delete one from Projects if you want it gone.</div>
+  </div>
+ </div>
+
+ <div class="sgroup" id="s_file">
  <div>Config file: <code id="path"></code> (optional; <code>"auto"</code> = find it beside this folder). Saved changes apply immediately, no restart.</div>
  <textarea id="cfg" spellcheck="false"></textarea>
  <div><button class="b" onclick="saveCfg()">Save</button> <button class="b" onclick="loadCfg()">Revert</button> <span id="msg"></span></div>
  <h3>In use right now</h3>
  <pre id="eff" style="background:var(--card);color:var(--fg);max-height:260px"></pre>
- <h3>Model checks</h3>
- <div id="cards"></div>
+ </div>
 </div>
 
 <script>
@@ -471,6 +533,7 @@ const HELP = {
  panel_target: "The minimum panel adds the peptide that gains most population coverage, one at a time, until this share is reached (or 25 peptides).",
  population: "Allele frequencies for coverage and for weighting the ranking. Hardy-Weinberg per region, loci treated as independent. Without the file, coverage is the share of your chosen alleles.",
  filters: "Hard cut-offs on single tools, applied on top of the strategy. Leave blank unless you need one: the strategy already combines the tools by agreement.",
+ resetcache: "Earlier runs are remembered in two places, and both are reused to save time: the <b>prediction cache</b> (one tool's score for one peptide and allele) and the <b>reusable finished results</b> that <i>Reuse finished results</i> picks up when a run repeats with the same input, alleles, models and engine build. Clear them when you have reinstalled or updated a predictor and want it scored again from scratch, or when a run picked up something stale. It only throws away work that can be recomputed: <b>saved runs in Projects keep their own inputs, settings and outputs and are never touched</b>. <b>Reset the form</b> changes nothing stored, it just puts this page back to its defaults.",
  automate: "Save settings writes everything on this form to a json file. The same file runs without the page: <b>python3 run_engine.py settings.json</b>, or POST it to /api/pipeline/run.",
  reuse: "When a class (MHC I or II) has already finished with exactly the same protein, alleles, models, funnel, filters and strategy, its result is taken instead of running it again. So a run that failed or was cancelled part-way resumes where it stopped: press Run again, or Resume in Projects. Untick to recompute everything.",
  profile: "How much of this computer a run may use. <b>Maximum</b> uses nearly every core and gives each tool as many parallel workers as memory allows; <b>Balanced</b> uses half; <b>Gentle</b> a quarter and a low priority. <b>Automatic</b> picks Maximum on a big machine (16+ cores and 16+ GB free) and Balanced otherwise. Applies to this run only.",
@@ -792,6 +855,21 @@ $("saveset").onclick = () => {
   a.download = "epitope_settings.json"; a.click();
 };
 $("loadset").onclick = () => $("setfile").click();
+$("resetform").onclick = () => {
+  if (!confirm("Put this form back to its defaults? Your alleles, strategy and text are cleared on this page only; nothing saved is deleted.")) return;
+  for (const k of ["alleles1", "alleles2", "strat", "profile", "smodel", "job", "sjob"]) { try { localStorage.removeItem(k); } catch (e) {} }
+  location.reload();
+};
+$("resetcache").onclick = async () => {
+  if (!confirm("Forget the stored predictions and the reusable finished results, so the next run computes everything again?\n\nSaved runs in Projects are NOT affected.")) return;
+  $("resetmsg").textContent = "clearing...";
+  try {
+    const r = await fetch("api/reset?what=all", {method: "DELETE"});
+    const d = await r.json();
+    $("resetmsg").innerHTML = r.ok ? '<span class="ok">cached data cleared</span>' : `<span class="bad">${esc(d.error || "failed")}</span>`;
+  } catch (e) { $("resetmsg").innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+  setTimeout(() => { $("resetmsg").textContent = ""; }, 6000);
+};
 $("setfile").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(t => { try { applyParams(JSON.parse(t)); } catch(err) { $("runmsg").textContent = "That is not a settings file: " + err.message; } }); };
 $("cmd").textContent = "# 1. press 'Save settings' and keep epitope_settings.json next to the engine\npython3 run_engine.py epitope_settings.json -o results/\n# optional: another protein\npython3 run_engine.py epitope_settings.json --fasta other.fa -o results2/\n# or against a running page:\ncurl -s -X POST localhost:5000/api/pipeline/run -H 'Content-Type: application/json' -d @epitope_settings.json";
 
@@ -1287,7 +1365,7 @@ $("pf_gentle").onclick = () => savePerf({profile: "gentle", threads: 0, parallel
 const CLASS_OF = {netmhcpan: 1, mixmhcpred: 1, mhcflurry: 1, prime: 1, iedb_bundle: 1, bigmhc: 1, mixmhc2pred: 2, iedb_bundle_ii: 2, immuscope: 2, tlimmuno2: 2};
 function showReadiness(m, d){
   document.querySelectorAll(`.fdot[data-m="${m}"]`).forEach(e => e.className = "dot fdot " + (d.ok ? "ok" : "bad"));
-  const why = d.ok ? "" : ((d.checks.find(c => !c.ok) || {}).name || "not ready");
+  const why = d.ok ? "" : ((d.checks.find(c => !c.ok && !c.warn) || {}).name || "not ready");
   NOTREADY[m] = d.ok ? null : why;
   document.querySelectorAll(`input[data-health="${m}"]`).forEach(box => {
     const lab = box.parentElement, blocked = box.dataset.prot && mode() == "peptides";
@@ -1307,24 +1385,69 @@ async function check(m, deep){
   const dot = $("d_" + m); if (dot) dot.className = "dot " + (d.ok ? "ok" : "bad");
   showReadiness(m, d); return d;
 }
-async function checkAll(deep){
-  let html = "";
-  for (const m of MODELS) {
-    const d = await check(m, deep);
-    html += `<div class="cardm"><b>${m}</b> <span class="${d.ok ? "ok" : "bad"}">${d.ok ? "ready" : "not ready"}</span>
+const HEALTH = {};
+function renderCards(){
+  const badonly = $("setcards_bad") && $("setcards_bad").checked;
+  const names = MODELS.filter(m => HEALTH[m] && (!badonly || !HEALTH[m].ok));
+  $("cards").innerHTML = names.map(m => {
+    const d = HEALTH[m];
+    return `<div class="cardm"><b>${m}</b> <span class="${d.ok ? "ok" : "bad"}">${d.ok ? "ready" : "not ready"}</span>
       <button class="b" onclick="deepTest('${m}')">Test run</button>` +
-      d.checks.map(c => `<div class="c ${c.ok ? "ok" : "bad"}">${c.ok ? "&#10003;" : "&#10007;"} ${esc(c.name)}${c.detail ? " - " + esc(c.detail) : ""}</div>`).join("") + "</div>";
-  }
-  $("cards").innerHTML = html;
+      d.checks.map(c => `<div class="c ${c.ok ? "ok" : (c.warn ? "warn" : "bad")}">${c.ok ? "&#10003;" : (c.warn ? "!" : "&#10007;")} ${esc(c.name)}${c.detail ? " - " + esc(c.detail) : ""}</div>`).join("") + "</div>";
+  }).join("") || '<div class="muted sm">Every predictor is ready.</div>';
+  const bad = MODELS.filter(m => HEALTH[m] && !HEALTH[m].ok).length, seen = MODELS.filter(m => HEALTH[m]).length;
+  $("setnav_models").innerHTML = bad ? `<span class="bad">${bad} not ready</span>` : (seen ? `<span class="ok">all ready</span>` : "");
+}
+async function checkAll(deep){
+  $("setcards_msg").textContent = "checking...";
+  for (const m of MODELS) { HEALTH[m] = await check(m, deep); renderCards(); }
+  $("setcards_msg").textContent = "";
 }
 async function deepTest(m){
-  $("msg").textContent = "testing " + m + " (BigMHC can take a few minutes the first time)...";
-  const d = await check(m, true); $("msg").textContent = ""; await checkAll(false);
+  $("setcards_msg").textContent = "testing " + m + " (BigMHC can take a few minutes the first time)...";
+  const d = await check(m, true); HEALTH[m] = d; $("setcards_msg").textContent = ""; renderCards();
   alert(m + (d.ok ? " test run OK" : " test run FAILED") + "\n" + d.checks.map(c => (c.ok ? "ok   " : "FAIL ") + c.name + " " + c.detail).join("\n"));
 }
 
+/* ---------- settings: one section at a time ---------- */
+function showSet(id){
+  document.querySelectorAll("#setnav button").forEach(b => b.classList.toggle("on", b.dataset.s == id));
+  document.querySelectorAll(".sgroup").forEach(g => g.classList.toggle("on", g.id == id));
+  store.set("settab", id);
+  if (id == "s_data") loadStored();
+}
+document.querySelectorAll("#setnav button").forEach(b => b.onclick = () => showSet(b.dataset.s));
+$("setcards_refresh").onclick = () => checkAll(false);
+$("setcards_bad").onchange = renderCards;
+
+/* ---------- stored data: forget what earlier runs computed ---------- */
+async function loadStored(){
+  try {
+    const d = await (await fetch("api/cache")).json();
+    $("st_cache").textContent = mb(d.size);
+  } catch (e) { $("st_cache").textContent = "?"; }
+  try {
+    const r = await (await fetch("api/runs")).json();
+    $("st_ws").textContent = `${r.workspace} - ${r.runs.length} saved runs, ${mb(r.total_size)}`;
+  } catch (e) {}
+}
+async function clearStored(what, ask){
+  if (!confirm(ask)) return;
+  $("st_msg").textContent = "clearing...";
+  const r = await fetch("api/reset?what=" + what, {method: "DELETE"});
+  const d = await r.json();
+  $("st_msg").innerHTML = r.ok
+    ? '<span class="ok">cleared' + (d.cleared && d.cleared.reusable_class_results ? " (" + d.cleared.reusable_class_results + " stored class results)" : "") + '. The next run computes from scratch.</span>'
+    : `<span class="bad">${esc(d.error || "failed")}</span>`;
+  loadStored(); if ($("pj_cache")) loadCacheSize();
+}
+$("st_clearcache").onclick = () => clearStored("cache", "Forget all stored predictions? The next run recomputes them.");
+$("st_clearckpt").onclick = () => clearStored("checkpoints", "Forget the reusable finished results? Runs will no longer be able to pick a finished class up again.");
+$("st_clearall").onclick = () => clearStored("all", "Forget the prediction cache and the reusable finished results?\n\nSaved runs in Projects are NOT affected.");
+
 loadPerf(); loadCfg(); checkAll(false);
-show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
+showSet(store.get("settab") || "s_engine");
+show(["pipeline", "single", "construct", "comparison", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
 
 /* ---------- the epitope basket: results -> construct ---------- */

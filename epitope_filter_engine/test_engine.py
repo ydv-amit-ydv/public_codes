@@ -1131,6 +1131,25 @@ row = c.get(f"/api/jobs/{d['id']}/result?table=single").get_json()["rows"][0]
 assert row["NMP_%Rank_EL"] == 0.197 and row["Peptide"] == "GILGFVFTL", row
 assert any("already known" in l for l in d["log"]), d["log"]
 assert predcache.size() > 0 and c.delete("/api/cache").status_code == 200 and predcache.size() == 0
+
+# "Clear cached data": it throws away what can be recomputed and nothing else
+import common.checkpoints as _ck
+_ckdir = _ck._dir(); open(os.path.join(_ckdir, "probe.json"), "w").write("{}")
+_n_runs_before = len(c.get("/api/runs").get_json()["runs"])
+_r = c.delete("/api/reset?what=all"); assert _r.status_code == 200, _r.status_code
+assert _r.get_json()["cleared"]["reusable_class_results"] >= 1, _r.get_json()
+assert not os.path.exists(os.path.join(_ckdir, "probe.json")), "reusable results must be gone"
+assert predcache.size() == 0
+assert len(c.get("/api/runs").get_json()["runs"]) == _n_runs_before, "saved runs must survive a reset"
+assert c.delete("/api/reset?what=cache").get_json()["cleared"] == {"prediction_cache": True}
+
+# a warning on a model card (NetMHCpan with a broken -listMHC) explains itself but does not
+# take the model offline: the alleles are passed straight through and runs still work
+import engine_server as _es
+_warn = _es._check("allele list (-listMHC)", False, "exit 1", warn=True)
+assert _warn["warn"] and not _warn["ok"]
+assert all(ch["ok"] or ch.get("warn") for ch in [_es._check("a", True), _warn]), "warn must not fail a model"
+assert not _es._check("b", False)["ok"] and "warn" not in _es._check("b", False)
 c.put("/api/performance", json={"cache": 0}); predcache.clear()
 wait_job(c.post("/api/single/run", json=one).get_json()["id"]); n2 = len(open(CALLS).read().split())
 wait_job(c.post("/api/single/run", json=one).get_json()["id"]); assert len(open(CALLS).read().split()) > n2, "cache off: it runs again"
