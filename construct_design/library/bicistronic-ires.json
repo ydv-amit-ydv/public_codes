@@ -1,0 +1,89 @@
+{
+  "name": "Bicistronic IRES cassette",
+  "settings": {
+    "title": "Bicistronic IRES construct",
+    "gap": 4,
+    "backbone": true,
+    "bg": "#ffffff",
+    "ruler": false
+  },
+  "blocks": [
+    {
+      "id": "lib1",
+      "type": "Promoter",
+      "label": "EF1a",
+      "sub": "",
+      "seq": "",
+      "shape": "promoter",
+      "width": 60,
+      "height": 50,
+      "color": "#f97316",
+      "textColor": "#0f172a",
+      "stroke": "#1e293b",
+      "fontSize": 14,
+      "labelPos": "above"
+    },
+    {
+      "id": "lib2",
+      "type": "ORF",
+      "label": "Gene of interest",
+      "sub": "",
+      "seq": "",
+      "shape": "arrow",
+      "width": 200,
+      "height": 50,
+      "color": "#4ade80",
+      "textColor": "#0f172a",
+      "stroke": "#1e293b",
+      "fontSize": 14,
+      "labelPos": "inside"
+    },
+    {
+      "id": "lib3",
+      "type": "IRES",
+      "label": "IRES",
+      "sub": "EMCV",
+      "seq": "Internal ribosome entry site - cap-independent translation of the next ORF",
+      "shape": "ires",
+      "width": 90,
+      "height": 50,
+      "color": "#c084fc",
+      "textColor": "#0f172a",
+      "stroke": "#1e293b",
+      "fontSize": 14,
+      "labelPos": "inside"
+    },
+    {
+      "id": "lib4",
+      "type": "ORF",
+      "label": "mCherry",
+      "sub": "711 bp",
+      "seq": "",
+      "shape": "arrow",
+      "width": 180,
+      "height": 50,
+      "color": "#fb7185",
+      "textColor": "#0f172a",
+      "stroke": "#1e293b",
+      "fontSize": 14,
+      "labelPos": "inside"
+    },
+    {
+      "id": "lib5",
+      "type": "Poly(A) tail",
+      "label": "AAAAA",
+      "sub": "",
+      "seq": "",
+      "shape": "polyA",
+      "width": 90,
+      "height": 30,
+      "color": "#0ea5e9",
+      "textColor": "#0f172a",
+      "stroke": "#1e293b",
+      "fontSize": 14,
+      "labelPos": "below"
+    }
+  ],
+  "created": "2026-11-23T00:00:00+00:00",
+  "updated": "2026-11-23T00:00:00+00:00"
+}

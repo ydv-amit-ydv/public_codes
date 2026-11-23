@@ -1,3 +1,3 @@
-# constructs saved by the server at runtime
+# constructs saved through the server at runtime (the shared library/ is committed)
 constructs/
-*.json
+data/*.json

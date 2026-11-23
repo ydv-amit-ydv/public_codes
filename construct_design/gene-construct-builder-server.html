@@ -206,6 +206,9 @@
       <input type="file" id="libFile" accept=".json" hidden>
     </div>
     <ul class="lib" id="libList" style="margin-top:12px"></ul>
+
+    <h2 style="margin-top:22px">Shared library <span class="status" style="color:var(--muted)">· read-only, open to everyone on the LAN</span></h2>
+    <ul class="lib" id="sharedList"></ul>
   </section>
 </main>
 
@@ -747,9 +750,10 @@
   // ---------- Saved constructs: full CRUD against the server's data directory ----------
   const API = '/api/constructs';
   const lib = window.lib = (() => {
-    let items = [];              // listing from the server
+    let items = [];              // your constructs, from the server
+    let shared = [];             // the shared read-only library
     let currentId = null;        // id (= filename stem) of the construct being edited
-    let dirty = false, loading = false, dataDir = '';
+    let dirty = false, loading = false, dataDir = '', libraryDir = '';
     const nameField = $('cName');
 
     const snapshot = () => JSON.parse(JSON.stringify({ settings: state.settings, blocks: state.blocks }));
@@ -783,7 +787,7 @@
       if (!items.length) {
         const e2 = document.createElement('li');
         e2.className = 'empty'; e2.style.border = 'none';
-        e2.textContent = 'No constructs on the server yet — name this one and click Save.';
+        e2.textContent = 'You have no saved constructs yet — name this one and click Save, or start from the shared library below.';
         ul.appendChild(e2);
       }
       items.forEach(c => {
@@ -811,11 +815,53 @@
       });
       status();
     }
+    function renderShared() {
+      const ul = $('sharedList'); ul.innerHTML = '';
+      const note = document.createElement('li');
+      note.className = 'empty'; note.style.border = 'none';
+      note.innerHTML = shared.length
+        ? 'Anyone can open or download these. Saving one keeps your copy in your own folder; the library file is never changed.' +
+          (libraryDir ? ' Source: <code>' + esc(libraryDir) + '</code>' : '')
+        : 'The shared library is empty. Put .json construct files in <code>' + esc(libraryDir || 'library/') + '</code> and they show up here for everyone.';
+      ul.appendChild(note);
+      shared.filter(c => !c.invalid).forEach(c => {
+        const li = document.createElement('li');
+        li.innerHTML = '<span class="meta"><b>' + esc(c.name) + '</b><small>' + c.elements +
+          ' elements · ' + esc(c.file) + '</small></span>' +
+          '<button data-a="open">Open</button><button data-a="copy">Copy to my constructs</button>' +
+          '<a href="/files/library/' + encodeURIComponent(c.id) + '.json" target="_blank" rel="noopener"><button type="button">Download</button></a>';
+        li.onclick = e => {
+          const a = e.target.dataset.a;
+          if (a === 'open') openShared(c);
+          else if (a === 'copy') copyShared(c);
+        };
+        ul.appendChild(li);
+      });
+    }
+    // Open a library construct for editing. It loads as an unsaved construct, so the
+    // first Save writes a copy into your own folder and leaves the original alone.
+    async function openShared(c) {
+      if (!guard()) return;
+      try {
+        const full = await call('GET', '/api/library/' + encodeURIComponent(c.id));
+        apply(full); currentId = null; nameField.value = full.name;
+        dirty = true; renderList_();
+      } catch (e) { alert('Could not open: ' + e.message); }
+    }
+    async function copyShared(c) {
+      try {
+        const full = await call('GET', '/api/library/' + encodeURIComponent(c.id));
+        await call('POST', API, { name: full.name, settings: full.settings, blocks: full.blocks });
+        await refresh();
+      } catch (e) { alert('Could not copy: ' + e.message); }
+    }
+
     async function refresh() {
       try {
         const d = await call('GET', API);
         items = d.constructs || []; dataDir = d.dataDir || '';
-        renderList_();
+        shared = d.library || []; libraryDir = d.libraryDir || '';
+        renderList_(); renderShared();
       } catch (e) { status('server unreachable: ' + e.message); }
     }
     const guard = () => !dirty || confirm('The construct you are working on has unsaved changes. Discard them?');

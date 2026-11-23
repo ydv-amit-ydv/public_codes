@@ -25,7 +25,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 UI_FILE = "gene-construct-builder-server.html"
 
 app = Flask(__name__)
-DATA_DIR = HERE  # replaced in main(); the one directory holding the .json files
+# Both are set in main(). Everything stays in one place: ./data holds the
+# constructs people save, ./library holds shared ones everyone can read.
+DATA_DIR = os.path.join(HERE, "data")
+LIB_DIR = os.path.join(HERE, "library")
 
 
 # ---------- helpers ----------
@@ -39,12 +42,13 @@ def slug(name):
     return s or "construct"
 
 
-def path_for(cid):
-    """Resolve an id to a path inside DATA_DIR, or None if it tries to escape."""
+def path_for(cid, directory=None):
+    """Resolve an id to a path inside the directory, or None if it tries to escape."""
+    directory = directory or DATA_DIR
     if not isinstance(cid, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", cid) or cid.startswith("."):
         return None
-    p = os.path.join(DATA_DIR, cid + ".json")
-    return p if os.path.dirname(os.path.abspath(p)) == os.path.abspath(DATA_DIR) else None
+    p = os.path.join(directory, cid + ".json")
+    return p if os.path.dirname(os.path.abspath(p)) == os.path.abspath(directory) else None
 
 
 def unique_id(stem, except_id=None):
@@ -54,8 +58,8 @@ def unique_id(stem, except_id=None):
     return cid
 
 
-def read_construct(cid):
-    p = path_for(cid)
+def read_construct(cid, directory=None):
+    p = path_for(cid, directory)
     if not p or not os.path.exists(p):
         return None
     try:
@@ -68,6 +72,7 @@ def read_construct(cid):
     mtime = datetime.fromtimestamp(os.path.getmtime(p), timezone.utc).isoformat(timespec="seconds")
     return {
         "id": cid,
+        "readOnly": bool(directory and os.path.abspath(directory) != os.path.abspath(DATA_DIR)),
         "name": doc.get("name") or cid,
         "settings": doc.get("settings") or {},
         "blocks": doc["blocks"],
@@ -115,22 +120,27 @@ def index():
 
 @app.get("/files/<path:name>")
 def raw_file(name):
-    """Download one construct file as-is."""
+    """Download one construct file as-is - no login, so anyone on the LAN can read it."""
+    directory, DATA = DATA_DIR, True
+    if name.startswith("library/"):
+        name, directory, DATA = name[8:], LIB_DIR, False
     cid = name[:-5] if name.endswith(".json") else name
-    if not path_for(cid):
+    if not path_for(cid, directory):
         return jsonify(error="bad name"), 400
-    return send_from_directory(DATA_DIR, cid + ".json", mimetype="application/json")
+    return send_from_directory(directory, cid + ".json", mimetype="application/json")
 
 
-# ---------- API (full CRUD) ----------
-@app.get("/api/constructs")
-def list_constructs():
+# ---------- API (full CRUD on your own constructs) ----------
+def listing(directory):
+    """One directory of constructs, newest first."""
     items = []
-    for fn in sorted(os.listdir(DATA_DIR)):
+    if not os.path.isdir(directory):
+        return items
+    for fn in sorted(os.listdir(directory)):
         if not fn.endswith(".json"):
             continue
         cid = fn[:-5]
-        c = read_construct(cid)
+        c = read_construct(cid, directory)
         if c:
             items.append({"id": cid, "name": c["name"], "created": c["created"],
                           "updated": c["updated"], "elements": len(c["blocks"]), "file": fn})
@@ -138,7 +148,25 @@ def list_constructs():
             items.append({"id": cid, "name": fn, "invalid": True, "elements": 0,
                           "updated": "", "file": fn})
     items.sort(key=lambda c: c["updated"], reverse=True)
-    return jsonify(dataDir=os.path.abspath(DATA_DIR), constructs=items)
+    return items
+
+
+@app.get("/api/constructs")
+def list_constructs():
+    return jsonify(dataDir=os.path.abspath(DATA_DIR), libraryDir=os.path.abspath(LIB_DIR),
+                   constructs=listing(DATA_DIR), library=listing(LIB_DIR))
+
+
+# ---------- shared library: readable by everyone, never written to ----------
+@app.get("/api/library")
+def list_library():
+    return jsonify(libraryDir=os.path.abspath(LIB_DIR), library=listing(LIB_DIR))
+
+
+@app.get("/api/library/<cid>")
+def get_library_construct(cid):
+    c = read_construct(cid, LIB_DIR)
+    return (jsonify(c), 200) if c else (jsonify(error="no such construct in the library"), 404)
 
 
 @app.get("/api/constructs/<cid>")
@@ -206,15 +234,20 @@ def bad_request(e):
 
 # ---------- start ----------
 def main():
-    global DATA_DIR
+    global DATA_DIR, LIB_DIR
     ap = argparse.ArgumentParser(description="Gene Construct Builder LAN server")
-    ap.add_argument("--data", default=HERE, help="directory holding the construct .json files (default: this folder)")
+    ap.add_argument("--data", default=os.path.join(HERE, "data"),
+                    help="directory holding saved constructs (default: ./data)")
+    ap.add_argument("--library", default=os.path.join(HERE, "library"),
+                    help="directory of shared read-only constructs everyone can open (default: ./library)")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="0.0.0.0", help="0.0.0.0 serves the whole LAN")
     args = ap.parse_args()
 
     DATA_DIR = os.path.abspath(args.data)
+    LIB_DIR = os.path.abspath(args.library)
     os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(LIB_DIR, exist_ok=True)
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -225,6 +258,7 @@ def main():
         ip = "your-ip"
     print("Gene Construct Builder")
     print("  data directory :", DATA_DIR)
+    print("  shared library :", LIB_DIR, "(read-only)")
     print("  local          : http://localhost:%d/" % args.port)
     print("  on your LAN    : http://%s:%d/" % (ip, args.port))
     print("  WARNING: no login - anyone who can reach this port can edit or delete these constructs.")
