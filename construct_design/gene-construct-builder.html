@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gene Construct Builder</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --panel: #ffffff; --text: #1f2933; --muted: #6b7785;
+    --border: #d8dee6; --accent: #2563eb; --danger: #dc2626; --sel: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { padding: 14px 20px; background: #1e293b; color: #fff; display: flex;
+           align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  header h1 { font-size: 18px; margin: 0; }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+  button { font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 6px;
+           border: 1px solid var(--border); background: #fff; color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--danger); }
+  button.danger:hover { border-color: var(--danger); }
+  header button { background: #334155; color: #fff; border-color: #475569; }
+  main { display: grid; grid-template-columns: 340px 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+  input, select { width: 100%; font: inherit; font-size: 13px; padding: 6px 8px;
+                  border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+  input[type=color] { padding: 2px; height: 32px; }
+  input[type=range] { padding: 0; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .list { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; }
+  .list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border);
+             border-radius: 6px; margin-bottom: 5px; cursor: pointer; font-size: 13px; background: #fff; }
+  .list li.selected { border-color: var(--sel); box-shadow: 0 0 0 2px #fde68a; }
+  .list li.dragover { border-top: 3px solid var(--accent); }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid #0002; }
+  .list .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list .type { font-size: 11px; color: var(--muted); }
+  .list button { padding: 2px 6px; font-size: 12px; }
+  .canvas-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+  svg text { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; user-select: none; }
+  .block { cursor: pointer; }
+  .handle { cursor: ew-resize; }
+  .vhandle { cursor: ns-resize; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 14px; margin-bottom: 12px; }
+  .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+  .palette button { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; text-align: left; }
+  .palette .swatch { width: 12px; height: 12px; }
+  .palette-group { font-size: 11px; color: var(--muted); margin: 10px 0 5px; font-weight: 600; }
+  .lib { list-style: none; margin: 0; padding: 0; }
+  .lib li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border);
+            border-radius: 6px; margin-bottom: 6px; font-size: 13px; background: #fff; flex-wrap: wrap; }
+  .lib li.current { border-color: var(--accent); box-shadow: 0 0 0 2px #bfdbfe; }
+  .lib .meta { flex: 1; min-width: 170px; }
+  .lib .meta small { display: block; color: var(--muted); font-size: 11px; }
+  .lib button { padding: 3px 8px; font-size: 12px; }
+  .status { font-size: 12px; margin-left: 8px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .status.dirty { color: #b45309; } .status.clean { color: #15803d; }
+  .rename-input { padding: 2px 6px; font-size: 13px; flex: 1; min-width: 60px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧬 Gene Construct Builder</h1>
+  <div class="toolbar">
+    <button id="btnExportSvg">Export SVG</button>
+    <button id="btnExportPng">Export PNG</button>
+    <button id="btnSaveJson">Save JSON</button>
+    <button id="btnLoadJson">Load JSON</button>
+    <button id="btnClear">Clear all</button>
+    <input type="file" id="fileInput" accept=".json" hidden>
+  </div>
+</header>
+
+<main>
+  <!-- LEFT: form + list -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <section class="panel">
+      <h2>Quick add (one click)</h2>
+      <label for="insertPos" style="margin-top:0">Insert at</label>
+      <select id="insertPos">
+        <option value="end">End of construct</option>
+        <option value="start">Start of construct</option>
+        <option value="after">After selected element</option>
+        <option value="before">Before selected element</option>
+      </select>
+      <div id="palette"></div>
+    </section>
+
+    <section class="panel">
+      <h2 id="formTitle">Add element</h2>
+      <form id="blockForm" autocomplete="off">
+        <label for="fType">Type</label>
+        <select id="fType">
+          <option>ORF</option><option>Linker</option><option>Promoter</option>
+          <option>Tag</option><option>Signal peptide</option><option>tPA signal peptide</option><option>tPA pre-pro leader</option><option>Terminator</option>
+          <option>RBS</option><option>Cleavage site</option>
+          <option>5' Cap</option><option>5' UTR</option><option>3' UTR</option><option>Poly(A) tail</option>
+          <option>Kozak</option><option>Start codon</option><option>Stop codon</option>
+          <option>Exon</option><option>Intron</option><option>IRES</option><option>2A peptide</option>
+          <option>Enhancer</option><option>Operator</option><option>Origin</option><option>Resistance gene</option>
+          <option>Region</option><option>Spacer</option><option>Custom</option>
+        </select>
+
+        <label for="fLabel">Label</label>
+        <input id="fLabel" placeholder="e.g. GFP, (G4S)3, T7" required>
+
+        <label for="fSub">Sub-label (optional, e.g. length in bp/aa)</label>
+        <input id="fSub" placeholder="e.g. 720 bp">
+
+        <label for="fSeq">Sequence / notes (optional, shown as tooltip)</label>
+        <input id="fSeq" placeholder="e.g. MDAMKRGLCCVLLLCGAVFVSPS">
+
+        <label for="fShape">Shape</label>
+        <select id="fShape">
+          <option value="rect">Rectangle</option>
+          <option value="rounded">Rounded box</option>
+          <option value="arrow">Arrow (forward)</option>
+          <option value="arrowRev">Arrow (reverse)</option>
+          <option value="thin">Thin bar (linker style)</option>
+          <option value="promoter">Promoter (bent arrow)</option>
+          <option value="terminator">Terminator (T)</option>
+          <option value="cap">5' Cap (m7G circle)</option>
+          <option value="utr">UTR (half-height box)</option>
+          <option value="polyA">Poly(A) tail (AAAA)</option>
+          <option value="intron">Intron (bent line)</option>
+          <option value="codon">Codon marker (flag)</option>
+          <option value="spacer">Spacer (empty gap)</option>
+          <option value="ires">IRES (stem-loop)</option>
+        </select>
+
+        <div class="row">
+          <div><label for="fWidth">Width: <span id="wVal"></span>px</label>
+               <input type="range" id="fWidth" min="20" max="600" value="140"></div>
+          <div><label for="fHeight">Height: <span id="hVal"></span>px</label>
+               <input type="range" id="fHeight" min="10" max="160" value="50"></div>
+        </div>
+
+        <div class="row">
+          <div><label for="fColor">Fill colour</label><input type="color" id="fColor" value="#4ade80"></div>
+          <div><label for="fTextColor">Text colour</label><input type="color" id="fTextColor" value="#0f172a"></div>
+        </div>
+        <div class="row">
+          <div><label for="fStroke">Border colour</label><input type="color" id="fStroke" value="#1e293b"></div>
+          <div><label for="fFont">Font size</label><input type="number" id="fFont" min="6" max="40" value="14"></div>
+        </div>
+
+        <label for="fLabelPos">Label position</label>
+        <select id="fLabelPos">
+          <option value="inside">Inside</option>
+          <option value="above">Above</option>
+          <option value="below">Below</option>
+        </select>
+
+        <div class="actions">
+          <button type="submit" class="primary" id="btnSubmit">Add</button>
+          <button type="button" id="btnCancel" hidden>Cancel edit</button>
+          <button type="button" class="danger" id="btnDelete" hidden>Delete</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Elements (<span id="count">0</span>)</h2>
+      <ul class="list" id="blockList"></ul>
+      <p class="hint">Click to edit · drag rows to reorder</p>
+    </section>
+  </div>
+
+  <!-- RIGHT: diagram -->
+  <section class="panel">
+    <h2>Diagram</h2>
+    <div class="settings">
+      <div><label for="sTitle">Construct title</label><input id="sTitle" value="pET-GFP-His construct"></div>
+      <div><label for="sGap">Gap between blocks: <span id="gVal"></span></label>
+           <input type="range" id="sGap" min="0" max="60" value="4"></div>
+      <div><label for="sBackbone">Backbone line</label>
+           <select id="sBackbone"><option value="1">Show</option><option value="0">Hide</option></select></div>
+      <div><label for="sBg">Background</label><input type="color" id="sBg" value="#ffffff"></div>
+      <div><label for="sScale">Ruler (show cumulative width)</label>
+           <select id="sScale"><option value="0">Hide</option><option value="1">Show</option></select></div>
+    </div>
+    <div class="canvas-wrap"><svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <p class="hint">Click a block to edit it · <b>double-click</b> a block, or its name in the list, to rename it · drag the <b>right edge</b> handle to change width, the <b>bottom</b> handle to change height.</p>
+
+    <h2 style="margin-top:24px">Saved constructs <span id="saveStatus" class="status"></span></h2>
+    <div class="row" style="grid-template-columns: 1fr auto; align-items: end">
+      <div><label for="cName" style="margin-top:0">Construct name</label><input id="cName" placeholder="e.g. tPA-GFP-His v2"></div>
+      <div class="actions" style="margin-top:0">
+        <button type="button" class="primary" id="btnSaveC" title="Save this construct (Ctrl+S)">Save</button>
+        <button type="button" id="btnSaveAsC">Save as copy</button>
+        <button type="button" id="btnNewC">New construct</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" id="btnExportLib">Export all constructs</button>
+      <button type="button" id="btnImportLib">Import constructs</button>
+      <input type="file" id="libFile" accept=".json" hidden>
+    </div>
+    <ul class="lib" id="libList" style="margin-top:12px"></ul>
+  </section>
+</main>
+
+<script>
+(() => {
+  const STORE_KEY = 'geneConstructBuilder.v1';
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  // Default colours per type (used when you change type while adding)
+  const TYPE_DEFAULTS = {
+    'ORF':            { color: '#4ade80', shape: 'arrow',      width: 180, height: 50 },
+    'Linker':         { color: '#cbd5e1', shape: 'thin',       width: 60,  height: 20 },
+    'Promoter':       { color: '#f97316', shape: 'promoter',   width: 60,  height: 50 },
+    'Tag':            { color: '#60a5fa', shape: 'rounded',    width: 70,  height: 50 },
+    'Signal peptide': { color: '#f472b6', shape: 'rect',       width: 60,  height: 50 },
+    'tPA signal peptide': { color: '#ec4899', shape: 'rect',   width: 70,  height: 50, label: 'tPA SP', sub: '23 aa',
+                        seq: 'MDAMKRGLCCVLLLCGAVFVSPS' },
+    'tPA pre-pro leader': { color: '#db2777', shape: 'rect',   width: 95,  height: 50, label: 'tPA pre-pro', sub: '35 aa',
+                        seq: 'MDAMKRGLCCVLLLCGAVFVSPSQEIHARFRRGAR', textColor: '#ffffff' },
+    'Terminator':     { color: '#ef4444', shape: 'terminator', width: 40,  height: 50 },
+    'RBS':            { color: '#a78bfa', shape: 'rounded',    width: 40,  height: 30 },
+    'Cleavage site':  { color: '#facc15', shape: 'rect',       width: 40,  height: 40 },
+    "5' Cap":         { color: '#7c3aed', shape: 'cap',        width: 36,  height: 36, label: 'm7G', labelPos: 'inside', textColor: '#ffffff' },
+    "5' UTR":         { color: '#fde68a', shape: 'utr',        width: 70,  height: 50, label: "5' UTR" },
+    "3' UTR":         { color: '#fde68a', shape: 'utr',        width: 90,  height: 50, label: "3' UTR" },
+    'Poly(A) tail':   { color: '#0ea5e9', shape: 'polyA',      width: 90,  height: 30, label: 'AAAAA', labelPos: 'below' },
+    'Kozak':          { color: '#fdba74', shape: 'rect',       width: 34,  height: 30, label: 'Kozak', labelPos: 'above' },
+    'Start codon':    { color: '#16a34a', shape: 'codon',      width: 30,  height: 50, label: 'ATG', labelPos: 'above' },
+    'Stop codon':     { color: '#dc2626', shape: 'codon',      width: 30,  height: 50, label: 'TAA', labelPos: 'above' },
+    'Exon':           { color: '#38bdf8', shape: 'rect',       width: 110, height: 50, label: 'Exon 1' },
+    'Intron':         { color: '#475569', shape: 'intron',     width: 80,  height: 50, label: 'Intron', labelPos: 'below' },
+    'IRES':           { color: '#c084fc', shape: 'ires',       width: 90,  height: 50, label: 'IRES', sub: 'EMCV',
+                        seq: 'Internal ribosome entry site - cap-independent translation of the next ORF' },
+    '2A peptide':     { color: '#fcd34d', shape: 'rect',       width: 44,  height: 50, label: 'P2A' },
+    'Enhancer':       { color: '#fb923c', shape: 'rounded',    width: 70,  height: 40, label: 'Enhancer' },
+    'Operator':       { color: '#a3e635', shape: 'rect',       width: 40,  height: 34, label: 'lacO' },
+    'Origin':         { color: '#94a3b8', shape: 'rounded',    width: 70,  height: 40, label: 'ori' },
+    'Resistance gene':{ color: '#e879f9', shape: 'arrow',      width: 150, height: 50, label: 'AmpR' },
+    'Region':         { color: '#e2e8f0', shape: 'rect',       width: 100, height: 50, label: 'Region' },
+    'Spacer':         { color: '#ffffff', shape: 'spacer',     width: 30,  height: 50, label: '' },
+    'Custom':         { color: '#94a3b8', shape: 'rect',       width: 100, height: 50 },
+  };
+
+  const PALETTE = {
+    'mRNA / transcript': ["5' Cap", "5' UTR", 'Kozak', 'Start codon', 'ORF', 'Stop codon', "3' UTR", 'Poly(A) tail'],
+    'Coding & fusion':   ['ORF', 'Linker', 'Tag', 'Signal peptide', 'tPA signal peptide', 'tPA pre-pro leader', 'Cleavage site', '2A peptide', 'IRES'],
+    'Gene structure':    ['Exon', 'Intron', 'Region', 'Spacer'],
+    'Regulatory':        ['Promoter', 'Enhancer', 'Operator', 'RBS', 'Terminator'],
+    'Plasmid':           ['Origin', 'Resistance gene', 'Custom'],
+  };
+  const OUTSIDE_SHAPES = ['thin', 'promoter', 'terminator', 'polyA', 'intron', 'codon'];
+
+  function defaultsFor(type) {
+    const d = TYPE_DEFAULTS[type] || TYPE_DEFAULTS.Custom;
+    return {
+      type, label: d.label !== undefined ? d.label : type, sub: d.sub || '', seq: d.seq || '', shape: d.shape, width: d.width, height: d.height,
+      color: d.color, textColor: d.textColor || '#0f172a', stroke: '#1e293b', fontSize: 14,
+      labelPos: d.labelPos || (OUTSIDE_SHAPES.includes(d.shape) ? 'above' : 'inside')
+    };
+  }
+
+  // ---------- State ----------
+  let state = load() || sample();
+  let editingId = null;   // id being edited in the form
+  let selectedId = null;
+
+  function uid() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  function sample() {
+    const mk = (type, label, sub, extra = {}) => ({
+      id: uid(), type, label, sub, textColor: '#0f172a', stroke: '#1e293b', fontSize: 14,
+      labelPos: 'inside', ...TYPE_DEFAULTS[type], ...extra
+    });
+    return {
+      settings: { title: 'pET-GFP-His construct', gap: 4, backbone: true, bg: '#ffffff', ruler: false },
+      blocks: [
+        mk('Promoter', 'T7', '', { labelPos: 'above' }),
+        mk('RBS', 'RBS', '', { labelPos: 'above' }),
+        mk('Tag', '6xHis', '18 bp'),
+        mk('Cleavage site', 'TEV', ''),
+        mk('ORF', 'GFP', '720 bp', { width: 220 }),
+        mk('Linker', '(G4S)3', '', { labelPos: 'above' }),
+        mk('ORF', 'mCherry', '711 bp', { color: '#fb7185', width: 210 }),
+        mk('Terminator', 'T7 term', '', { labelPos: 'above' }),
+      ]
+    };
+  }
+
+  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} if (window.lib) lib.touch(); }
+  function load() {
+    try { const s = JSON.parse(localStorage.getItem(STORE_KEY)); return s && Array.isArray(s.blocks) ? s : null; }
+    catch (e) { return null; }
+  }
+
+  // ---------- CRUD ----------
+  function createBlock(data) {
+    const b = { id: uid(), ...data };
+    const pos = document.getElementById('insertPos').value;
+    const si = state.blocks.findIndex(x => x.id === selectedId);
+    if (pos === 'start') state.blocks.unshift(b);
+    else if (pos === 'after' && si >= 0) state.blocks.splice(si + 1, 0, b);
+    else if (pos === 'before' && si >= 0) state.blocks.splice(si, 0, b);
+    else state.blocks.push(b);
+    commit(); return b;
+  }
+  function quickAdd(type) {
+    const b = createBlock(defaultsFor(type));
+    selectedId = b.id;
+    // keep 'after selected' chaining: next quick-add goes after this one
+    startEdit(b.id);
+  }
+  function readBlock(id) { return state.blocks.find(b => b.id === id); }
+  function updateBlock(id, data) { const b = readBlock(id); if (b) Object.assign(b, data); commit(); }
+  function deleteBlock(id) {
+    state.blocks = state.blocks.filter(b => b.id !== id);
+    if (selectedId === id) selectedId = null;
+    if (editingId === id) resetForm();
+    commit();
+  }
+  function duplicateBlock(id) {
+    const i = state.blocks.findIndex(b => b.id === id); if (i < 0) return;
+    const copy = { ...state.blocks[i], id: uid(), label: state.blocks[i].label + ' (copy)' };
+    state.blocks.splice(i + 1, 0, copy); commit();
+  }
+  function moveBlock(id, dir) {
+    const i = state.blocks.findIndex(b => b.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= state.blocks.length) return;
+    [state.blocks[i], state.blocks[j]] = [state.blocks[j], state.blocks[i]]; commit();
+  }
+  function commit() { save(); renderList(); renderDiagram(); }
+
+  // ---------- Form ----------
+  const $ = id => document.getElementById(id);
+  const form = $('blockForm');
+  const F = {
+    type: $('fType'), label: $('fLabel'), sub: $('fSub'), shape: $('fShape'),
+    width: $('fWidth'), height: $('fHeight'), color: $('fColor'), textColor: $('fTextColor'),
+    stroke: $('fStroke'), fontSize: $('fFont'), labelPos: $('fLabelPos'), seq: $('fSeq')
+  };
+
+  function readForm() {
+    return {
+      type: F.type.value, label: F.label.value.trim(), sub: F.sub.value.trim(), shape: F.shape.value,
+      width: +F.width.value, height: +F.height.value, color: F.color.value, textColor: F.textColor.value,
+      stroke: F.stroke.value, fontSize: +F.fontSize.value || 14, labelPos: F.labelPos.value, seq: F.seq.value.trim()
+    };
+  }
+  function fillForm(b) {
+    for (const k in F) if (b[k] !== undefined) F[k].value = b[k];
+    syncRangeLabels();
+  }
+  function syncRangeLabels() { $('wVal').textContent = F.width.value; $('hVal').textContent = F.height.value; }
+
+  function startEdit(id) {
+    const b = readBlock(id); if (!b) return;
+    editingId = id; selectedId = id;
+    fillForm(b);
+    $('formTitle').textContent = 'Edit element';
+    $('btnSubmit').textContent = 'Update';
+    $('btnCancel').hidden = false; $('btnDelete').hidden = false;
+    renderList(); renderDiagram();
+  }
+  function resetForm() {
+    editingId = null;
+    form.reset();
+    applyTypeDefaults(F.type.value);
+    $('formTitle').textContent = 'Add element';
+    $('btnSubmit').textContent = 'Add';
+    $('btnCancel').hidden = true; $('btnDelete').hidden = true;
+    syncRangeLabels();
+  }
+  function applyTypeDefaults(type) {
+    const d = TYPE_DEFAULTS[type]; if (!d) return;
+    F.color.value = d.color; F.shape.value = d.shape; F.width.value = d.width; F.height.value = d.height;
+    const full = defaultsFor(type);
+    F.labelPos.value = full.labelPos; F.textColor.value = full.textColor;
+    if (!F.label.value && d.label) F.label.value = d.label;
+    if (!F.sub.value && d.sub) F.sub.value = d.sub;
+    if (!F.seq.value && d.seq) F.seq.value = d.seq;
+    syncRangeLabels();
+  }
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const data = readForm();
+    if (!data.label) { F.label.focus(); return; }
+    if (editingId) { updateBlock(editingId, data); }
+    else { const b = createBlock(data); selectedId = b.id; F.label.value = ''; F.sub.value = ''; renderList(); renderDiagram(); }
+  });
+  F.type.addEventListener('change', () => { if (!editingId) applyTypeDefaults(F.type.value); });
+  $('btnCancel').onclick = () => { resetForm(); renderList(); renderDiagram(); };
+  $('btnDelete').onclick = () => { if (editingId && confirm('Delete this element?')) deleteBlock(editingId); };
+
+  // Live preview while editing: any form change updates the block immediately
+  form.addEventListener('input', e => {
+    if (e.target === F.width || e.target === F.height) syncRangeLabels();
+    if (editingId) { const d = readForm(); if (!d.label) delete d.label; updateBlock(editingId, d); }
+  });
+
+  // ---------- List ----------
+  let dragSrc = null;
+  function renderList() {
+    const ul = $('blockList'); ul.innerHTML = '';
+    $('count').textContent = state.blocks.length;
+    if (!state.blocks.length) { ul.innerHTML = '<li class="empty" style="border:none;cursor:default">No elements yet — add one above.</li>'; return; }
+    state.blocks.forEach((b, i) => {
+      const li = document.createElement('li');
+      li.draggable = true; li.dataset.id = b.id;
+      if (b.id === selectedId) li.classList.add('selected');
+      li.innerHTML = `<span class="swatch" style="background:${b.color}"></span>
+        <span class="name">${esc(b.label)} <span class="type">· ${esc(b.type)} · ${b.width}×${b.height}</span></span>
+        <button title="Rename" data-a="ren">✎</button><button title="Move up" data-a="up">↑</button><button title="Move down" data-a="down">↓</button>
+        <button title="Duplicate" data-a="dup">⧉</button><button title="Delete" class="danger" data-a="del">✕</button>`;
+      li.onclick = e => {
+        const a = e.target.dataset.a;
+        if (a === 'ren') inlineRename(li, b);
+        else if (a === 'up') moveBlock(b.id, -1);
+        else if (a === 'down') moveBlock(b.id, 1);
+        else if (a === 'dup') duplicateBlock(b.id);
+        else if (a === 'del') { if (confirm(`Delete "${b.label}"?`)) deleteBlock(b.id); }
+        else defer(() => startEdit(b.id));
+      };
+      li.querySelector('.name').ondblclick = e => { e.stopPropagation(); cancelDefer(); inlineRename(li, b); };
+      li.ondragstart = () => { dragSrc = i; };
+      li.ondragover = e => { e.preventDefault(); li.classList.add('dragover'); };
+      li.ondragleave = () => li.classList.remove('dragover');
+      li.ondrop = e => {
+        e.preventDefault(); li.classList.remove('dragover');
+        if (dragSrc === null || dragSrc === i) return;
+        const [m] = state.blocks.splice(dragSrc, 1); state.blocks.splice(i, 0, m); dragSrc = null; commit();
+      };
+      ul.appendChild(li);
+    });
+  }
+
+  let deferTimer = null;
+  function defer(fn) { cancelDefer(); deferTimer = setTimeout(() => { deferTimer = null; fn(); }, 220); }
+  function cancelDefer() { if (deferTimer) { clearTimeout(deferTimer); deferTimer = null; } }
+
+  function renameBlock(id, name) {
+    name = (name || '').trim(); if (!name) { renderList(); return; }
+    updateBlock(id, { label: name });
+    if (editingId === id) F.label.value = name;
+  }
+  function promptRename(id) {
+    const b = readBlock(id); if (!b) return;
+    const n = prompt('Rename element:', b.label);
+    if (n !== null) renameBlock(id, n);
+  }
+  function inlineRename(li, b) {
+    const span = li.querySelector('.name');
+    const inp = document.createElement('input');
+    inp.className = 'rename-input'; inp.value = b.label; li.draggable = false;
+    span.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const finish = ok => { if (done) return; done = true; ok ? renameBlock(b.id, inp.value) : renderList(); };
+    inp.onclick = e => e.stopPropagation();
+    inp.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); };
+    inp.onblur = () => finish(true);
+  }
+
+  // ---------- Diagram ----------
+  const svg = $('diagram');
+  const S = { title: $('sTitle'), gap: $('sGap'), backbone: $('sBackbone'), bg: $('sBg'), ruler: $('sScale') };
+
+  function syncSettingsUI() {
+    const s = state.settings;
+    S.title.value = s.title; S.gap.value = s.gap; S.backbone.value = s.backbone ? '1' : '0';
+    S.bg.value = s.bg; S.ruler.value = s.ruler ? '1' : '0'; $('gVal').textContent = s.gap;
+  }
+  Object.values(S).forEach(el => el.addEventListener('input', () => {
+    state.settings = { title: S.title.value, gap: +S.gap.value, backbone: S.backbone.value === '1', bg: S.bg.value, ruler: S.ruler.value === '1' };
+    $('gVal').textContent = S.gap.value; save(); renderDiagram();
+  }));
+
+  function el(tag, attrs = {}, parent) {
+    const n = document.createElementNS(SVG_NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  function shapePath(b, x, y) {
+    const w = b.width, h = b.height, tip = Math.min(h * 0.5, w * 0.4);
+    switch (b.shape) {
+      case 'arrow':    return `M${x},${y} H${x + w - tip} L${x + w},${y + h / 2} L${x + w - tip},${y + h} H${x} Z`;
+      case 'arrowRev': return `M${x + w},${y} H${x + tip} L${x},${y + h / 2} L${x + tip},${y + h} H${x + w} Z`;
+      default: return null;
+    }
+  }
+
+  function renderDiagram() {
+    const { gap, backbone, bg, title, ruler } = state.settings;
+    svg.innerHTML = '';
+    const pad = 40, titleH = title ? 40 : 10;
+    const maxH = Math.max(50, ...state.blocks.map(b => b.height));
+    const extraLabel = 40; // space above / below for outside labels
+    const midY = titleH + extraLabel + maxH / 2;
+    const totalW = state.blocks.reduce((s, b) => s + b.width, 0) + gap * Math.max(0, state.blocks.length - 1);
+    const W = Math.max(600, totalW + pad * 2);
+    const H = midY + maxH / 2 + extraLabel + (ruler ? 30 : 0) + 10;
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+    el('rect', { x: 0, y: 0, width: W, height: H, fill: bg }, svg).addEventListener('click', () => { selectedId = null; renderDiagram(); renderList(); });
+    if (title) {
+      const t = el('text', { x: W / 2, y: 26, 'text-anchor': 'middle', 'font-size': 18, 'font-weight': 600, fill: '#1e293b' }, svg);
+      t.textContent = title;
+    }
+    if (backbone && state.blocks.length) {
+      el('line', { x1: pad - 20, y1: midY, x2: pad + totalW + 20, y2: midY, stroke: '#475569', 'stroke-width': 2 }, svg);
+    }
+    if (!state.blocks.length) {
+      const t = el('text', { x: W / 2, y: midY, 'text-anchor': 'middle', fill: '#94a3b8', 'font-size': 14 }, svg);
+      t.textContent = 'Add an ORF, linker or other element to begin';
+    }
+
+    let x = pad;
+    state.blocks.forEach(b => {
+      const g = el('g', { class: 'block', 'data-id': b.id }, svg);
+      const y = midY - b.height / 2;
+      const sel = b.id === selectedId;
+      const strokeW = sel ? 3 : 1.5, stroke = sel ? '#f59e0b' : b.stroke;
+      drawShape(g, b, x, y, stroke, strokeW);
+      drawLabel(g, b, x, y);
+      g.addEventListener('click', e => { e.stopPropagation(); defer(() => startEdit(b.id)); });
+      g.addEventListener('dblclick', e => { e.stopPropagation(); cancelDefer(); promptRename(b.id); });
+      const tip = el('title', {}, g);
+      tip.textContent = b.label + ' (' + b.type + ')' + (b.sub ? ' - ' + b.sub : '') + (b.seq ? '\n' + b.seq : '');
+
+      if (sel) addHandles(b, x, y);
+      if (ruler) {
+        const ty = midY + maxH / 2 + extraLabel + 14;
+        el('line', { x1: x, y1: ty - 8, x2: x, y2: ty - 2, stroke: '#94a3b8' }, svg);
+        const t = el('text', { x: x + b.width / 2, y: ty + 4, 'text-anchor': 'middle', 'font-size': 10, fill: '#64748b' }, svg);
+        t.textContent = b.width + 'px';
+      }
+      x += b.width + gap;
+    });
+  }
+
+  function drawShape(g, b, x, y, stroke, sw) {
+    const w = b.width, h = b.height;
+    const common = { fill: b.color, stroke, 'stroke-width': sw };
+    const p = shapePath(b, x, y);
+    if (p) return el('path', { d: p, ...common }, g);
+    switch (b.shape) {
+      case 'rounded': return el('rect', { x, y, width: w, height: h, rx: Math.min(12, h / 3), ...common }, g);
+      case 'thin': {
+        const th = Math.max(6, h * 0.4);
+        return el('rect', { x, y: y + (h - th) / 2, width: w, height: th, rx: th / 2, ...common }, g);
+      }
+      case 'promoter': {
+        // invisible hit area + bent arrow
+        el('rect', { x, y, width: w, height: h, fill: 'transparent' }, g);
+        const base = y + h / 2, top = y + 4, aw = Math.min(10, w * 0.25);
+        el('path', { d: `M${x + 4},${base} V${top + 6} H${x + w - aw}`, fill: 'none', stroke: b.color, 'stroke-width': Math.max(3, sw + 1.5) }, g);
+        return el('path', { d: `M${x + w - aw},${top} L${x + w},${top + 6} L${x + w - aw},${top + 12} Z`, fill: b.color, stroke, 'stroke-width': sw }, g);
+      }
+      case 'terminator': {
+        el('rect', { x, y, width: w, height: h, fill: 'transparent' }, g);
+        const cx = x + w / 2, base = y + h / 2, top = y + 4;
+        el('line', { x1: cx, y1: base, x2: cx, y2: top, stroke: b.color, 'stroke-width': 4 }, g);
+        return el('line', { x1: x + 3, y1: top, x2: x + w - 3, y2: top, stroke: b.color, 'stroke-width': 4, 'stroke-linecap': 'round' }, g);
+      }
+      case 'cap': {
+        // m7G cap: circle sitting on the backbone with a short triphosphate stem
+        const r = Math.min(w, h) / 2, cx = x + w / 2, cy = y + h / 2;
+        el('line', { x1: x + w - 2, y1: cy, x2: x + w + 2, y2: cy, stroke: b.stroke, 'stroke-width': 2 }, g);
+        return el('circle', { cx, cy, r, ...common }, g);
+      }
+      case 'utr': {
+        const uh = h * 0.55;
+        return el('rect', { x, y: y + (h - uh) / 2, width: w, height: uh, ...common }, g);
+      }
+      case 'polyA': {
+        // tail: thin bar fading out with a wavy end
+        const th = Math.max(6, h * 0.35), ty = y + (h - th) / 2, wave = Math.min(16, w * 0.25);
+        el('rect', { x, y: ty, width: w - wave, height: th, ...common }, g);
+        let d = `M${x + w - wave},${ty} `;
+        const steps = 4;
+        for (let i = 1; i <= steps; i++) {
+          const px = x + w - wave + (wave * i) / steps, py = i % 2 ? ty - 3 : ty + 3;
+          d += `L${px},${py} `;
+        }
+        d += `L${x + w},${ty + th} L${x + w - wave},${ty + th} Z`;
+        el('path', { d, ...common }, g);
+        // AAAA text inside the tail if no label is shown inside
+        return g;
+      }
+      case 'intron': {
+        el('rect', { x, y, width: w, height: h, fill: 'transparent' }, g);
+        const cy = y + h / 2;
+        return el('path', { d: `M${x},${cy} L${x + w / 2},${y + 4} L${x + w},${cy}`, fill: 'none', stroke: b.color, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, g);
+      }
+      case 'codon': {
+        el('rect', { x, y, width: w, height: h, fill: 'transparent' }, g);
+        const cx = x + w / 2, cy = y + h / 2, top = y + 2;
+        el('line', { x1: cx, y1: cy, x2: cx, y2: top, stroke: b.color, 'stroke-width': 3 }, g);
+        return el('path', { d: `M${cx},${top} L${x + w},${top + 6} L${cx},${top + 12} Z`, fill: b.color, stroke, 'stroke-width': sw > 2 ? sw : 1 }, g);
+      }
+      case 'ires': {
+        // rounded box with a stem-loop (hairpin) motif, the usual way an IRES is drawn
+        el('rect', { x, y, width: w, height: h, rx: Math.min(10, h / 4), ...common }, g);
+        const loops = Math.max(1, Math.round(w / 45)), bandH = Math.min(14, h * 0.3);
+        const by = y + h - bandH - 3, step = w / (loops + 1);
+        for (let i = 1; i <= loops; i++) {
+          const lx = x + step * i;
+          el('path', {
+            d: `M${lx - 5},${by + bandH} L${lx - 5},${by + 5} Q${lx},${by - 2} ${lx + 5},${by + 5} L${lx + 5},${by + bandH}`,
+            fill: 'none', stroke: b.textColor, 'stroke-width': 1.6, 'stroke-linejoin': 'round'
+          }, g);
+        }
+        return g;
+      }
+      case 'spacer': {
+        return el('rect', { x, y, width: w, height: h, fill: 'transparent', stroke: sw > 2 ? stroke : 'none', 'stroke-dasharray': '4 3' }, g);
+      }
+      default: return el('rect', { x, y, width: w, height: h, ...common }, g);
+    }
+  }
+
+  function drawLabel(g, b, x, y) {
+    const cx = x + b.width / 2;
+    let ly, fill = b.textColor;
+    const lines = [b.label, b.sub].filter(Boolean);
+    const lh = b.fontSize * 1.15;
+    if (b.labelPos === 'above') ly = y - 8 - (lines.length - 1) * lh;
+    else if (b.labelPos === 'below') ly = y + b.height + b.fontSize + 4;
+    else ly = y + b.height / 2 - ((lines.length - 1) * lh) / 2 + b.fontSize * 0.35;
+    if (b.labelPos === 'inside' && b.shape === 'ires') ly -= Math.min(9, b.height * 0.18); // clear the stem-loops
+    lines.forEach((txt, i) => {
+      const t = el('text', {
+        x: cx, y: ly + i * lh, 'text-anchor': 'middle', fill,
+        'font-size': i === 0 ? b.fontSize : Math.max(8, b.fontSize * 0.75),
+        'font-weight': i === 0 ? 600 : 400
+      }, g);
+      t.textContent = txt;
+    });
+  }
+
+  // ---------- Drag-to-resize handles ----------
+  function addHandles(b, x, y) {
+    const hr = el('rect', { x: x + b.width - 4, y: y + b.height / 2 - 10, width: 8, height: 20, rx: 2, fill: '#f59e0b', class: 'handle' }, svg);
+    const hb = el('rect', { x: x + b.width / 2 - 10, y: y + b.height - 4, width: 20, height: 8, rx: 2, fill: '#f59e0b', class: 'vhandle' }, svg);
+    hr.addEventListener('pointerdown', e => startResize(e, b, 'w'));
+    hb.addEventListener('pointerdown', e => startResize(e, b, 'h'));
+  }
+
+  function startResize(e, b, axis) {
+    e.preventDefault(); e.stopPropagation();
+    const start = axis === 'w' ? e.clientX : e.clientY;
+    const orig = axis === 'w' ? b.width : b.height;
+    const [min, max] = axis === 'w' ? [20, 600] : [10, 160];
+    // svg scale factor (in case svg is scaled by CSS)
+    const rect = svg.getBoundingClientRect();
+    const scale = (+svg.getAttribute('width')) / rect.width || 1;
+    const move = ev => {
+      const d = ((axis === 'w' ? ev.clientX : ev.clientY) - start) * scale * (axis === 'h' ? 2 : 1);
+      const v = Math.round(Math.min(max, Math.max(min, orig + d)));
+      if (axis === 'w') b.width = v; else b.height = v;
+      if (editingId === b.id) fillForm(b);
+      renderDiagram();
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); commit(); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  // ---------- Import / Export ----------
+  function download(name, blob) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function cleanSvgString() {
+    const prevSel = selectedId; selectedId = null; renderDiagram();
+    const s = new XMLSerializer().serializeToString(svg);
+    selectedId = prevSel; renderDiagram();
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + s;
+  }
+  const fname = ext => (state.settings.title || 'construct').replace(/[^\w\-]+/g, '_') + '.' + ext;
+
+  $('btnExportSvg').onclick = () => download(fname('svg'), new Blob([cleanSvgString()], { type: 'image/svg+xml' }));
+  $('btnExportPng').onclick = () => {
+    const str = cleanSvgString(), img = new Image(), k = 2;
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = svg.width.baseVal.value * k; c.height = svg.height.baseVal.value * k;
+      const ctx = c.getContext('2d'); ctx.scale(k, k); ctx.drawImage(img, 0, 0);
+      c.toBlob(bl => download(fname('png'), bl));
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+  };
+  $('btnSaveJson').onclick = () => download(fname('json'), new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+  $('btnLoadJson').onclick = () => $('fileInput').click();
+  $('fileInput').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const d = JSON.parse(r.result);
+        if (!Array.isArray(d.blocks)) throw new Error('Missing "blocks" array');
+        d.blocks.forEach(b => { b.id = b.id || uid(); });
+        state = { settings: { ...sample().settings, ...(d.settings || {}) }, blocks: d.blocks };
+        resetForm(); selectedId = null; syncSettingsUI(); commit();
+      } catch (err) { alert('Could not load file: ' + err.message); }
+    };
+    r.readAsText(f); e.target.value = '';
+  };
+  $('btnClear').onclick = () => {
+    if (!confirm('Remove all elements?')) return;
+    state.blocks = []; selectedId = null; resetForm(); commit();
+  };
+
+  // Keyboard: Delete removes selected, Esc deselects
+  document.addEventListener('keydown', e => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) { e.preventDefault(); deleteBlock(selectedId); }
+    if (e.key === 'Escape') { selectedId = null; resetForm(); renderList(); renderDiagram(); }
+  });
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  // ---------- Init ----------
+  function renderPalette() {
+    const host = document.getElementById('palette'); host.innerHTML = '';
+    for (const [group, types] of Object.entries(PALETTE)) {
+      const h = document.createElement('div'); h.className = 'palette-group'; h.textContent = group; host.appendChild(h);
+      const grid = document.createElement('div'); grid.className = 'palette';
+      types.forEach(t => {
+        const bt = document.createElement('button'); bt.type = 'button'; bt.title = 'Add ' + t;
+        bt.innerHTML = `<span class="swatch" style="background:${TYPE_DEFAULTS[t].color}"></span>${esc(t)}`;
+        bt.onclick = () => quickAdd(t);
+        grid.appendChild(bt);
+      });
+      host.appendChild(grid);
+    }
+  }
+  // ---------- Saved constructs: full CRUD on a named library ----------
+  const LIB_KEY = 'geneConstructBuilder.library.v1';
+  const lib = window.lib = (() => {
+    let data;
+    try { data = JSON.parse(localStorage.getItem(LIB_KEY)); } catch (e) {}
+    if (!data || typeof data.constructs !== 'object' || !data.constructs) data = { constructs: {}, currentId: null };
+    let dirty = false, loading = false;
+    const nameField = $('cName');
+    const persist = () => { try { localStorage.setItem(LIB_KEY, JSON.stringify(data)); }
+      catch (e) { alert('Could not save: browser storage is full or blocked. Use "Export all constructs" to keep a file copy.'); } };
+    const snapshot = () => JSON.parse(JSON.stringify({ settings: state.settings, blocks: state.blocks }));
+
+    function touch() { if (!loading) { dirty = true; status(); } }
+    function status() {
+      const st = $('saveStatus');
+      if (!data.currentId) { st.textContent = '· not saved yet'; st.className = 'status dirty'; }
+      else if (dirty) { st.textContent = '· unsaved changes'; st.className = 'status dirty'; }
+      else { st.textContent = '· saved'; st.className = 'status clean'; }
+    }
+    function render() {
+      const ul = $('libList'); ul.innerHTML = '';
+      const items = Object.values(data.constructs).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      if (!items.length) {
+        ul.innerHTML = '<li class="empty" style="border:none">No saved constructs yet — name this one and click Save.</li>';
+      }
+      items.forEach(c => {
+        const li = document.createElement('li');
+        if (c.id === data.currentId) li.classList.add('current');
+        li.innerHTML = '<span class="meta"><b>' + esc(c.name) + '</b>' +
+          (c.id === data.currentId ? ' <small style="display:inline;color:var(--accent)">(open)</small>' : '') +
+          '<small>' + c.blocks.length + ' elements · saved ' + new Date(c.updated).toLocaleString() + '</small></span>' +
+          '<button data-a="open">Open / edit</button><button data-a="ren">Rename</button>' +
+          '<button data-a="dup">Duplicate</button><button data-a="del" class="danger">Delete</button>';
+        li.onclick = e => {
+          const a = e.target.dataset.a;
+          if (a === 'open') openC(c.id);
+          else if (a === 'ren') renameC(c.id);
+          else if (a === 'dup') dupC(c.id);
+          else if (a === 'del') delC(c.id);
+        };
+        ul.appendChild(li);
+      });
+      status();
+    }
+    const guard = () => !dirty || confirm('The construct you are working on has unsaved changes. Discard them?');
+    function apply(st) {
+      loading = true;
+      state = JSON.parse(JSON.stringify({ settings: { ...sample().settings, ...(st.settings || {}) }, blocks: st.blocks || [] }));
+      state.blocks.forEach(b => { b.id = b.id || uid(); });
+      selectedId = null; resetForm(); syncSettingsUI(); save(); renderList(); renderDiagram();
+      loading = false; dirty = false;
+    }
+
+    // CREATE / UPDATE
+    function saveC(asCopy, newName) {
+      const name = (newName || nameField.value.trim() || state.settings.title || 'Untitled construct').trim();
+      nameField.value = name;
+      let id = data.currentId;
+      if (asCopy || !id || !data.constructs[id]) { id = uid(); data.constructs[id] = { id, created: Date.now() }; }
+      Object.assign(data.constructs[id], { name, updated: Date.now() }, snapshot());
+      data.currentId = id; dirty = false; persist(); render();
+    }
+    // READ (open for further editing)
+    function openC(id) {
+      const c = data.constructs[id]; if (!c) return;
+      if (id !== data.currentId && !guard()) return;
+      apply(c); data.currentId = id; nameField.value = c.name; persist(); render();
+    }
+    function renameC(id) {
+      const c = data.constructs[id]; if (!c) return;
+      const n = prompt('Rename construct:', c.name);
+      if (n === null || !n.trim()) return;
+      c.name = n.trim(); c.updated = Date.now();
+      if (id === data.currentId) nameField.value = c.name;
+      persist(); render();
+    }
+    function dupC(id) {
+      const c = data.constructs[id]; if (!c) return;
+      const nid = uid();
+      data.constructs[nid] = { ...JSON.parse(JSON.stringify(c)), id: nid, name: c.name + ' (copy)', created: Date.now(), updated: Date.now() };
+      persist(); render();
+    }
+    // DELETE
+    function delC(id) {
+      const c = data.constructs[id]; if (!c) return;
+      if (!confirm('Delete the saved construct "' + c.name + '"? This cannot be undone.')) return;
+      delete data.constructs[id];
+      if (data.currentId === id) { data.currentId = null; dirty = true; }
+      persist(); render();
+    }
+    function newC() {
+      if (!guard()) return;
+      apply({ settings: { ...sample().settings, title: 'New construct' }, blocks: [] });
+      data.currentId = null; nameField.value = ''; persist(); render();
+    }
+
+    $('btnSaveC').onclick = () => saveC(false);
+    $('btnSaveAsC').onclick = () => {
+      const n = prompt('Name for the copy:', (nameField.value || state.settings.title || 'Construct') + ' v2');
+      if (n !== null && n.trim()) saveC(true, n.trim());
+    };
+    $('btnNewC').onclick = newC;
+    $('btnExportLib').onclick = () => download('gene_constructs_library.json',
+      new Blob([JSON.stringify({ library: data.constructs }, null, 2)], { type: 'application/json' }));
+    $('btnImportLib').onclick = () => $('libFile').click();
+    $('libFile').onchange = e => {
+      const f = e.target.files[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          const d = JSON.parse(r.result);
+          const incoming = d.library || d.constructs;
+          let n = 0;
+          if (incoming && typeof incoming === 'object') {
+            Object.values(incoming).forEach(c => {
+              if (!c || !Array.isArray(c.blocks)) return;
+              const id = uid();
+              data.constructs[id] = { ...c, id, name: c.name || 'Imported construct', created: c.created || Date.now(), updated: c.updated || Date.now() };
+              n++;
+            });
+          } else if (Array.isArray(d.blocks)) {
+            const id = uid();
+            data.constructs[id] = { id, name: (d.settings && d.settings.title) || 'Imported construct', created: Date.now(), updated: Date.now(), settings: d.settings, blocks: d.blocks };
+            n++;
+          }
+          if (!n) throw new Error('no constructs found in this file');
+          persist(); render(); alert('Imported ' + n + ' construct' + (n === 1 ? '' : 's') + '.');
+        } catch (err) { alert('Could not import: ' + err.message); }
+      };
+      r.readAsText(f); e.target.value = '';
+    };
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveC(false); }
+    });
+    window.addEventListener('beforeunload', e => { if (dirty && data.currentId) { e.preventDefault(); e.returnValue = ''; } });
+
+    if (data.currentId && data.constructs[data.currentId]) nameField.value = data.constructs[data.currentId].name;
+    return { render, touch, status };
+  })();
+
+  renderPalette(); syncSettingsUI(); resetForm(); renderList(); renderDiagram(); lib.render();
+})();
+</script>
+</body>
+</html>
