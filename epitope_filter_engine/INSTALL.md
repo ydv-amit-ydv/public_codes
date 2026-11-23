@@ -427,9 +427,22 @@ ls -l ~/local_engines/netmhc/netMHCpan-4.2/Linux_x86_64/bin/netMHCpan
 chmod +x ~/local_engines/netmhc/netMHCpan-4.2/Linux_x86_64/bin/netMHCpan
 ```
 
-If the file is missing, the software tarball was not extracted (or only the data one was) —
-unpack `netMHCpan-4.2b.Linux.tar.gz` again. If `Linux_x86_64/` is absent but `Darwin_x86_64/`
-is there, that is the macOS download; request the Linux one.
+If the file is missing, look at what *is* in that folder:
+
+```bash
+ls ~/local_engines/netMHCpan-4.2/Linux_x86_64/bin/
+```
+
+- **`netMHCpan-4.2` but no `netMHCpan`** — the program ships under its version name while the
+  script asks for the bare one. The engine links them itself; by hand it is
+  `cd ~/local_engines/netMHCpan-4.2/Linux_x86_64/bin && chmod +x netMHCpan-4.2 && ln -s netMHCpan-4.2 netMHCpan`.
+- **nothing at all** — the software tarball was not extracted (perhaps only the data one was);
+  unpack `netMHCpan-4.2b.Linux.tar.gz` again.
+- **`Darwin_x86_64/` instead of `Linux_x86_64/`** — that is the macOS download; request the Linux one.
+
+Files ending in `:Zone.Identifier` are Windows metadata that came along with a copy off
+`/mnt/c`. They are ignored, and `find ~/local_engines -name '*Zone.Identifier*' -delete`
+clears them.
 
 ### 6.2 NetCTLpan 1.1 and NetChop 3.1 — class I antigen processing
 

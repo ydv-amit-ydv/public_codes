@@ -1162,6 +1162,18 @@ assert _dis.netmhcpan_binary(_h)[0] == "ok"
 assert _dis.netmhcpan_data(_h)[0] is False
 os.makedirs(os.path.join(_h, "data")); open(os.path.join(_h, "data", "f"), "w").write("")
 assert _dis.netmhcpan_data(_h)[0] is True
+# 4.2 ships the program as netMHCpan-4.2 while the script asks for netMHCpan; the Windows
+# :Zone.Identifier side files that come with a copy off /mnt/c are not programs
+_h4 = tempfile.mkdtemp(); _b4 = os.path.join(_h4, "Linux_x86_64", "bin"); os.makedirs(_b4)
+for _n in ["netMHCpan-4.2", "netMHCpan-4.2:Zone.Identifier"]: open(os.path.join(_b4, _n), "w").write("x")
+os.chmod(os.path.join(_b4, "netMHCpan-4.2"), 0o644)
+assert _dis.netmhcpan_binary(_h4)[0] == "linked"
+assert os.readlink(os.path.join(_b4, "netMHCpan")) == "netMHCpan-4.2"
+assert os.access(os.path.join(_b4, "netMHCpan"), os.X_OK), "the link must point at something runnable"
+assert _dis.netmhcpan_binary(_h4)[0] == "ok", "a second look must not relink"
+os.remove(os.path.join(_b4, "netMHCpan-4.2"))
+assert _dis.netmhcpan_binary(_h4)[0] == "missing" and "link" in _dis.netmhcpan_binary(_h4)[1]
+
 _h2 = tempfile.mkdtemp(); os.makedirs(os.path.join(_h2, "Darwin_x86_64", "bin"))
 open(os.path.join(_h2, "Darwin_x86_64", "bin", "netMHCpan"), "w").write("x")
 assert _dis.netmhcpan_binary(_h2)[0] == "foreign"

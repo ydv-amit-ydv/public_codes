@@ -51,6 +51,20 @@ def netmhcpan_binary(home):
     Returns (state, detail) where state is one of ok / fixed / missing / nested / foreign.
     """
     want = os.path.join(home, "Linux_x86_64", "bin", "netMHCpan")
+    if not os.path.exists(want):
+        # 4.2 ships the program under its version name (netMHCpan-4.2) while the script asks
+        # for the bare name; a link at the path the script names costs nothing and is undone
+        # with one rm. Windows' :Zone.Identifier side files are not programs.
+        sibling = sorted(x for x in glob.glob(want + "-*") if ":" not in os.path.basename(x))
+        if sibling:
+            try:
+                os.chmod(sibling[-1], os.stat(sibling[-1]).st_mode | 0o111)
+                os.symlink(os.path.basename(sibling[-1]), want)
+                return "linked", f"{want} -> {os.path.basename(sibling[-1])}"
+            except OSError as e:
+                return "missing", (f"the program is {sibling[-1]} but the script asks for {want}; "
+                                   f"linking them failed ({e}). By hand: cd {os.path.dirname(want)} "
+                                   f"&& ln -s {os.path.basename(sibling[-1])} netMHCpan")
     if os.path.isfile(want):
         if os.access(want, os.X_OK):
             return "ok", want
@@ -60,6 +74,8 @@ def netmhcpan_binary(home):
             return "missing", f"{want} is not executable and chmod failed: {e}"
         return ("fixed", want) if os.access(want, os.X_OK) else ("missing", f"{want} is not executable")
     # the usual wrong turns: one directory too deep, or the macOS tarball
+    if os.path.islink(want):
+        return "missing", f"{want} is a link to {os.readlink(want)}, which is not there"
     deep = glob.glob(os.path.join(home, "*", "Linux_x86_64", "bin", "netMHCpan"))
     if deep:
         return "nested", (f"found one level too deep at {deep[0]}; move that folder's contents "

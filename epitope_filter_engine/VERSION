@@ -1,1 +1,1 @@
-2026.11.20-t  (NetMHCpan: name the real cause of 'no binaries found', put back a lost execute bit)
+2026.11.20-u  (NetMHCpan 4.2: link the versioned binary to the name the script asks for)

@@ -65,8 +65,10 @@ def health_netmhcpan(deep):
     if not needs_dtu_layout:
         return checks + _netmhcpan_listmhc(deep)
     state, detail = discover.netmhcpan_binary(home)
-    checks.append(_check("Linux_x86_64/bin/netMHCpan", state in ("ok", "fixed"),
-                         detail + (" - the execute bit was missing and has been set" if state == "fixed" else "")))
+    note = {"fixed": " - the execute bit was missing and has been set",
+            "linked": " - the program ships under its version name; the engine linked the name the script asks for"}
+    checks.append(_check("Linux_x86_64/bin/netMHCpan", state in ("ok", "fixed", "linked"),
+                         detail + note.get(state, "")))
     dok, ddetail = discover.netmhcpan_data(home)
     checks.append(_check("data directory", dok, ddetail))
     if not all(c["ok"] for c in checks):
