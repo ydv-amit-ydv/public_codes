@@ -72,7 +72,11 @@ STAMP="$MODELS/.engine-setup-done"
 system_packages() {
   command -v apt-get >/dev/null 2>&1 || return 0           # not Debian/Ubuntu: INSTALL.md 2.2
   local want=() pkg cmd
-  for pair in "git:git" "curl:curl" "unzip:unzip" "g++:g++" "perl:perl" "tcsh:tcsh" "gawk:gawk" "R:r-base-core"; do
+  # qemu-user is for INSTALL.md 8.1(b): NN-align's old static binaries crash on recent Intel
+  # CPUs, which makes CD4episcore fail with an unrelated-looking ufunc error. The installer
+  # wraps them automatically, but only if qemu is here.
+  for pair in "git:git" "curl:curl" "unzip:unzip" "g++:g++" "perl:perl" "tcsh:tcsh" "gawk:gawk" \
+              "R:r-base-core" "qemu-x86_64:qemu-user"; do
     cmd="${pair%%:*}"; pkg="${pair##*:}"
     command -v "$cmd" >/dev/null 2>&1 || want+=("$pkg")
   done

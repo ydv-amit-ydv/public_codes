@@ -426,8 +426,55 @@ do_iedb2() {
     sed -i 's|R_path = subprocess.check_output("which R", shell=True).rstrip()$|R_path = subprocess.check_output("which R", shell=True).rstrip().decode()|' "$h/src/imscore.py" \
       && info "applied the CD4episcore R-path fix (INSTALL.md 8.1a)"
   fi
-  info "if CD4episcore segfaults on a very new Intel CPU, apply INSTALL.md 8.1(b) (qemu-user)"
+  nnalign_fix "$h"
   return 0
+}
+
+# INSTALL.md 8.1(b). NN-align ships statically linked binaries built for kernel 2.6, and on a
+# recent Intel CPU they die instantly. CD4episcore then reports
+#   "loop of ufunc does not support argument 0 of type float which has no callable rint method"
+# which says nothing about the real cause. Run them under qemu instead.
+#
+# Applied only when a binary really does fail here, so a machine where they work is left alone,
+# and it is idempotent: a wrapped binary keeps its original beside it as <name>.real.
+nnalign_fix() {
+  local dir="$1/src/nnalign/bin/Linux_x86_64" f rc n
+  if [ "$DRY" = 1 ]; then
+    info '$ wrap the NN-align binaries with qemu-x86_64 if they crash on this CPU'
+    return 0
+  fi
+  [ -d "$dir" ] || { info "NN-align binaries not found; skipping the 8.1(b) check"; return 0; }
+  if ls "$dir"/*.real >/dev/null 2>&1; then
+    info "NN-align already running under qemu (8.1b applied)"
+    return 0
+  fi
+  f="$(find "$dir" -maxdepth 1 -type f -perm -u+x ! -name '*.real' -print -quit 2>/dev/null)"
+  [ -n "$f" ] || { info "no NN-align binary to test"; return 0; }
+  # Run it through an inner shell: when a command dies from a signal the SHELL prints
+  # "Segmentation fault", and only the inner one's stderr can be redirected away.
+  bash -c '"$0" </dev/null >/dev/null 2>&1' "$f" 2>/dev/null
+  rc=$?
+  # 139 = killed by SIGSEGV, 132 = SIGILL. Anything else, including a usage error, means it runs.
+  if [ "$rc" != 139 ] && [ "$rc" != 132 ]; then
+    info "NN-align binaries run on this CPU (exit $rc); no qemu wrapper needed"
+    return 0
+  fi
+  info "NN-align crashes on this CPU (exit $rc) - that is what makes CD4episcore fail"
+  if ! command -v qemu-x86_64 >/dev/null 2>&1; then
+    info "  install qemu and repair again:  sudo apt install -y qemu-user"
+    return 0
+  fi
+  n=0
+  for f in "$dir"/*; do
+    [ -f "$f" ] || continue
+    case "$f" in *.real) continue ;; esac
+    file "$f" 2>/dev/null | grep -q ELF || continue
+    mv "$f" "$f.real" || continue
+    printf '#!/bin/sh\nexec qemu-x86_64 "$(dirname "$0")/%s.real" "$@"\n' "$(basename "$f")" > "$f"
+    chmod +x "$f"
+    n=$((n + 1))
+  done
+  info "  wrapped $n NN-align binarie(s) with qemu-x86_64 (INSTALL.md 8.1b)"
 }
 
 # ---------------------------------------------------------------- run
