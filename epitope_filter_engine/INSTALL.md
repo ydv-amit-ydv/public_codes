@@ -452,6 +452,18 @@ install before every run; by hand it is:
 chmod +x ~/local_engines/netMHCpan-4.2/netMHCpan ~/local_engines/netMHCpan-4.2/Linux_x86_64/bin/*
 ```
 
+**"Unable to open(r) file .../Linux_x86_64/data/version"** — the program found its binary and
+ran, but 4.2 reads its data from `Linux_x86_64/data`, not from the top of the install. The
+readme's "unpack it in the same folder" is easy to follow one level too high. The engine
+links it into place when it finds the files at the top; by hand:
+
+```bash
+ln -s ../data ~/local_engines/netMHCpan-4.2/Linux_x86_64/data
+```
+
+If there is no `data` folder anywhere, it was never downloaded: it is the second file on the
+DTU page and it unpacks inside `Linux_x86_64/`.
+
 ### 6.2 NetCTLpan 1.1 and NetChop 3.1 — class I antigen processing
 
 DTU programs that IEDB redistributes inside its next-generation T Cell Class I standalone

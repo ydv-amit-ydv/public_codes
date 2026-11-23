@@ -1159,9 +1159,14 @@ assert _dis.netmhcpan_binary(_h)[0] == "missing"
 _b = os.path.join(_h, "Linux_x86_64", "bin", "netMHCpan"); open(_b, "w").write("x"); os.chmod(_b, 0o644)
 assert _dis.netmhcpan_binary(_h)[0] == "fixed" and os.access(_b, os.X_OK)
 assert _dis.netmhcpan_binary(_h)[0] == "ok"
+# 4.2 reads its data from Linux_x86_64/data; unpacked one level too high it is linked there
 assert _dis.netmhcpan_data(_h)[0] is False
-os.makedirs(os.path.join(_h, "data")); open(os.path.join(_h, "data", "f"), "w").write("")
+os.makedirs(os.path.join(_h, "data")); open(os.path.join(_h, "data", "version"), "w").write("4.2\n")
 assert _dis.netmhcpan_data(_h)[0] is True
+assert os.path.isfile(os.path.join(_h, "Linux_x86_64", "data", "version")), "linked into place"
+assert _dis.netmhcpan_data(_h)[0] is True, "a second look must not relink"
+_h5 = tempfile.mkdtemp(); os.makedirs(os.path.join(_h5, "Linux_x86_64", "data"))
+assert _dis.netmhcpan_data(_h5)[0] is False and "version" in _dis.netmhcpan_data(_h5)[1]
 # 4.2 ships the program as netMHCpan-4.2 while the script asks for netMHCpan; the Windows
 # :Zone.Identifier side files that come with a copy off /mnt/c are not programs
 _h4 = tempfile.mkdtemp(); _b4 = os.path.join(_h4, "Linux_x86_64", "bin"); os.makedirs(_b4)

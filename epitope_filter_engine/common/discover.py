@@ -98,13 +98,28 @@ def netmhcpan_binary(home):
 
 
 def netmhcpan_data(home):
-    """(ok, detail) for the data directory, which DTU ships as a separate download."""
-    d = os.path.join(home, "data")
-    if not os.path.isdir(d):
-        return False, (f"{d} is not there. It is the second download on the DTU page "
-                       f"(data.tar.gz / data.Linux.tar.gz); unpack it inside {home}")
-    n = len(os.listdir(d))
-    return n > 0, f"{n} files" if n else f"{d} is empty"
+    """(ok, detail) for the data directory, DTU's separate download.
+
+    4.2 reads it from `Linux_x86_64/data`, not from the top of the install - the readme's
+    "unpack it in the same folder" is easy to follow one level too high. When the files are
+    at the top, they are linked into place rather than moved or copied.
+    """
+    want = os.path.join(home, "Linux_x86_64", "data")
+    stamp = os.path.join(want, "version")                 # the first file the program opens
+    if os.path.isfile(stamp):
+        return True, f"{len(os.listdir(want))} files in Linux_x86_64/data"
+    top = os.path.join(home, "data")
+    if not os.path.exists(want) and os.path.isfile(os.path.join(top, "version")):
+        try:
+            os.symlink(os.path.join("..", "data"), want)
+            return True, f"{want} -> ../data (it was unpacked one level too high; linked into place)"
+        except OSError as e:
+            return False, (f"the data is in {top} but the program reads {want}; linking failed ({e}). "
+                           f"By hand: ln -s ../data {want}")
+    if os.path.isdir(want):
+        return False, f"{want} has no `version` file - the data tarball is only partly unpacked"
+    return False, (f"{want} is not there. The data is a separate download on the DTU page "
+                   f"(data.tar.gz); unpack it inside {os.path.join(home, 'Linux_x86_64')}")
 
 
 def find_bigmhc(root):

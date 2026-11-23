@@ -1,1 +1,1 @@
-2026.11.20-v  (NetMHCpan: restore the execute bit across the whole install, not one file)
+2026.11.20-w  (NetMHCpan 4.2 reads its data from Linux_x86_64/data; link it when unpacked too high)
