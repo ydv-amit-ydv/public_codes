@@ -1150,6 +1150,24 @@ _warn = _es._check("allele list (-listMHC)", False, "exit 1", warn=True)
 assert _warn["warn"] and not _warn["ok"]
 assert all(ch["ok"] or ch.get("warn") for ch in [_es._check("a", True), _warn]), "warn must not fail a model"
 assert not _es._check("b", False)["ok"] and "warn" not in _es._check("b", False)
+
+# DTU's "no binaries found for Linux_x86_64" is a -x test and nothing else: a lost execute
+# bit is put back, and the other wrong turns are named rather than guessed at
+from common import discover as _dis
+_h = tempfile.mkdtemp(); os.makedirs(os.path.join(_h, "Linux_x86_64", "bin"))
+assert _dis.netmhcpan_binary(_h)[0] == "missing"
+_b = os.path.join(_h, "Linux_x86_64", "bin", "netMHCpan"); open(_b, "w").write("x"); os.chmod(_b, 0o644)
+assert _dis.netmhcpan_binary(_h)[0] == "fixed" and os.access(_b, os.X_OK)
+assert _dis.netmhcpan_binary(_h)[0] == "ok"
+assert _dis.netmhcpan_data(_h)[0] is False
+os.makedirs(os.path.join(_h, "data")); open(os.path.join(_h, "data", "f"), "w").write("")
+assert _dis.netmhcpan_data(_h)[0] is True
+_h2 = tempfile.mkdtemp(); os.makedirs(os.path.join(_h2, "Darwin_x86_64", "bin"))
+open(os.path.join(_h2, "Darwin_x86_64", "bin", "netMHCpan"), "w").write("x")
+assert _dis.netmhcpan_binary(_h2)[0] == "foreign"
+_h3 = tempfile.mkdtemp(); os.makedirs(os.path.join(_h3, "netMHCpan-4.2", "Linux_x86_64", "bin"))
+open(os.path.join(_h3, "netMHCpan-4.2", "Linux_x86_64", "bin", "netMHCpan"), "w").write("x")
+assert _dis.netmhcpan_binary(_h3)[0] == "nested"
 c.put("/api/performance", json={"cache": 0}); predcache.clear()
 wait_job(c.post("/api/single/run", json=one).get_json()["id"]); n2 = len(open(CALLS).read().split())
 wait_job(c.post("/api/single/run", json=one).get_json()["id"]); assert len(open(CALLS).read().split()) > n2, "cache off: it runs again"

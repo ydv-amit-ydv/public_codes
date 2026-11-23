@@ -32,6 +32,7 @@ def netmhc_path():
     home = config.model("netmhcpan")["home"]
     if not home:
         return os.path.join(config.search_root(), "netMHCpan-not-found")
+    discover.netmhcpan_binary(home)          # puts back an execute bit lost in extraction
     return discover.runnable_netmhcpan(home, config.tmp_dir())
 
 

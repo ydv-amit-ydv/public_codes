@@ -417,6 +417,20 @@ whenever the placeholder is wrong. Editing it yourself also works.
 The engine finds any folder with a file named `netMHCpan` beside a `Linux_x86_64/`
 directory, at any depth, so the extra `netMHCpan-4.2/` level above is harmless.
 
+**"netMHCpan: no binaries found for Linux_x86_64 .../Linux_x86_64/bin/netMHCpan"** is DTU's
+own message and it means exactly one thing: that file is not executable, or not there. The
+script tests nothing else. The engine now repairs the first case itself (it sets the execute
+bit before every run) and the Settings card names the second. By hand:
+
+```bash
+ls -l ~/local_engines/netmhc/netMHCpan-4.2/Linux_x86_64/bin/netMHCpan
+chmod +x ~/local_engines/netmhc/netMHCpan-4.2/Linux_x86_64/bin/netMHCpan
+```
+
+If the file is missing, the software tarball was not extracted (or only the data one was) —
+unpack `netMHCpan-4.2b.Linux.tar.gz` again. If `Linux_x86_64/` is absent but `Darwin_x86_64/`
+is there, that is the macOS download; request the Linux one.
+
 ### 6.2 NetCTLpan 1.1 and NetChop 3.1 — class I antigen processing
 
 DTU programs that IEDB redistributes inside its next-generation T Cell Class I standalone

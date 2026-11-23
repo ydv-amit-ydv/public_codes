@@ -39,6 +39,50 @@ def find_netmhcpan(root):
     return min(hits, key=lambda p: p.count(os.sep)) if hits else None
 
 
+def netmhcpan_binary(home):
+    """Check (and where possible repair) the compiled program DTU's script needs.
+
+    The script itself does nothing but `if ( ! -x $NMHOME/Linux_x86_64/bin/netMHCpan )`,
+    so "no binaries found for Linux_x86_64" means exactly one of: the file is not there,
+    or it is there without the execute bit (what an extraction onto a Windows drive, or
+    `tar` run without the right flags, leaves behind). The second case is repaired here,
+    because the file is the user's own and a missing +x is never intentional.
+
+    Returns (state, detail) where state is one of ok / fixed / missing / nested / foreign.
+    """
+    want = os.path.join(home, "Linux_x86_64", "bin", "netMHCpan")
+    if os.path.isfile(want):
+        if os.access(want, os.X_OK):
+            return "ok", want
+        try:
+            os.chmod(want, os.stat(want).st_mode | 0o111)
+        except OSError as e:
+            return "missing", f"{want} is not executable and chmod failed: {e}"
+        return ("fixed", want) if os.access(want, os.X_OK) else ("missing", f"{want} is not executable")
+    # the usual wrong turns: one directory too deep, or the macOS tarball
+    deep = glob.glob(os.path.join(home, "*", "Linux_x86_64", "bin", "netMHCpan"))
+    if deep:
+        return "nested", (f"found one level too deep at {deep[0]}; move that folder's contents "
+                          f"up into {home} (the Linux_x86_64 folder must sit beside the netMHCpan script)")
+    other = [os.path.basename(d) for d in glob.glob(os.path.join(home, "*_*"))
+             if os.path.isfile(os.path.join(d, "bin", "netMHCpan"))]
+    if other:
+        return "foreign", (f"this copy carries {', '.join(sorted(other))}, not Linux_x86_64 - it is the "
+                           f"tarball for another operating system. Download the Linux one from DTU.")
+    return "missing", (f"{want} is not there. The Linux_x86_64 folder in the DTU tarball holds the compiled "
+                       f"program; re-extract it (tar -xzf netMHCpan-4.2b.Linux.tar.gz) into {home}")
+
+
+def netmhcpan_data(home):
+    """(ok, detail) for the data directory, which DTU ships as a separate download."""
+    d = os.path.join(home, "data")
+    if not os.path.isdir(d):
+        return False, (f"{d} is not there. It is the second download on the DTU page "
+                       f"(data.tar.gz / data.Linux.tar.gz); unpack it inside {home}")
+    n = len(os.listdir(d))
+    return n > 0, f"{n} files" if n else f"{d} is empty"
+
+
 def find_bigmhc(root):
     """BigMHC clone: the directory that has src/predict.py and models/."""
     hits = [dp for dp, dns, fns in _walk(root)

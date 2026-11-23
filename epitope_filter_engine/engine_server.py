@@ -20,7 +20,7 @@ for sub in ("MHC1/BA_EL_scripts", "MHC1/Immunogenicity_scripts", "MHC1/Processin
     sys.path.insert(0, os.path.join(HERE, sub))
 sys.path.insert(0, HERE)
 
-from common import alleles as allele_lib, config, population            # noqa: E402
+from common import alleles as allele_lib, config, discover, population            # noqa: E402
 from common.jobs import MANAGER                              # noqa: E402
 from common import runs, predcache, hostself, selfupdate                # noqa: E402
 import netmhcpan_app, bigmhc_app, bigmhc_runner as bm       # noqa: E402
@@ -57,6 +57,25 @@ def health_netmhcpan(deep):
     checks.append(_check("netMHCpan script executable", os.access(script, os.X_OK), script))
     if not checks[-1]["ok"]:
         return checks
+    home = m.get("home") or ""
+    try:                                    # only DTU's own tcsh script needs these two
+        needs_dtu_layout = "Linux_x86_64" in open(script).read(8000)
+    except OSError:
+        needs_dtu_layout = False
+    if not needs_dtu_layout:
+        return checks + _netmhcpan_listmhc(deep)
+    state, detail = discover.netmhcpan_binary(home)
+    checks.append(_check("Linux_x86_64/bin/netMHCpan", state in ("ok", "fixed"),
+                         detail + (" - the execute bit was missing and has been set" if state == "fixed" else "")))
+    dok, ddetail = discover.netmhcpan_data(home)
+    checks.append(_check("data directory", dok, ddetail))
+    if not all(c["ok"] for c in checks):
+        return checks                    # nothing below can work, and -listMHC would only repeat it
+    return checks + _netmhcpan_listmhc(deep)
+
+
+def _netmhcpan_listmhc(deep):
+    checks = []
     netmhcpan_app._list_alleles.cache_clear()
     names, why = netmhcpan_app.listmhc_debug()
     n = len(names)
@@ -67,12 +86,15 @@ def health_netmhcpan(deep):
                          " The usual cause is an active conda environment; see INSTALL.md 8.3.",
                          warn=True))
     if deep:
-        res, _ = netmhcpan_app.run_netmhcpan(["GILGFVFTL"], ["HLA-A02:01"],
-                                             dict(rankS=0.5, rankW=2.0, ba=True, t=None, raw=""))
+        res, logs = netmhcpan_app.run_netmhcpan(["GILGFVFTL"], ["HLA-A02:01"],
+                                                dict(rankS=0.5, rankW=2.0, ba=True, t=None, raw=""))
         hit = res[res["Peptide"] == "GILGFVFTL"] if not res.empty else res
         got = (not hit.empty) and "SB" in str(hit["NMP_BindLevel"].iloc[0])
+        # when it comes back empty, NetMHCpan's own output is the answer - show its last line
+        said = [l for l in "\n".join(logs).splitlines() if l.strip() and not l.startswith("$ ")]
         checks.append(_check("GILGFVFTL / A02:01 -> strong binder", got,
-                             "ok" if got else "unexpected or empty result"))
+                             "ok" if got else "nothing came back. NetMHCpan said: "
+                             + (said[-1][:200] if said else "nothing at all")))
     return checks
 
 
