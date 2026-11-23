@@ -58,11 +58,10 @@ def health_netmhcpan(deep):
     if not checks[-1]["ok"]:
         return checks
     home = m.get("home") or ""
-    try:                                    # only DTU's own tcsh script needs these two
-        needs_dtu_layout = "Linux_x86_64" in open(script).read(8000)
-    except OSError:
-        needs_dtu_layout = False
-    if not needs_dtu_layout:
+    # These two are about DTU's own layout. The script builds "Linux_x86_64" from `uname`
+    # rather than spelling it out, so the install itself is what says whether it is a real
+    # DTU tree; a stub has no such folder and skips them.
+    if not os.path.isdir(os.path.join(home, "Linux_x86_64")):
         return checks + _netmhcpan_listmhc(deep)
     state, detail = discover.netmhcpan_binary(home)
     note = {"fixed": " - the execute bit was missing and has been set",
@@ -83,9 +82,12 @@ def _netmhcpan_listmhc(deep):
     n = len(names)
     # a failing -listMHC does not stop NetMHCpan from predicting (the alleles are then passed
     # straight through), so it is reported as a warning, not as "not ready"
+    silent = "nothing at all" in why
     checks.append(_check("allele list (-listMHC)", n > 0, why if n else
-                         why + ". Alleles are passed straight to NetMHCpan instead, so runs still work."
-                         " The usual cause is an active conda environment; see INSTALL.md 8.3.",
+                         why + ". Alleles are passed straight to NetMHCpan instead."
+                         + (" The usual cause of a silent failure is an active conda environment;"
+                            " see INSTALL.md 8.3." if silent else
+                            " Fix what it says above first - predictions fail for the same reason."),
                          warn=True))
     if deep:
         res, logs = netmhcpan_app.run_netmhcpan(["GILGFVFTL"], ["HLA-A02:01"],

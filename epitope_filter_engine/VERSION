@@ -1,1 +1,1 @@
-2026.11.20-w  (NetMHCpan 4.2 reads its data from Linux_x86_64/data; link it when unpacked too high)
+2026.11.20-x  (NetMHCpan card: the install decides which checks apply, not the script's text)
