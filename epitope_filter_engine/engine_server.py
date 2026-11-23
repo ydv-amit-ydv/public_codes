@@ -29,6 +29,7 @@ import mhcflurry_runner as mf, iedb_processing as ip         # noqa: E402
 import consensus, funnel, models as model_registry
 import pipeline, pipeline_ii, pipeline_dual, pipeline_single                                  # noqa: E402
 import comparative, comparative_run                                                          # noqa: E402
+import construct                                                                             # noqa: E402
 import mixmhc2pred_runner as mx2, netmhciipan_runner as nn2, cd4episcore_runner as cd4   # noqa: E402
 import immuscope_runner as isc_run, tlimmuno2_runner as tl2_run   # noqa: E402
 import pandas as pd                                          # noqa: E402
@@ -492,6 +493,63 @@ def single_preview():
         return jsonify(pipeline_single.preview(request.get_json(force=True)))
     except (ValueError, config.ConfigError) as e:
         return jsonify(hint=str(e))
+
+
+@main.post("/api/construct/build")
+def construct_build():
+    """Assemble a construct and report everything that needs no external tool.
+
+    Properties, the design checklist, the junction peptides the joining invents, and
+    population coverage per region. Screening the peptides is a separate, slower call.
+    """
+    body = request.get_json(force=True) or {}
+    try:
+        ctl, ctl_order, w1 = construct.parse_epitope_alleles(body.get("ctl", ""))
+        htl, htl_order, w2 = construct.parse_epitope_alleles(body.get("htl", ""))
+        bcl, bcl_order, w3 = construct.parse_epitope_alleles(body.get("bcell", ""))
+        adjuvant = str(body.get("adjuvant", "")).strip().upper()
+        ctag = str(body.get("ctag", "")).strip().upper()
+        for name, s in (("adjuvant", adjuvant), ("C-terminal tag", ctag)):
+            bad = set(s) - construct.AA
+            if bad:
+                return jsonify(error=f"The {name} has non-standard residues: {''.join(sorted(bad))}"), 400
+        if not (ctl_order or htl_order or bcl_order):
+            return jsonify(hint="Paste at least one epitope.")
+        seq, parts = construct.assemble(ctl_order, htl_order, bcl_order, adjuvant, ctag,
+                                        optimise_ctl=bool(body.get("optimise_ctl", True)),
+                                        linkers=body.get("linkers"))
+        props = construct.properties(seq, construct.DIWV)
+        lengths = [int(x) for x in (body.get("junction_lengths") or [9, 15]) if 8 <= int(x) <= 25]
+        junc = construct.junctions(parts, lengths)
+        mapping = {**ctl, **htl, **bcl}
+        pop, popmsg = population.load(config.load().get("population"), config.search_root())
+        cov = construct.coverage_report(mapping, pop)
+        return jsonify(sequence=seq, parts=parts, properties=props,
+                       verdicts=[{"ok": o, "text": m} for o, m in construct.verdicts(props)],
+                       junctions=junc, junction_summary=construct.junction_summary(parts, lengths),
+                       coverage=cov, population=(pop.label if pop else None), population_note=popmsg,
+                       counts={"ctl": len(ctl_order), "htl": len(htl_order), "bcell": len(bcl_order)},
+                       warnings=w1 + w2 + w3)
+    except (ValueError, config.ConfigError) as e:
+        return jsonify(hint=str(e))
+
+
+@main.post("/api/construct/screen")
+def construct_screen():
+    """Run the safety screens over the construct, its epitopes and its junction peptides."""
+    import screen_runner as _sr
+    body = request.get_json(force=True) or {}
+    peptides = [str(p).strip().upper() for p in (body.get("peptides") or []) if str(p).strip()]
+    if not peptides:
+        return jsonify(error="Nothing to screen."), 400
+    if len(peptides) > 2000:
+        return jsonify(error=f"{len(peptides)} peptides is too many for one screen (limit 2000)."), 400
+    cfg = config.model("screen")
+    table, notes = _sr.screen(peptides, cfg, tools=body.get("tools"))
+    flags = _sr.flags(table)
+    return jsonify(columns=list(table.columns),
+                   rows=json.loads(table.to_json(orient="records")),
+                   flagged=flags, benefits=_sr.benefits(table), notes=notes)
 
 
 @main.post("/api/comparative/preview")

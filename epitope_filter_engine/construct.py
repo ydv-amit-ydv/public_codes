@@ -77,6 +77,54 @@ KD = {'I': 4.5, 'V': 4.2, 'L': 3.8, 'F': 2.8, 'C': 2.5, 'M': 1.9, 'A': 1.8, 'G':
       'T': -0.7, 'S': -0.8, 'W': -0.9, 'Y': -1.3, 'P': -1.6, 'H': -3.2, 'D': -3.5,
       'E': -3.5, 'N': -3.5, 'Q': -3.5, 'K': -3.9, 'R': -4.5}
 
+# Dipeptide Instability Weight Values, all 400 pairs as published.
+# Guruprasad K, Reddy BVB, Pandit MW (1990) Protein Eng 4(2):155-161.
+DIWV = {
+    "AA": 1.0, "AC": 44.94, "AD": -7.49, "AE": 1.0, "AF": 1.0, "AG": 1.0, "AH": 1.0, "AI": 1.0, "AK": 1.0, "AL":
+    1.0, "AM": 1.0, "AN": 1.0, "AP": 20.26, "AQ": 1.0, "AR": 1.0, "AS": 1.0, "AT": 1.0, "AV": 1.0, "AW": 1.0,
+    "AY": 1.0, "CA": 1.0, "CC": 1.0, "CD": 1.0, "CE": 1.0, "CF": 1.0, "CG": 1.0, "CH": 1.0, "CI": 1.0, "CK":
+    65.17, "CL": 1.0, "CM": 33.6, "CN": 1.0, "CP": 1.0, "CQ": 1.0, "CR": 1.0, "CS": 1.0, "CT": 33.6, "CV": 1.0,
+    "CW": 24.68, "CY": 1.0, "DA": 1.0, "DC": 1.0, "DD": 1.0, "DE": 1.0, "DF": 1.0, "DG": 1.0, "DH": 1.0, "DI":
+    1.0, "DK": 1.0, "DL": 1.0, "DM": 1.0, "DN": 1.0, "DP": 1.0, "DQ": 1.0, "DR": 1.0, "DS": 20.26, "DT": 1.0,
+    "DV": 1.0, "DW": 1.0, "DY": 1.0, "EA": 1.0, "EC": 44.94, "ED": 1.0, "EE": 1.0, "EF": 1.0, "EG": 1.0, "EH":
+    1.0, "EI": 20.26, "EK": 1.0, "EL": 1.0, "EM": 1.0, "EN": 1.0, "EP": 20.26, "EQ": 20.26, "ER": 1.0, "ES":
+    1.0, "ET": 1.0, "EV": 1.0, "EW": 1.0, "EY": 1.0, "FA": 1.0, "FC": 1.0, "FD": 13.34, "FE": 1.0, "FF": 1.0,
+    "FG": 1.0, "FH": 1.0, "FI": 1.0, "FK": 1.0, "FL": 1.0, "FM": 1.0, "FN": 1.0, "FP": 20.26, "FQ": 1.0, "FR":
+    1.0, "FS": 1.0, "FT": 1.0, "FV": 1.0, "FW": 1.0, "FY": 33.6, "GA": 1.0, "GC": 1.0, "GD": 1.0, "GE": 1.0,
+    "GF": 1.0, "GG": 13.34, "GH": 1.0, "GI": 1.0, "GK": 1.0, "GL": 1.0, "GM": 1.0, "GN": 1.0, "GP": 1.0, "GQ":
+    1.0, "GR": 1.0, "GS": 1.0, "GT": -7.49, "GV": 1.0, "GW": 13.34, "GY": 1.0, "HA": 1.0, "HC": 1.0, "HD": 1.0,
+    "HE": 1.0, "HF": 1.0, "HG": 1.0, "HH": 1.0, "HI": 44.94, "HK": 1.0, "HL": 1.0, "HM": 1.0, "HN": 1.0, "HP":
+    1.0, "HQ": 1.0, "HR": 1.0, "HS": 1.0, "HT": 1.0, "HV": 1.0, "HW": 1.0, "HY": 44.94, "IA": 1.0, "IC": 1.0,
+    "ID": 1.0, "IE": 44.94, "IF": 1.0, "IG": 1.0, "IH": 44.94, "II": 1.0, "IK": 1.0, "IL": 1.0, "IM": 1.0, "IN":
+    1.0, "IP": 1.0, "IQ": 1.0, "IR": 1.0, "IS": 1.0, "IT": 1.0, "IV": 1.0, "IW": 1.0, "IY": 1.0, "KA": 1.0,
+    "KC": 1.0, "KD": 1.0, "KE": 1.0, "KF": 1.0, "KG": -7.49, "KH": 1.0, "KI": 1.0, "KK": 1.0, "KL": 1.0, "KM":
+    33.6, "KN": 1.0, "KP": 1.0, "KQ": 24.68, "KR": 33.6, "KS": 1.0, "KT": 1.0, "KV": 1.0, "KW": 1.0, "KY": 1.0,
+    "LA": 1.0, "LC": 1.0, "LD": 1.0, "LE": 1.0, "LF": 1.0, "LG": 1.0, "LH": 1.0, "LI": 1.0, "LK": 1.0, "LL":
+    1.0, "LM": 1.0, "LN": 1.0, "LP": 20.26, "LQ": 33.6, "LR": 20.26, "LS": 1.0, "LT": 1.0, "LV": 1.0, "LW":
+    24.68, "LY": 1.0, "MA": 13.34, "MC": 1.0, "MD": 1.0, "ME": 1.0, "MF": 1.0, "MG": 1.0, "MH": 58.28, "MI":
+    1.0, "MK": 1.0, "ML": 1.0, "MM": 1.0, "MN": 1.0, "MP": 44.94, "MQ": 1.0, "MR": 1.0, "MS": 1.0, "MT": 1.0,
+    "MV": 1.0, "MW": 1.0, "MY": 24.68, "NA": 1.0, "NC": 1.0, "ND": 1.0, "NE": 1.0, "NF": 1.0, "NG": -14.03,
+    "NH": 1.0, "NI": 44.94, "NK": 1.0, "NL": 1.0, "NM": 1.0, "NN": 1.0, "NP": 1.0, "NQ": 1.0, "NR": 1.0, "NS":
+    1.0, "NT": -14.03, "NV": 1.0, "NW": -9.37, "NY": 1.0, "PA": 20.26, "PC": 1.0, "PD": -6.54, "PE": 18.38,
+    "PF": 1.0, "PG": 1.0, "PH": 1.0, "PI": 1.0, "PK": 1.0, "PL": 1.0, "PM": 1.0, "PN": 1.0, "PP": 1.0, "PQ":
+    20.26, "PR": 1.0, "PS": 20.26, "PT": 1.0, "PV": 1.0, "PW": 1.0, "PY": 1.0, "QA": 1.0, "QC": 1.0, "QD": 1.0,
+    "QE": 20.26, "QF": 1.0, "QG": 1.0, "QH": 1.0, "QI": 1.0, "QK": 1.0, "QL": 1.0, "QM": 1.0, "QN": 1.0, "QP":
+    20.26, "QQ": 20.26, "QR": 1.0, "QS": 44.94, "QT": 1.0, "QV": 1.0, "QW": 1.0, "QY": 33.6, "RA": 1.0, "RC":
+    1.0, "RD": 1.0, "RE": 1.0, "RF": 1.0, "RG": 1.0, "RH": 1.0, "RI": 1.0, "RK": 1.0, "RL": 1.0, "RM": 1.0,
+    "RN": 1.0, "RP": 20.26, "RQ": 20.26, "RR": 1.0, "RS": 44.94, "RT": 1.0, "RV": 1.0, "RW": 1.0, "RY": 1.0,
+    "SA": 1.0, "SC": 33.6, "SD": 1.0, "SE": 20.26, "SF": 1.0, "SG": 1.0, "SH": 1.0, "SI": 1.0, "SK": 1.0, "SL":
+    1.0, "SM": 1.0, "SN": 1.0, "SP": 44.94, "SQ": 20.26, "SR": 1.0, "SS": 20.26, "ST": 1.0, "SV": 1.0, "SW":
+    1.0, "SY": 1.0, "TA": 1.0, "TC": 1.0, "TD": 1.0, "TE": 20.26, "TF": 1.0, "TG": -7.49, "TH": 1.0, "TI": 1.0,
+    "TK": 1.0, "TL": 1.0, "TM": 1.0, "TN": 1.0, "TP": 1.0, "TQ": 1.0, "TR": 1.0, "TS": 1.0, "TT": 1.0, "TV":
+    1.0, "TW": 1.0, "TY": 1.0, "VA": 1.0, "VC": 1.0, "VD": 1.0, "VE": 1.0, "VF": 1.0, "VG": -7.49, "VH": 1.0,
+    "VI": 1.0, "VK": 1.0, "VL": 1.0, "VM": 1.0, "VN": 1.0, "VP": 20.26, "VQ": 1.0, "VR": 1.0, "VS": 1.0, "VT":
+    1.0, "VV": 1.0, "VW": 1.0, "VY": 1.0, "WA": 1.0, "WC": 1.0, "WD": 1.0, "WE": 1.0, "WF": 1.0, "WG": 13.34,
+    "WH": 1.0, "WI": 1.0, "WK": 1.0, "WL": 13.34, "WM": 24.68, "WN": 13.34, "WP": 1.0, "WQ": 1.0, "WR": 1.0,
+    "WS": 1.0, "WT": 1.0, "WV": 1.0, "WW": 1.0, "WY": 1.0, "YA": 1.0, "YC": 1.0, "YD": 1.0, "YE": 1.0, "YF":
+    1.0, "YG": -6.54, "YH": 13.34, "YI": 1.0, "YK": 1.0, "YL": 1.0, "YM": 44.94, "YN": 1.0, "YP": 13.34, "YQ":
+    1.0, "YR": 1.0, "YS": 1.0, "YT": 1.0, "YV": 1.0, "YW": 1.0, "YY": 1.0
+}
+
 PROPERTY_NOTES = {
     "mw": "Sum of residue weights minus one water per peptide bond. Fasman GD (1989) CRC Handbook.",
     "pi": "pH where the net charge is zero, by bisection on the Henderson-Hasselbalch sum. "
@@ -366,3 +414,72 @@ def parse_vaxijen(text, threshold=0.4):
         warns.append(f"{len(missing)} entr(y/ies) had a verdict but no score; the threshold could not be "
                      f"re-applied to them ({', '.join(missing[:4])}).")
     return rows, warns
+
+
+# ---------------------------------------------------------------- population coverage
+
+def parse_epitope_alleles(text):
+    """Lines of "PEPTIDE  allele, allele" -> ({peptide: [alleles]}, [peptides in order], warnings).
+
+    The alleles may be left off, which is normal when the epitopes came from the literature
+    rather than from a run: the peptide still goes into the construct, it just cannot
+    contribute to coverage, and the page says how many are in that position.
+    """
+    mapping, order, warns = {}, [], []
+    for n, line in enumerate((text or "").splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = re.split(r"[\s,;]+", line, maxsplit=1)
+        pep = parts[0].strip().upper()
+        if not pep:
+            continue
+        bad = set(pep) - AA
+        if bad:
+            warns.append(f"line {n}: '{pep[:18]}' has non-standard residues {''.join(sorted(bad))}; skipped")
+            continue
+        alleles = []
+        if len(parts) > 1:
+            alleles = [a.strip() for a in re.split(r"[,;|]| and ", parts[1]) if a.strip()]
+        if pep in mapping:
+            mapping[pep] = sorted(set(mapping[pep]) | set(alleles))
+            continue
+        mapping[pep] = alleles
+        order.append(pep)
+    return mapping, order, warns
+
+
+def coverage_report(mapping, pop):
+    """Population coverage of a construct, per region, the way IEDB's tool reports it.
+
+    A region's coverage is the share of people carrying at least one allele that presents at
+    least one epitope in the construct, so the union of all the epitopes' alleles is what
+    counts. Per-epitope coverage is reported beside it to show which ones carry the construct
+    and which are only there for one region.
+    """
+    if pop is None:
+        return {"error": "No population file is loaded, so coverage cannot be computed."}
+    all_alleles = sorted({a for alleles in mapping.values() for a in alleles})
+    typed = [a for a in all_alleles if pop.resolve(a).source != "none"]
+    untyped = [a for a in all_alleles if a not in typed]
+    out = {"regions": [], "national": 0.0, "alleles": all_alleles, "alleles_without_data": untyped,
+           "n_epitopes": len(mapping),
+           "n_epitopes_without_alleles": sum(1 for v in mapping.values() if not v)}
+    if not typed:
+        out["error"] = ("None of the alleles given have frequency data, so coverage is 0. "
+                        "HLA-DP and mouse alleles are not typed in this file.")
+        return out
+    per = pop.per_region(typed)
+    out["national"] = round(float(per.get("national", 0.0)), 4)
+    # float(): these come back as numpy scalars, which json cannot serialise
+    out["regions"] = [{"region": r, "coverage": round(float(v), 4)}
+                      for r, v in per.items() if r != "national"]
+    out["per_epitope"] = sorted(
+        ({"peptide": p, "alleles": a,
+          "national": round(float(pop.per_region([x for x in a if pop.resolve(x).source != "none"]).get("national", 0.0)), 4)
+          if any(pop.resolve(x).source != "none" for x in a) else 0.0}
+         for p, a in mapping.items()),
+        key=lambda d: -d["national"])
+    # what one more epitope could add: the biggest single gain from an allele not yet covered
+    out["weakest_region"] = min(out["regions"], key=lambda d: d["coverage"]) if out["regions"] else None
+    return out

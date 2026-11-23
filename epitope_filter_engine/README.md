@@ -157,6 +157,33 @@ compared with UniProt's reference proteome of the host (human by default; `host_
   candidates are checked. The index takes about 8 s to build and a few hundred MB of memory for human, built on first use.
 - This checks the sequence of the peptide, not whether the host protein is expressed in a relevant tissue.
 
+## The Construct tab: assemble, check, screen
+
+Paste your epitopes (CTL, HTL, B-cell), pick an adjuvant and a tag, and get the assembled
+construct with its linkers chosen by type: EAAAK after the adjuvant, AAY between CTL epitopes,
+GPGPG between HTL, KK between B-cell, GGGS between blocks and before the tag. CTL epitopes are
+ordered so those ending in a favoured proteasomal P1 residue come first. Every piece is coloured
+and carries its coordinates.
+
+Then, in the same view:
+
+- **Properties and the design checklist** - length, MW, pI, GRAVY, aliphatic index and the
+  Guruprasad instability index (all 400 dipeptide weights), each with the usual threshold.
+- **Population coverage per region, not one number.** The share of people carrying at least one
+  allele that presents at least one epitope in the construct, for every region in the population
+  file, with the weakest region named, because that is where another epitope buys the most.
+  Each epitope's own coverage is listed beside it.
+- **Junction peptides.** Joining epitopes creates sequence that is in none of them: every window
+  crossing a seam. An unintended immunogenic, allergenic or toxic junction is the thing nobody
+  checks, so they are enumerated with their positions and what they span.
+- **Screen peptides** runs toxicity, allergenicity, allergen homology and IFN-gamma over the
+  epitopes, the junctions **and** the whole construct, and marks which is which.
+
+An **India HLA allele frequency file is shipped with the engine** (596 alleles, six regions:
+Central, East, North, South, West, Northeast), so coverage works on a fresh install with nothing
+to download. Point `population.weights_csv` at another weightage CSV to use a different
+population; the regions come from that file's own `f_<region>` columns.
+
 ## A wet-lab panel inside a normal run: new and known epitopes in one list
 
 The Pipeline form has an optional **wet-lab panel** box (same format as the Comparison tab).

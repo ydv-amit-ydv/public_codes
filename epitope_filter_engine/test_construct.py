@@ -179,6 +179,52 @@ eq(fa.count(">"), 2, "two records to submit")
 back, _ = cn.parse_vaxijen(">seq_1\n= 0.61 ( Probable ANTIGEN )\n>seq_2\n= 0.30 ( Probable NON-ANTIGEN )")
 eq([r["name"] for r in back], ["seq_1", "seq_2"], "names line up with the submitted FASTA")
 
+# ---------------------------------------------------------------- epitope + allele input
+
+m, order, w = cn.parse_epitope_alleles("""
+# a comment
+GILGFVFTL  HLA-A*02:01, HLA-A*02:06
+KLGGALQAK	HLA-A*03:01
+SIINFEKL
+GILGFVFTL  HLA-A*68:01
+BADsequence!
+""")
+eq(order, ["GILGFVFTL", "KLGGALQAK", "SIINFEKL"], "order kept, duplicates merged not repeated")
+eq(m["GILGFVFTL"], ["HLA-A*02:01", "HLA-A*02:06", "HLA-A*68:01"], "a repeated peptide merges its alleles")
+eq(m["KLGGALQAK"], ["HLA-A*03:01"], "tab separated works")
+eq(m["SIINFEKL"], [], "a peptide with no alleles is still kept")
+eq("NOALLELES" in cn.parse_epitope_alleles("NOALLELES")[0], False, "O is not an amino acid")
+assert any("non-standard" in x for x in w), w
+ok += 1
+eq(cn.parse_epitope_alleles("")[0], {}, "empty input")
+
+# ---------------------------------------------------------------- coverage report
+class _FakePop:
+    """Two regions, one allele with data and one without, so the arithmetic is checkable."""
+    label = "Test"
+    def resolve(self, a):
+        class R: pass
+        r = R(); r.source = "none" if a.startswith("HLA-DP") else "exact"; return r
+    def per_region(self, alleles):
+        return {"North": 0.5 if alleles else 0.0, "South": 0.25 if alleles else 0.0,
+                "national": 0.4 if alleles else 0.0}
+
+rep = cn.coverage_report({"AAA": ["HLA-A*02:01"], "BBB": ["HLA-DPA1*01:03/DPB1*04:01"], "CCC": []}, _FakePop())
+eq(rep["national"], 0.4, "national coverage")
+eq([r["region"] for r in rep["regions"]], ["North", "South"], "regions listed, national not among them")
+eq(rep["alleles_without_data"], ["HLA-DPA1*01:03/DPB1*04:01"], "untyped alleles reported, not counted")
+eq(rep["n_epitopes_without_alleles"], 1, "epitopes with no alleles are counted and reported")
+eq(rep["weakest_region"]["region"], "South", "weakest region identified")
+eq(isinstance(rep["national"], float), True, "plain floats, so it serialises to json")
+# an epitope whose only allele has no data contributes nothing rather than crashing
+eq([e for e in rep["per_epitope"] if e["peptide"] == "BBB"][0]["national"], 0.0, "untyped allele gives no coverage")
+eq(cn.coverage_report({"AAA": ["HLA-DPA1*01:03/DPB1*04:01"]}, _FakePop()).get("error") is not None, True,
+   "nothing typed at all is an explained zero, not a silent one")
+eq(cn.coverage_report({"AAA": ["HLA-A*02:01"]}, None).get("error") is not None, True, "no population file says so")
+
+# the instability table is the published one, all 400 pairs
+eq(len(cn.DIWV), 400, "DIWV is complete")
+
 # ---------------------------------------------------------------- screening wrappers
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "Screening_scripts"))
 import screen_runner as sr                                                       # noqa: E402

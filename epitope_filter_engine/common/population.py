@@ -189,7 +189,11 @@ def find_csv(root):
         hits = sorted(glob.glob(os.path.join(root, pat)))
         if hits:
             return hits[0]
-    return None
+    # none beside the tools: fall back to the one shipped with the engine, so coverage works
+    # out of the box instead of reporting "no population file" on a fresh install
+    shipped = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "data", "population", "india_hla_allele_weightage.csv")
+    return shipped if os.path.isfile(shipped) else None
 
 
 def load(cfg, root):

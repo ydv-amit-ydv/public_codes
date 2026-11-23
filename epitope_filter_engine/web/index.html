@@ -89,6 +89,7 @@ details>summary{cursor:pointer}
 <nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><button id="updbadge" class="b" style="display:none;font-size:11px;padding:1px 7px;margin-right:8px;background:#2b5c2b;border-color:#3d7a3d" title="A newer version of the engine is available">Update available</button><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Documentation</a>
 <button data-t="pipeline">Pipeline</button>
 <button data-t="single">Single model</button>
+<button data-t="construct">Construct</button>
 <button data-t="comparison">Comparison</button>
 <button data-t="projects">Projects</button>
 <button data-t="settings">Settings</button></nav>
@@ -254,6 +255,45 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
  </div>
 </div>
 
+<!-- ============================ CONSTRUCT ============================ -->
+<div class="pane" id="construct">
+ <div id="cform" class="fcol">
+  <h3>Epitopes <span class="q" data-h="c_epitopes">?</span></h3>
+  <div class="muted sm">One per line: <b>peptide</b>, then its <b>alleles</b> (optional, comma separated).
+   The alleles are what population coverage is computed from.</div>
+  <div class="sub">CTL (MHC I)</div>
+  <textarea id="c_ctl" rows="4" spellcheck="false" placeholder="GILGFVFTL  HLA-A*02:01, HLA-A*02:06
+KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
+  <div class="sub">HTL (MHC II)</div>
+  <textarea id="c_htl" rows="3" spellcheck="false" placeholder="PKYVKQNTLKLATGM  HLA-DRB1*15:01"></textarea>
+  <div class="sub">B-cell</div>
+  <textarea id="c_bcell" rows="2" spellcheck="false"></textarea>
+
+  <h3>Adjuvant and tag <span class="q" data-h="c_ends">?</span></h3>
+  <select id="c_adjuvant_pick" style="width:100%"></select>
+  <input type="text" id="c_adjuvant" placeholder="or paste an adjuvant sequence" style="width:100%;margin-top:4px">
+  <select id="c_ctag_pick" style="width:100%;margin-top:6px"></select>
+  <input type="text" id="c_ctag" placeholder="or paste a C-terminal tag" style="width:100%;margin-top:4px">
+
+  <h3>Options</h3>
+  <label class="i"><input type="checkbox" id="c_optimise" checked> Order CTL epitopes by proteasomal C-terminus <span class="q" data-h="c_optimise">?</span></label>
+  <div class="sm" style="margin-top:4px">Junction window sizes <span class="q" data-h="c_junction">?</span>
+   <input type="text" id="c_jlen" value="9, 15" style="width:90px"></div>
+  <div style="margin-top:10px"><button class="primary" id="c_build">Build construct</button>
+   <button class="b" id="c_screen">Screen peptides</button></div>
+  <div id="c_msg" class="bad sm"></div>
+  <div id="c_warn" class="warn sm"></div>
+ </div>
+ <div id="cout" class="ocol">
+  <div id="c_empty" class="muted">Paste your epitopes and press <b>Build construct</b>.<br><br>
+   You get the assembled sequence with its linkers, the physicochemical checklist, the population coverage of the
+   alleles your epitopes are presented by (per region, not just a single number), and the <b>junction peptides</b> &mdash;
+   the sequence the joining itself invents, which exists in none of your epitopes and is normally never checked.
+   <b>Screen peptides</b> then puts the epitopes and those junctions through toxicity, allergenicity and IFN-&gamma;.</div>
+  <div id="c_results" style="display:none"></div>
+ </div>
+</div>
+
 <!-- ============================ COMPARISON ============================ -->
 <div class="pane" id="comparison">
  <div id="kform" class="fcol">
@@ -398,6 +438,10 @@ const HELP = {
  validated_mode: "What a wet-lab <i>positive</i> does to the final list. <b>Flag only</b>: columns, no change to the ranking. <b>Prefer</b> (default): a validated epitope wins ties and peptides that failed sink to the bottom. <b>Bonus</b>: its priority score gains the amount below (the untouched score is kept as Priority_Score_Raw). <b>On top</b>: every validated epitope comes first, whatever it scored. The likelihood ratio against the panel is never folded into the score, because it is computed from the same predictors that made the score and would count the same evidence twice; whether a peptide worked in a wet lab is independent evidence, which is what these options act on.",
  validated_negative: "What a peptide that was tested and did <b>not</b> elicit a response does. <b>Flag only</b>, <b>lower its priority</b> by the amount below, or <b>drop it</b> from the candidates. Dropping is the honest default for vaccine design once a peptide has actually failed, but it is off by default because one negative assay is not always the last word.",
  validated_bonus: "How much the bonus or penalty moves a priority score (0-1, default 0.10). Priority scores are on a 0-1 scale, so 0.10 is a nudge and 0.50 is decisive.",
+ c_epitopes: "One epitope per line. After the peptide you may give the alleles it is presented by, comma separated \u2014 those are what population coverage is computed from, so an epitope with no alleles still goes into the construct but cannot contribute to coverage. Lines starting with # are ignored.",
+ c_ends: "An N-terminal adjuvant raises innate activation; a C-terminal tag makes the protein purifiable. Pick a common one or paste your own. The linkers between everything are chosen by type: EAAAK after the adjuvant, AAY between CTL epitopes, GPGPG between HTL, KK between B-cell, GGGS between blocks and before the tag.",
+ c_optimise: "Puts CTL epitopes whose last residue is L, V, I, F, M or A first. Those are favoured at P1 by the proteasome's chymotryptic-like site, so the epitope in front of the cut is liberated more cleanly. Turn it off to keep your own order.",
+ c_junction: "Joining epitopes creates peptides that are in none of them: every window crossing a seam is new sequence the assembly invented. These sizes are the windows checked \u2014 9 for class I, 15 for class II is the usual pair. They are listed so you can screen them, because an unintended immunogenic, allergenic or toxic junction is the thing nobody looks for.",
  k_panel: "Peptides whose wet-lab outcome you already know. One per line: <b>MHC class</b> (1/2 or I/II), the <b>epitope</b>, and its <b>alleles</b> comma separated (may be left empty, and a class II pair such as HLA-DQA1*05:01/DQB1*02:01 counts as one allele). Then optionally the <b>outcome</b> (positive / negative), the assay and a name. A bare list of peptides works too (every row counts as positive, and the class is taken from the length). A pasted IEDB export is understood by its header (Description, MHC - Allele Names, Qualitative Measure, Assay - Method) &mdash; keep its <i>Negative</i> rows: those are the comparison group.",
  k_queries: "The peptides you want judged, one per line or comma separated. They are scored in the same run as the panel, with the same alleles and models, so nothing differs between them except the peptide itself.",
  k_run: "Each class present in the panel runs its own comparison, so a peptide that could belong to either is never judged against a mixed baseline. Nothing is filtered and every model scores every peptide, otherwise the baseline would have holes. Peptides are used exactly as given and never cut: a validated epitope is a specific peptide.",
@@ -1260,6 +1304,123 @@ async function deepTest(m){
 loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
+
+/* ---------- construct assembler ---------- */
+const ADJUVANTS = {"": "(none)", "RS09": "RS09 - APPHALS, TLR4 agonist", "PADRE": "PADRE - universal helper epitope",
+                   "beta-defensin-3": "beta-defensin 3 - TLR1/2", "flagellin-D1": "flagellin D1 - TLR5"};
+const CTAGS = {"": "(none)", "His6": "His6 - HHHHHH", "His8": "His8", "Strep-II": "Strep-II - WSHPQFEK", "FLAG": "FLAG - DYKDDDDK"};
+let CDATA = null;
+$("c_adjuvant_pick").innerHTML = Object.entries(ADJUVANTS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+$("c_ctag_pick").innerHTML = Object.entries(CTAGS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+
+const ADJ_SEQ = {"RS09": "APPHALS", "PADRE": "AKFVAAWTLKAAA",
+  "beta-defensin-3": "GIINTLQKYYCRVRGGRCAVLSCLPKEEQIGKCSTRGRKCCRRKK",
+  "flagellin-D1": "MAQVINTNSLSLLTQNNLNKSQSALGTAIERLSSGLRINSAKDDAAGQAIANRFTANIKGLTQASRNANDGISIAQTTEGALNEINNNLQRVRELAVQSAN"};
+const CTAG_SEQ = {"His6": "HHHHHH", "His8": "HHHHHHHH", "Strep-II": "WSHPQFEK", "FLAG": "DYKDDDDK"};
+$("c_adjuvant_pick").onchange = () => { $("c_adjuvant").value = ADJ_SEQ[$("c_adjuvant_pick").value] || ""; };
+$("c_ctag_pick").onchange = () => { $("c_ctag").value = CTAG_SEQ[$("c_ctag_pick").value] || ""; };
+
+function constructParams(){
+  return {ctl: $("c_ctl").value, htl: $("c_htl").value, bcell: $("c_bcell").value,
+          adjuvant: $("c_adjuvant").value.trim(), adjuvant_key: $("c_adjuvant_pick").value,
+          ctag: $("c_ctag").value.trim(), ctag_key: $("c_ctag_pick").value,
+          optimise_ctl: $("c_optimise").checked,
+          junction_lengths: $("c_jlen").value.split(/[\s,]+/).filter(Boolean).map(Number)};
+}
+const PCT = v => (v == null ? "-" : (100 * v).toFixed(1) + "%");
+$("c_build").onclick = async () => {
+  $("c_msg").textContent = ""; $("c_build").disabled = true;
+  try {
+    const r = await fetch("api/construct/build", {method: "POST", headers: {"Content-Type": "application/json"},
+                                                  body: JSON.stringify(constructParams())});
+    const d = await r.json();
+    if (!r.ok) { $("c_msg").textContent = d.error || "could not build"; return; }
+    if (d.hint) { $("c_msg").textContent = d.hint; return; }
+    CDATA = d; renderConstruct(d);
+  } finally { $("c_build").disabled = false; }
+};
+function renderConstruct(d){
+  $("c_empty").style.display = "none";
+  const box = $("c_results"); box.style.display = "block";
+  $("c_warn").innerHTML = (d.warnings || []).map(esc).join("<br>");
+  const COLOR = {adjuvant: "#2e7d32", epitope: "#1565c0", linker: "#8e6a00", tag: "#6a1b9a"};
+  let h = `<div class="card"><b>Construct</b> &middot; ${d.properties.length} aa &middot; ${(d.properties.mw/1000).toFixed(1)} kDa
+    <span class="muted sm">&middot; ${d.counts.ctl} CTL, ${d.counts.htl} HTL, ${d.counts.bcell} B-cell</span>
+    <div style="font-family:Consolas,monospace;word-break:break-all;margin:8px 0;line-height:1.6">` +
+    d.parts.map(p => `<span title="${esc(p.label)} (${p.start}-${p.end})" style="color:${COLOR[p.kind] || "#888"};${p.kind=="linker"?"opacity:.75":"font-weight:600"}">${esc(p.seq)}</span>`).join("") +
+    `</div><button class="b" id="c_copy">Copy sequence</button>
+     <a class="dl" id="c_fasta" href="#">Download FASTA</a></div>`;
+
+  h += `<div class="card"><b>Properties</b><table style="margin-top:6px">
+     <tr><th>Length</th><th>MW</th><th>pI</th><th>GRAVY</th><th>Aliphatic</th><th>Instability</th></tr>
+     <tr><td>${d.properties.length} aa</td><td>${f0(d.properties.mw)} Da</td><td>${d.properties.pi}</td>
+         <td>${d.properties.gravy}</td><td>${d.properties.aliphatic_index}</td><td>${d.properties.instability}</td></tr></table>` +
+    d.verdicts.map(v => `<div class="c ${v.ok ? "ok" : "bad"}">${v.ok ? "&#10003;" : "&#10007;"} ${esc(v.text)}</div>`).join("") + "</div>";
+
+  const c = d.coverage || {};
+  h += `<div class="card"><b>Population coverage</b> <span class="muted sm">${esc(d.population || "no population file")}</span>`;
+  if (c.error) h += `<div class="bad sm">${esc(c.error)}</div>`;
+  else {
+    h += `<div class="sm" style="margin:4px 0">Share of people carrying at least one allele that presents at least one
+          epitope in this construct. <b>National ${PCT(c.national)}</b>.</div>
+      <table><tr><th>Region</th><th>Coverage</th><th></th></tr>` +
+      (c.regions || []).map(r => `<tr><td>${esc(r.region)}</td><td>${PCT(r.coverage)}</td>
+        <td style="width:220px"><div class="bar thin"><i style="width:${(100*r.coverage).toFixed(1)}%"></i></div></td></tr>`).join("") +
+      "</table>";
+    if (c.weakest_region) h += `<div class="sm muted">Weakest region: <b>${esc(c.weakest_region.region)}</b> at ${PCT(c.weakest_region.coverage)} &mdash; an epitope on an allele common there adds the most.</div>`;
+    if (c.n_epitopes_without_alleles) h += `<div class="warn sm">${c.n_epitopes_without_alleles} epitope(s) have no alleles given, so they add nothing to coverage.</div>`;
+    if ((c.alleles_without_data || []).length) h += `<div class="muted sm">No frequency data (not counted): ${c.alleles_without_data.map(esc).join(", ")}</div>`;
+    h += `<details style="margin-top:6px"><summary class="muted">Coverage of each epitope on its own</summary><table>
+      <tr><th>Epitope</th><th>Alleles</th><th>National</th></tr>` +
+      (c.per_epitope || []).map(e => `<tr><td><code>${esc(e.peptide)}</code></td><td class="sm">${e.alleles.map(esc).join(", ") || "-"}</td><td>${PCT(e.national)}</td></tr>`).join("") +
+      "</table></details>";
+  }
+  h += "</div>";
+
+  const js_ = d.junction_summary || {};
+  h += `<div class="card"><b>Junction peptides</b> <span class="muted sm">sequence the joining invented: ${js_.n || 0} windows, ${js_.unique_peptides || 0} distinct</span>
+    <div class="sm" style="margin:4px 0">These are in none of your epitopes. An unintended immunogenic, allergenic or toxic
+    junction is the thing nobody checks, so screen them.</div>
+    <details><summary class="muted">Show them</summary><table><tr><th>Peptide</th><th>Position</th><th>Spans</th></tr>` +
+    (d.junctions || []).slice(0, 300).map(j => `<tr><td><code>${esc(j.peptide)}</code></td><td>${j.start}-${j.end}</td><td class="sm">${esc(j.seam)}</td></tr>`).join("") +
+    `</table>${(d.junctions || []).length > 300 ? "<div class='muted sm'>first 300 shown</div>" : ""}</details></div>
+    <div class="card" id="c_screenbox" style="display:none"></div>`;
+  box.innerHTML = h;
+  $("c_copy").onclick = () => navigator.clipboard.writeText(d.sequence);
+  $("c_fasta").onclick = e => {
+    e.preventDefault();
+    const blob = new Blob([">construct\n" + d.sequence.replace(/(.{60})/g, "$1\n") + "\n"], {type: "text/plain"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "construct.fasta"; a.click();
+  };
+}
+$("c_screen").onclick = async () => {
+  if (!CDATA) { $("c_msg").textContent = "Build the construct first."; return; }
+  const peps = [...new Set([...CDATA.parts.filter(p => p.kind == "epitope").map(p => p.seq),
+                            ...(CDATA.junctions || []).map(j => j.peptide), CDATA.sequence])];
+  $("c_screen").disabled = true; $("c_msg").textContent = `screening ${peps.length} peptides...`;
+  try {
+    const r = await fetch("api/construct/screen", {method: "POST", headers: {"Content-Type": "application/json"},
+                                                   body: JSON.stringify({peptides: peps})});
+    const d = await r.json();
+    if (!r.ok) { $("c_msg").textContent = d.error || "screening failed"; return; }
+    $("c_msg").textContent = "";
+    const box = $("c_screenbox"); box.style.display = "block";
+    const isJunction = new Set((CDATA.junctions || []).map(j => j.peptide));
+    let h = `<b>Safety screens</b> <span class="muted sm">${d.rows.length} peptides: your epitopes, the junctions, and the whole construct</span>`;
+    h += (d.notes || []).map(n => `<div class="warn sm">${esc(n)}</div>`).join("");
+    const bad = Object.keys(d.flagged || {});
+    h += `<div class="sm" style="margin:6px 0">${bad.length ? `<span class="bad"><b>${bad.length} flagged</b></span>` : "<span class='ok'><b>Nothing flagged</b></span>"}</div>`;
+    h += "<table><tr><th>Peptide</th><th>What</th>" + d.columns.filter(c => c != "Peptide").map(c => `<th>${esc(c)}</th>`).join("") + "</tr>" +
+      d.rows.map(r => {
+        const flagged = (d.flagged || {})[r.Peptide];
+        const what = r.Peptide == CDATA.sequence ? "whole construct" : isJunction.has(r.Peptide) ? "junction" : "epitope";
+        return `<tr class="${flagged ? "bad" : ""}"><td><code>${esc(String(r.Peptide).slice(0, 40))}${String(r.Peptide).length > 40 ? "..." : ""}</code></td><td class="sm">${what}</td>` +
+          d.columns.filter(c => c != "Peptide").map(c => `<td class="sm">${r[c] === null || r[c] === undefined ? "-" : esc(String(r[c]))}</td>`).join("") + "</tr>";
+      }).join("") + "</table>";
+    box.innerHTML = h;
+    box.scrollIntoView({block: "nearest"});
+  } finally { $("c_screen").disabled = false; }
+};
 
 /* ---------- optional wet-lab panel in the pipeline form ---------- */
 let wpTimer = null;
