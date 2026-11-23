@@ -157,6 +157,26 @@ compared with UniProt's reference proteome of the host (human by default; `host_
   candidates are checked. The index takes about 8 s to build and a few hundred MB of memory for human, built on first use.
 - This checks the sequence of the peptide, not whether the host protein is expressed in a relevant tissue.
 
+## One pipeline: results -> basket -> construct -> web engines -> back
+
+The tabs are not separate tools. An epitope found in a run reaches a construct without being
+copied by hand:
+
+1. **Collect.** A class I or class II results table has a **+ Basket** button that takes the rows
+   currently shown - after your filter and the "only passing" tick - with the alleles each
+   peptide binds. The basket survives switching tabs and reloading, because a construct is
+   usually assembled from several runs, and the same epitope added twice is still one entry.
+2. **Load.** The Construct tab shows what is in the basket and drops it into the CTL, HTL and
+   B-cell boxes, each line already carrying its alleles, which is what coverage is computed from.
+3. **Out to the web engines.** VaxiJen and AllerTOP have no API and no offline version, so
+   **Export FASTA of the epitopes** writes them named `s1, s2 ...` (and copies them to the
+   clipboard). Run them there.
+4. **Back in.** Paste the result page into the box and press **Read results**: the scores are
+   lined up with the peptides they came from by those names, and the page says how many matched.
+   **Drop the non-antigens** then removes everything below the threshold from the boxes - 0.4 is
+   VaxiJen's own for the protein model, 0.5 for tumour and some virus models.
+5. **Build**, with the construct, its coverage and its junctions recomputed from what survived.
+
 ## The Construct tab: assemble, check, screen
 
 Paste your epitopes (CTL, HTL, B-cell), pick an adjuvant and a tag, and get the assembled

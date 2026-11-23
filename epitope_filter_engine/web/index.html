@@ -86,7 +86,7 @@ details>summary{cursor:pointer}
 #pj_tbl td{white-space:normal;vertical-align:top}#pj_tbl .act button{margin:1px}
 @media (max-width:820px){.pane.on{flex-direction:column}#form{width:100%;border-right:0;border-bottom:1px solid var(--line)}}
 </style></head><body>
-<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><button id="updbadge" class="b" style="display:none;font-size:11px;padding:1px 7px;margin-right:8px;background:#2b5c2b;border-color:#3d7a3d" title="A newer version of the engine is available">Update available</button><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Documentation</a>
+<nav><b>Epitope Filter Engine</b> <span id="ver" style="font-size:11px;opacity:.7;margin-right:6px"></span><button id="basketbadge" class="b" style="display:none;font-size:11px;padding:1px 7px;margin-right:8px" title="Epitopes collected for the Construct tab">Basket</button><button id="updbadge" class="b" style="display:none;font-size:11px;padding:1px 7px;margin-right:8px;background:#2b5c2b;border-color:#3d7a3d" title="A newer version of the engine is available">Update available</button><a href="guide" target="_blank" style="font-size:12px;color:#9ec1ff;margin-right:10px">Documentation</a>
 <button data-t="pipeline">Pipeline</button>
 <button data-t="single">Single model</button>
 <button data-t="construct">Construct</button>
@@ -258,6 +258,12 @@ MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF</textarea>
 <!-- ============================ CONSTRUCT ============================ -->
 <div class="pane" id="construct">
  <div id="cform" class="fcol">
+  <div class="card" id="c_basketcard" style="display:none;padding:8px;margin-bottom:8px">
+   <b>Basket</b> <span class="muted sm" id="c_basketinfo"></span>
+   <div style="margin-top:6px"><button class="b" id="c_basketload">Load into the boxes</button>
+    <button class="b" id="c_basketclear">Empty</button></div>
+  </div>
+
   <h3>Epitopes <span class="q" data-h="c_epitopes">?</span></h3>
   <div class="muted sm">One per line: <b>peptide</b>, then its <b>alleles</b> (optional, comma separated).
    The alleles are what population coverage is computed from.</div>
@@ -281,6 +287,17 @@ KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
    <input type="text" id="c_jlen" value="9, 15" style="width:90px"></div>
   <div style="margin-top:10px"><button class="primary" id="c_build">Build construct</button>
    <button class="b" id="c_screen">Screen peptides</button></div>
+  <h3>Web engines <span class="q" data-h="c_web">?</span></h3>
+  <div class="muted sm">VaxiJen and AllerTOP have no offline version. Export the epitopes, run them there,
+   paste the result back here.</div>
+  <div style="margin-top:6px"><button class="b" id="c_exportfa">Export FASTA of the epitopes</button>
+   <a href="https://www.ddg-pharmfac.net/vaxijen/VaxiJen/VaxiJen.html" target="_blank" class="sm" style="margin-left:6px;color:#9ec1ff">open VaxiJen</a></div>
+  <textarea id="c_vaxijen" rows="4" spellcheck="false" style="margin-top:6px" placeholder="paste VaxiJen's result page here"></textarea>
+  <div class="sm">threshold <input type="number" id="c_vjthr" value="0.4" step="0.05" min="0" max="1" style="width:70px">
+   <button class="b" id="c_vjparse">Read results</button>
+   <button class="b" id="c_vjdrop">Drop the non-antigens</button></div>
+  <div id="c_vjinfo" class="sm muted"></div>
+
   <div id="c_msg" class="bad sm"></div>
   <div id="c_warn" class="warn sm"></div>
  </div>
@@ -438,6 +455,8 @@ const HELP = {
  validated_mode: "What a wet-lab <i>positive</i> does to the final list. <b>Flag only</b>: columns, no change to the ranking. <b>Prefer</b> (default): a validated epitope wins ties and peptides that failed sink to the bottom. <b>Bonus</b>: its priority score gains the amount below (the untouched score is kept as Priority_Score_Raw). <b>On top</b>: every validated epitope comes first, whatever it scored. The likelihood ratio against the panel is never folded into the score, because it is computed from the same predictors that made the score and would count the same evidence twice; whether a peptide worked in a wet lab is independent evidence, which is what these options act on.",
  validated_negative: "What a peptide that was tested and did <b>not</b> elicit a response does. <b>Flag only</b>, <b>lower its priority</b> by the amount below, or <b>drop it</b> from the candidates. Dropping is the honest default for vaccine design once a peptide has actually failed, but it is off by default because one negative assay is not always the last word.",
  validated_bonus: "How much the bonus or penalty moves a priority score (0-1, default 0.10). Priority scores are on a 0-1 scale, so 0.10 is a nudge and 0.50 is decisive.",
+ c_web: "VaxiJen (antigenicity) and AllerTOP (allergenicity) are web-only: no API, no offline version. So the loop is export, run there, paste back. <b>Export FASTA</b> writes your epitopes with the names s1, s2 ... ; keep those names and <b>Read results</b> can line the scores up with the peptides they came from. <b>Drop the non-antigens</b> then removes the ones below the threshold from the boxes \u2014 0.4 is VaxiJen's own threshold for the protein model, 0.5 for tumour and some virus models.",
+ c_basket: "Epitopes you ticked in a run's results. The basket survives switching tabs and reloading, so you can look through several runs and collect as you go, then load the lot into the boxes here.",
  c_epitopes: "One epitope per line. After the peptide you may give the alleles it is presented by, comma separated \u2014 those are what population coverage is computed from, so an epitope with no alleles still goes into the construct but cannot contribute to coverage. Lines starting with # are ignored.",
  c_ends: "An N-terminal adjuvant raises innate activation; a C-terminal tag makes the protein purifiable. Pick a common one or paste your own. The linkers between everything are chosen by type: EAAAK after the adjuvant, AAY between CTL epitopes, GPGPG between HTL, KK between B-cell, GGGS between blocks and before the tag.",
  c_optimise: "Puts CTL epitopes whose last residue is L, V, I, F, M or A first. Those are favoured at P1 by the proteasome's chymotryptic-like site, so the epitope in front of the cut is liberated more cleanly. Turn it off to keep your own order.",
@@ -901,7 +920,10 @@ function setMain(m){
   document.querySelectorAll("#maintabs button").forEach(b => b.classList.toggle("on", b.dataset.m == m));
   const cls = m == "1" || m == "2";
   $("subtabs").innerHTML = cls ? [["candidates", "Candidates"], ["peptides", "All peptides"], ["master", "Every value (peptide × allele)"]].map(([k, l]) => `<button class="b" data-s="${k}">${l}</button>`).join("") : "";
-  document.querySelectorAll("#subtabs button").forEach(b => b.onclick = () => { SUB = b.dataset.s; loadTable(); });
+  if (cls) $("subtabs").insertAdjacentHTML("beforeend",
+    '<button class="b" id="tobasket" title="Collect the rows shown, with their best alleles, for the Construct tab">+ Basket</button>');
+  document.querySelectorAll("#subtabs button[data-s]").forEach(b => b.onclick = () => { SUB = b.dataset.s; loadTable(); });
+  if ($("tobasket")) $("tobasket").onclick = addShownToBasket;
   const tbl = m == "regions" || cls;
   $("tools").style.display = tbl ? "" : "none"; $("tnote").style.display = tbl ? "" : "none"; $("tblwrap").style.display = tbl ? "" : "none";
   $("insight").style.display = m == "insight" ? "" : "none"; $("downloads").style.display = m == "downloads" ? "" : "none";
@@ -1305,6 +1327,107 @@ loadPerf(); loadCfg(); checkAll(false);
 show(["pipeline", "single", "projects", "settings"].includes(store.get("tab")) ? store.get("tab") : "pipeline");
 fetch("api/version").then(r=>r.json()).then(d=>{$("ver").textContent="v"+d.version.split(" ")[0]; $("ver").title=d.version;}).catch(()=>{});
 
+/* ---------- the epitope basket: results -> construct ---------- */
+//
+// One place to collect epitopes while looking through runs. It survives tab switches and
+// reloads, which is the whole point: a construct is usually assembled from several runs.
+const BASKET = {
+  get(){ try { return JSON.parse(store.get("basket") || "[]"); } catch(e) { return []; } },
+  set(v){ store.set("basket", JSON.stringify(v)); paintBasket(); },
+  add(items){
+    const b = this.get(), seen = new Set(b.map(x => x.peptide + "|" + x.cls));
+    let added = 0;
+    for (const it of items) {
+      const key = it.peptide + "|" + it.cls;
+      if (seen.has(key)) continue;
+      seen.add(key); b.push(it); added++;
+    }
+    this.set(b); return added;
+  },
+  clear(){ this.set([]); }
+};
+function paintBasket(){
+  const b = BASKET.get();
+  const n1 = b.filter(x => x.cls == 1).length, n2 = b.filter(x => x.cls == 2).length;
+  const badge = $("basketbadge");
+  if (badge) { badge.textContent = b.length ? `Basket ${b.length}` : "Basket"; badge.style.display = b.length ? "" : "none"; }
+  if ($("c_basketcard")) {
+    $("c_basketcard").style.display = b.length ? "" : "none";
+    $("c_basketinfo").textContent = `${b.length} epitope(s): ${n1} class I, ${n2} class II`;
+  }
+}
+/* the class I/II tables carry the best allele per peptide; that is what coverage needs */
+function rowsToBasket(rows, cls){
+  return rows.map(r => ({
+    peptide: String(r.Peptide || "").toUpperCase(), cls: +cls,
+    alleles: [r.Best_Allele, ...(String(r.Alleles_Binder || r.Alleles_Candidate || "").split(/[,;]\s*/))]
+             .filter(a => a && a != "undefined").map(a => String(a).trim())
+  })).filter(x => x.peptide);
+}
+function addShownToBasket(){
+  if (!DATA || !DATA.rows || !(MAIN == "1" || MAIN == "2")) { alert("Open a class I or class II table first."); return; }
+  let rows = DATA.rows.slice();
+  if ($("onlyPass").checked && $("onlylab").style.display != "none") rows = rows.filter(passing);
+  const q = $("tfilter").value.trim().toLowerCase();
+  if (q) rows = rows.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q)));
+  const n = BASKET.add(rowsToBasket(rows, MAIN));
+  $("tnote").textContent = `${n} added to the basket (${BASKET.get().length} in all). Open the Construct tab to use them.`;
+}
+$("c_basketload") && ($("c_basketload").onclick = () => {
+  const b = BASKET.get(), line = x => x.peptide + (x.alleles.length ? "  " + [...new Set(x.alleles)].join(", ") : "");
+  const c1 = b.filter(x => x.cls == 1).map(line), c2 = b.filter(x => x.cls == 2).map(line);
+  if (c1.length) $("c_ctl").value = ($("c_ctl").value.trim() ? $("c_ctl").value.trim() + "\n" : "") + c1.join("\n");
+  if (c2.length) $("c_htl").value = ($("c_htl").value.trim() ? $("c_htl").value.trim() + "\n" : "") + c2.join("\n");
+  $("c_msg").textContent = `${c1.length} class I and ${c2.length} class II epitopes loaded.`;
+});
+$("c_basketclear") && ($("c_basketclear").onclick = () => BASKET.clear());
+
+/* ---------- web engines: export, paste back ---------- */
+function constructEpitopes(){
+  const out = [];
+  for (const id of ["c_ctl", "c_htl", "c_bcell"])
+    for (const line of $(id).value.split("\n")) {
+      const pep = line.trim().split(/[\s,;]+/)[0];
+      if (pep && !pep.startsWith("#")) out.push(pep.toUpperCase());
+    }
+  return [...new Set(out)];
+}
+$("c_exportfa") && ($("c_exportfa").onclick = () => {
+  const peps = constructEpitopes();
+  if (!peps.length) { $("c_msg").textContent = "No epitopes to export."; return; }
+  const fa = peps.map((p, i) => `>s${i + 1}\n${p}`).join("\n") + "\n";
+  const blob = new Blob([fa], {type: "text/plain"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "epitopes.fasta"; a.click();
+  navigator.clipboard && navigator.clipboard.writeText(fa);
+  $("c_vjinfo").textContent = `${peps.length} epitopes exported (also copied to the clipboard), named s1..s${peps.length}. Keep those names.`;
+});
+let VJ = [];
+$("c_vjparse") && ($("c_vjparse").onclick = async () => {
+  const peps = constructEpitopes();
+  const r = await fetch("api/construct/vaxijen", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({text: $("c_vaxijen").value, peptides: peps, threshold: +$("c_vjthr").value || 0.4})});
+  const d = await r.json();
+  VJ = d.rows || [];
+  const anti = VJ.filter(x => x.antigen).length;
+  $("c_vjinfo").innerHTML = `${VJ.length} result(s) read, ${d.matched} matched to your epitopes &middot; <b>${anti} antigenic</b>, ${VJ.length - anti} not.`
+    + (d.warnings || []).map(w => `<div class="warn sm">${esc(w)}</div>`).join("");
+});
+$("c_vjdrop") && ($("c_vjdrop").onclick = () => {
+  if (!VJ.length) { $("c_vjinfo").textContent = "Read some results first."; return; }
+  const drop = new Set(VJ.filter(x => !x.antigen && x.peptide).map(x => x.peptide));
+  if (!drop.size) { $("c_vjinfo").textContent = "Nothing to drop: every matched epitope is antigenic."; return; }
+  let n = 0;
+  for (const id of ["c_ctl", "c_htl", "c_bcell"]) {
+    const kept = $(id).value.split("\n").filter(l => {
+      const pep = l.trim().split(/[\s,;]+/)[0].toUpperCase();
+      if (pep && drop.has(pep)) { n++; return false; }
+      return true;
+    });
+    $(id).value = kept.join("\n");
+  }
+  $("c_vjinfo").textContent = `${n} non-antigenic epitope(s) removed from the boxes.`;
+});
+
 /* ---------- construct assembler ---------- */
 const ADJUVANTS = {"": "(none)", "RS09": "RS09 - APPHALS, TLR4 agonist", "PADRE": "PADRE - universal helper epitope",
                    "beta-defensin-3": "beta-defensin 3 - TLR1/2", "flagellin-D1": "flagellin D1 - TLR5"};
@@ -1591,6 +1714,8 @@ async function loadComparison(d){
   $("k_body").innerHTML = h;
 }
 buildComparison();
+paintBasket();
+$("basketbadge").onclick = () => document.querySelector('nav button[data-t=construct]').click();
 
 /* ---------- self update ---------- */
 function updRender(d, msg){

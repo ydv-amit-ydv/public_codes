@@ -539,6 +539,27 @@ def construct_build():
         return jsonify(hint=str(e))
 
 
+@main.post("/api/construct/vaxijen")
+def construct_vaxijen():
+    """Parse what VaxiJen's web page gave back, and line it up with the peptides sent.
+
+    VaxiJen has no API and no offline version, so the loop is: export FASTA here, run it
+    there, paste the result back. This is the second half of that.
+    """
+    body = request.get_json(force=True) or {}
+    rows, warns = construct.parse_vaxijen(body.get("text", ""), float(body.get("threshold", 0.4) or 0.4))
+    sent = [str(p).strip().upper() for p in (body.get("peptides") or []) if str(p).strip()]
+    # VaxiJen echoes the FASTA names, so s1..sN map straight back to what was sent
+    by_name = {f"s{i}": p for i, p in enumerate(sent, 1)}
+    for r in rows:
+        r["peptide"] = by_name.get(r["name"], "")
+    matched = sum(1 for r in rows if r["peptide"])
+    if sent and not matched and rows:
+        warns.append(f"None of the {len(rows)} result(s) matched the {len(sent)} peptide(s) exported from here. "
+                     f"Was the FASTA from the Export button, with its s1, s2 ... names kept?")
+    return jsonify(rows=rows, warnings=warns, matched=matched, sent=len(sent))
+
+
 @main.post("/api/construct/screen")
 def construct_screen():
     """Run the safety screens over the construct, its epitopes and its junction peptides."""
