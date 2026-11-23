@@ -460,8 +460,16 @@ nnalign_fix() {
     return 0
   fi
   info "NN-align crashes on this CPU (exit $rc) - that is what makes CD4episcore fail"
-  if ! command -v qemu-x86_64 >/dev/null 2>&1; then
-    info "  install qemu and repair again:  sudo apt install -y qemu-user"
+  # qemu-user installs qemu-x86_64; qemu-user-static installs qemu-x86_64-static. Either does.
+  local qemu=""
+  for q in qemu-x86_64 qemu-x86_64-static; do
+    command -v "$q" >/dev/null 2>&1 && { qemu="$q"; break; }
+  done
+  if [ -z "$qemu" ]; then
+    info "  qemu is not installed, so the binaries cannot be wrapped yet. Run:"
+    info "      sudo apt install -y qemu-user"
+    info "      bash install_tools.sh --only iedb2"
+    info "  (the second command is quick: the bundle is already downloaded)"
     return 0
   fi
   n=0
@@ -470,11 +478,11 @@ nnalign_fix() {
     case "$f" in *.real) continue ;; esac
     file "$f" 2>/dev/null | grep -q ELF || continue
     mv "$f" "$f.real" || continue
-    printf '#!/bin/sh\nexec qemu-x86_64 "$(dirname "$0")/%s.real" "$@"\n' "$(basename "$f")" > "$f"
+    printf '#!/bin/sh\nexec %s "$(dirname "$0")/%s.real" "$@"\n' "$qemu" "$(basename "$f")" > "$f"
     chmod +x "$f"
     n=$((n + 1))
   done
-  info "  wrapped $n NN-align binarie(s) with qemu-x86_64 (INSTALL.md 8.1b)"
+  info "  wrapped $n NN-align binarie(s) with $qemu (INSTALL.md 8.1b)"
 }
 
 # ---------------------------------------------------------------- run

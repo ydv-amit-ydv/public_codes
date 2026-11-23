@@ -525,6 +525,17 @@ grep -n "R_path =" src/imscore.py        # must show exactly one .decode()
 
 Run that `sed` **once only**.
 
+**(b) NN-align's binaries segfault on very new Intel CPUs.** *The installer does this for you
+when qemu is present: it runs one of the binaries, and only if it is killed does it wrap them.
+If qemu is missing it says so. In that case:*
+
+```bash
+sudo apt install -y qemu-user
+bash install_tools.sh --only iedb2      # quick: the bundle is already downloaded
+```
+
+*The rest of this entry is what that does, for a manual install.*
+
 **(b) NN-align's binaries segfault on very new Intel CPUs.** The shipped
 `src/nnalign/bin/Linux_x86_64/*` are statically linked for kernel 2.6 and crash
 ("Segmentation fault" before "Uploaded 0 peptides"). Run them under qemu:
