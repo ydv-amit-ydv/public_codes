@@ -7,7 +7,8 @@ table of EL / BA scores and binder calls.
 NetMHCpan itself is DTU-licensed and is NOT in this repository. Point
 models.netmhcpan.home in engine_config.json at your own install (see README.md).
 """
-import os, re, shlex, shutil, subprocess, sys, tempfile, threading
+import os
+import re, shlex, shutil, subprocess, sys, tempfile, threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
@@ -45,13 +46,30 @@ def nm_env():
 app = Flask(__name__)
 
 
+_ALLELE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9:_.*]+$|^H-2-[A-Za-z0-9]+$")
+
+
 @lru_cache(maxsize=4)
 def _list_alleles(path):
+    """Alleles NetMHCpan knows, from `-listMHC`.
+
+    Only names that look like alleles are kept, and a list that comes back implausibly short
+    is treated as no list at all. Taking the first token of every line unfiltered meant that
+    if the command printed usage text, a tcsh warning or any other noise, the result was a
+    non-empty set of rubbish that matched nothing - and the caller then refused the run with
+    "none of the selected alleles is known to NetMHCpan", which is true of a rubbish list and
+    says nothing about the alleles.
+    """
     try:
         r = subprocess.run([path, "-listMHC"], capture_output=True, text=True, env=nm_env())
     except OSError:                       # not installed / wrong path in Settings
         return []
-    return [l.split()[0] for l in r.stdout.splitlines() if l.strip() and not l.startswith("#")]
+    names = [l.split()[0] for l in r.stdout.splitlines() if l.strip() and not l.startswith("#")]
+    # The shape test is the filter: "usage:", "ERROR", a traceback line or a library warning
+    # have no allele shape and drop out. No minimum count, because a small list is legitimate
+    # (a cut-down install, or the stub the tests run against) and discarding it would throw
+    # away a real answer.
+    return [n for n in names if _ALLELE_RE.match(n)]
 
 
 def list_alleles():

@@ -920,6 +920,20 @@ try:
 finally:
     _runs.BUILD = _saved
 
+# ---- NetMHCpan's allele list: noise must not become "none of your alleles is known" ----------------------------------
+from MHC1.BA_EL_scripts import netmhcpan_app as _nmapp                           # noqa: E402
+for _name in ("HLA-A01:01", "HLA-A*01:01", "H-2-Kb", "BoLA-D18.4", "Mamu-A01", "DLA-8803401"):
+    assert _nmapp._ALLELE_RE.match(_name), _name
+for _junk in ("usage:", "ERROR", "Traceback", "libtinfo.so.6:", "setenv:", "/usr/bin/tcsh:", "-listMHC"):
+    assert not _nmapp._ALLELE_RE.match(_junk), _junk
+# a selection that matches nothing in the list means the LIST is wrong, not the alleles, so the
+# run goes ahead with a warning instead of being refused: 27 standard alleles do not all stop
+# being known at once, and that refusal is what a noisy -listMHC caused
+_al = ["HLA-A*01:01", "HLA-A*02:01"]
+import pipeline as _pl                                                            # noqa: E402
+_nm_ok, _bm_ok, _notes = _pl._supported(_al, {k: False for k in _pl.MODEL_KEYS} | {"netmhcpan": True})
+assert _nm_ok, "alleles must survive a list that matches nothing"
+
 # ---- a wet-lab panel riding along in a normal scan -------------------------------------------------------------------
 _wet = {**params, "filters": {}, "panel": "1, GILGFVFTL,, positive\n1, AAAAAAAAA,, negative"}
 d = wait_job(c.post("/api/pipeline/run", json=_wet).get_json()["id"])

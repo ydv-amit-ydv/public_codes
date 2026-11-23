@@ -63,6 +63,11 @@ def health_netmhcpan(deep):
         got = (not hit.empty) and "SB" in str(hit["NMP_BindLevel"].iloc[0])
         checks.append(_check("GILGFVFTL / A02:01 -> strong binder", got,
                              "ok" if got else "unexpected or empty result"))
+    n_known = len(netmhcpan_app.list_alleles())
+    # a name count makes the "knows none of your alleles" case diagnosable at a glance
+    checks.append(_check("allele list (-listMHC)", n_known > 0,
+                         f"{n_known} alleles" if n_known else
+                         "no usable names came back; alleles are passed straight to NetMHCpan"))
     return checks
 
 

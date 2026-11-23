@@ -97,6 +97,14 @@ def _supported(alleles, m):
     notes = []
     known = set(nm.list_alleles())
     nm_ok = [a for a in alleles if not known or allele_lib.netmhcpan_name(a) in known]
+    # Matching NOTHING means the list is wrong, not the selection: 27 standard class I alleles
+    # do not all stop being known at once. Rather than refuse the run, distrust the list and
+    # let NetMHCpan itself reject anything it really does not take.
+    if known and not nm_ok and alleles:
+        notes.append(f"NetMHCpan's own allele list ({len(known)} names) matched none of the "
+                     f"{len(alleles)} selected alleles, so it is being ignored and the alleles "
+                     f"are passed through. If NetMHCpan then rejects one, its message says which.")
+        nm_ok = list(alleles)
     bm_ok = [a for a in alleles if a.startswith("HLA-")]
     if m["netmhcpan"] and len(nm_ok) < len(alleles):
         notes.append("NetMHCpan does not know: " + ", ".join(a for a in alleles if a not in nm_ok))
