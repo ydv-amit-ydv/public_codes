@@ -293,6 +293,35 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json({"ok": True})
 
 
+def open_browser(url: str) -> None:
+    """Open the app in a browser. Under WSL use the Windows browser; never fail or spam errors."""
+    import subprocess
+    try:
+        if "microsoft" in Path("/proc/version").read_text().lower():
+            for cmd in (["wslview", url], ["cmd.exe", "/c", "start", "", url], ["explorer.exe", url]):
+                try:
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return
+                except FileNotFoundError:
+                    continue
+    except OSError:
+        pass
+    # quiet the "x-www-browser: not found" noise that xdg-open prints on systems without a browser
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    saved = os.dup(2)
+    try:
+        os.dup2(devnull, 2)
+        ok = webbrowser.open(url)
+    except Exception:
+        ok = False
+    finally:
+        os.dup2(saved, 2)
+        os.close(devnull)
+        os.close(saved)
+    if not ok:
+        print(f"(Could not open a browser automatically - open {url} yourself.)")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Home Designer local server")
     ap.add_argument("--host", default="127.0.0.1", help="interface to bind (default 127.0.0.1; use 0.0.0.0 for LAN)")
@@ -303,14 +332,11 @@ def main():
     DESIGNS.mkdir(parents=True, exist_ok=True)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '') else args.host}:{args.port}/"
-    print(f"Home Designer running at {url}")
+    print(f"Home Designer running at {url}   <- open this in your browser")
     print(f"Designs are saved in {DESIGNS}")
     print("Press Ctrl+C to stop.")
     if args.open:
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
+        open_browser(url)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
