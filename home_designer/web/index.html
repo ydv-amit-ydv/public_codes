@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Designer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-view="split">
+<header id="topbar">
+  <div class="brand">🏠 <b>Home Designer</b></div>
+  <input id="design-name" type="text" title="Design name" spellcheck="false">
+  <span id="save-state" class="muted"></span>
+  <div class="group">
+    <button id="btn-new" class="btn" title="New design">New</button>
+    <button id="btn-open" class="btn" title="Open a saved design">Open</button>
+    <button id="btn-save" class="btn primary" title="Save (Ctrl+S)">Save</button>
+    <button id="btn-saveas" class="btn" title="Save as… (Ctrl+Shift+S)">Save as</button>
+    <div class="menu">
+      <button class="btn">Import / Export ▾</button>
+      <div class="menu-list">
+        <button id="btn-import">Import design (.json)…</button>
+        <button id="btn-trace">Trace over an image / photo…</button>
+        <button id="exp-json">Export design (.json)</button>
+        <button id="exp-png">Export floor plan (.png)</button>
+        <button id="exp-3d">Export 3D view (.png)</button>
+        <button id="exp-csv">Export item schedule (.csv)</button>
+        <button id="exp-print">Print / PDF sheet</button>
+      </div>
+    </div>
+  </div>
+  <div class="group">
+    <button id="btn-undo" class="btn icon" title="Undo (Ctrl+Z)">↶</button>
+    <button id="btn-redo" class="btn icon" title="Redo (Ctrl+Y)">↷</button>
+  </div>
+  <div class="group seg">
+    <button class="btn" data-view="2d" title="Plan only (1)">2D</button>
+    <button class="btn" data-view="split" title="Plan + 3D (2)">Split</button>
+    <button class="btn" data-view="3d" title="3D only (3)">3D</button>
+  </div>
+  <div class="group">
+    <select id="floor-sel" title="Floor / level"></select>
+    <button id="btn-addfloor" class="btn icon" title="Add a floor">＋</button>
+  </div>
+  <select id="units" title="Display units">
+    <option value="m">metres</option>
+    <option value="ft">feet</option>
+  </select>
+  <button id="btn-help" class="btn icon" title="Help & shortcuts">?</button>
+  <input id="file-import" type="file" accept=".json,application/json" hidden>
+  <input id="file-underlay" type="file" accept="image/*" hidden>
+  <input id="file-model" type="file" accept=".glb,model/gltf-binary" hidden>
+</header>
+
+<div id="main">
+  <aside id="left">
+    <div class="tabs">
+      <button class="tab active" data-pane="pane-catalog">Catalog</button>
+      <button class="tab" data-pane="pane-places">Places &amp; notes</button>
+      <button class="tab" data-pane="pane-schedule">Schedule</button>
+    </div>
+    <div id="pane-catalog" class="pane active">
+      <div class="search"><input id="cat-search" type="search" placeholder="Search items… (sofa, AC, tulsi)"><span id="cat-count" class="muted"></span></div>
+      <div id="catalog"></div>
+    </div>
+    <div id="pane-places" class="pane">
+      <div class="search"><input id="places-search" type="search" placeholder="Search rooms, notes, labels…"></div>
+      <div id="places"></div>
+    </div>
+    <div id="pane-schedule" class="pane">
+      <div class="search"><label class="chk"><input id="sched-all" type="checkbox" checked> all floors</label></div>
+      <div id="schedule"></div>
+    </div>
+  </aside>
+
+  <section id="center">
+    <div id="tools"></div>
+    <div id="views">
+      <div id="plan-wrap"><canvas id="plan"></canvas><div id="hint"></div></div>
+      <div id="view3d-wrap">
+        <div id="view3d"></div>
+        <div class="overlay3d">
+          <label title="Ambient occlusion + anti-aliasing. Turn off on slow computers."><input id="opt-hq" type="checkbox" checked> HD</label>
+          <label><input id="opt-allfloors" type="checkbox" checked> floors below</label>
+          <label><input id="opt-cutaway" type="checkbox"> low walls</label>
+          <label><input id="opt-labels" type="checkbox" checked> labels</label>
+          <label title="Sun direction">☀ <input id="opt-sun" type="range" min="0" max="360" value="35"></label>
+          <button id="btn-fit3d" class="btn small">Fit</button>
+          <button id="btn-top3d" class="btn small">Top</button>
+          <button id="btn-walk" class="btn small" title="Walk through the house (first person)">🚶 Walk</button>
+          <button id="btn-shot3d" class="btn small" title="Save a high-resolution image">📷</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside id="right">
+    <div id="props"></div>
+  </aside>
+</div>
+
+<footer id="status">
+  <span id="status-left"></span>
+  <span id="where" class="muted"></span>
+</footer>
+<div id="toasts"></div>
+
+<dialog id="open-dlg">
+  <form method="dialog" class="dlg-head"><b>Open design</b> <span class="muted">from <span id="open-where"></span></span><button class="btn icon">✕</button></form>
+  <div id="open-list"></div>
+</dialog>
+
+<dialog id="models-dlg" class="wide">
+  <form method="dialog" class="dlg-head"><b>Free 3D models</b> <span class="muted">CC0 from Poly Haven — downloaded into designs/models/</span><button class="btn icon">✕</button></form>
+  <div class="models-bar"><input id="models-search" type="search" placeholder="Search: sofa, chair, lamp, plant, table, shelf…"><select id="models-cat"></select></div>
+  <div id="models-grid"></div>
+</dialog>
+
+<dialog id="help">
+  <form method="dialog" class="dlg-head"><b>Home Designer — help</b><button class="btn icon">✕</button></form>
+  <div class="help-body">
+    <h4>Drawing</h4>
+    <ul>
+      <li><b>⬚ Room</b> (B): drag a rectangle → a named room with four walls. <b>▢ Area</b> (A): same without walls (garden, parking, open kitchen).</li>
+      <li><b>▭ Wall</b> (W): click, click, click… Double-click, right-click or Esc to stop. Hold <kbd>Shift</kbd> for 45° steps, <kbd>Alt</kbd> to switch off snapping.</li>
+      <li><b>Exact lengths, fast:</b> while drawing a wall just <i>type</i> the length (e.g. <kbd>4.5</kbd>, <kbd>450cm</kbd>, <kbd>12'6</kbd>) and press <kbd>Enter</kbd> — the wall goes in the direction of the mouse. Select an existing wall, type a number, Enter → it is resized and the joined walls follow. With the Room tool type <kbd>4x3.5</kbd> Enter.</li>
+      <li><b>Two wall types:</b> <i>Exterior</i> (default 23 cm / 9″) and <i>Interior</i> (default 11.5 cm / 4.5″). Switch with the Ext/Int button or <kbd>E</kbd>. Change the two thicknesses in Design settings — all walls of that type update. “Auto-detect” marks walls that touch the outside as exterior.</li>
+      <li><b>⬠ Polygon room</b> (P): click the corners, click the first corner (or Enter) to close. Good for L-shaped rooms.</li>
+      <li><b>Doors &amp; windows</b>: pick one from the catalog and click on a wall. Drag it to slide along the wall; R flips the door swing.</li>
+      <li><b>Furniture</b>: pick from the catalog and click on the plan. <kbd>R</kbd> rotates 90° (Shift+R: 15°). Shift+click places several. Wall items (TV, AC, wardrobes…) snap flat against the nearest wall.</li>
+    </ul>
+    <h4>Tracing a sketch, photo or plan</h4>
+    <ul>
+      <li>Import / Export → <b>Trace over an image</b> (or Design settings → Trace image). Upload a file or paste a web URL.</li>
+      <li>Click both ends of something you know the length of (a wall, the plot width) and type the real length — the image is scaled.</li>
+      <li>Lower the opacity, then draw walls (W) and rooms over it. “Move image” lines it up. The image is saved inside the design.</li>
+    </ul>
+    <h4>Real 3D models</h4>
+    <ul>
+      <li>Select any item → <b>3D model</b> → <i>Browse free models</i> (522 CC0 models from Poly Haven) or <i>Upload .glb</i> (Sketchfab, Kenney, Blender exports…).</li>
+      <li>The model is stretched to the item’s width / depth / height; <i>Use model’s real size</i> copies its true size. <i>Use for every …</i> applies it to all items of that type.</li>
+      <li>Downloaded and uploaded models are stored in <code>designs/models/</code> — commit that folder together with your designs.</li>
+    </ul>
+    <h4>Annotating places</h4>
+    <ul>
+      <li>Select a room to name it, pick its type, colour, floor finish, paint and notes.</li>
+      <li><b>📍 Note pin</b> (N): numbered notes anywhere (“extra socket here”, “leak check”). <b>T</b> label: free text. <b>↔</b> dimension (D).</li>
+      <li>Every item, door, window and wall has a <i>label</i> and <i>notes</i> field — brand, price, link, status.</li>
+      <li>The <b>Places &amp; notes</b> tab lists everything; the <b>Schedule</b> tab counts items per category and exports CSV.</li>
+    </ul>
+    <h4>Saving</h4>
+    <ul>
+      <li><b>Save</b> (Ctrl+S) writes <code>home_designer/designs/&lt;name&gt;.json</code> when you run <code>start.sh</code>. Commit those files to keep them in git.</li>
+      <li>Every save keeps the previous version in <code>designs/.history/</code>. Your current work is also auto-saved in the browser.</li>
+      <li>Without the server (e.g. static hosting) designs are kept in this browser — use Export to download them.</li>
+    </ul>
+    <h4>Keys</h4>
+    <p><kbd>V</kbd> select · <kbd>W</kbd> wall · <kbd>B</kbd> room · <kbd>A</kbd> area · <kbd>P</kbd> polygon · <kbd>N</kbd> note · <kbd>T</kbd> label · <kbd>D</kbd> dimension · <kbd>H</kbd> pan ·
+      <kbd>Del</kbd> delete · <kbd>Ctrl+D</kbd> duplicate · <kbd>Ctrl+Z</kbd>/<kbd>Ctrl+Y</kbd> undo/redo · arrows nudge 1 cm (Shift 10 cm) ·
+      <kbd>F</kbd> fit · <kbd>+</kbd>/<kbd>−</kbd> zoom · <kbd>Space</kbd>+drag pan · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 2D / split / 3D.</p>
+  </div>
+</dialog>
+
+<script type="importmap">
+{ "imports": { "three": "./js/vendor/three.module.min.js", "three/addons/": "./js/vendor/addons/" } }
+</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

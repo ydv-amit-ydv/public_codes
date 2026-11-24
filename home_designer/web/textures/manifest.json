@@ -1,0 +1,198 @@
+{
+ "license": "CC0 1.0 \u2014 Poly Haven (https://polyhaven.com). Free to use and redistribute, no attribution required.",
+ "textures": {
+  "wood": {
+   "source": "laminate_floor",
+   "name": "Laminate Floor",
+   "size_m": 2.0,
+   "authors": [
+    "Dario Barresi",
+    "Dimitrios Savva"
+   ],
+   "diff": "wood_diff.jpg",
+   "nor": "wood_nor.jpg"
+  },
+  "parquet": {
+   "source": "herringbone_parquet",
+   "name": "Herringbone Parquet",
+   "size_m": 3.4,
+   "authors": [
+    "Jenelle van Heerden",
+    "Sergej Majboroda"
+   ],
+   "diff": "parquet_diff.jpg",
+   "nor": "parquet_nor.jpg"
+  },
+  "wood_dark": {
+   "source": "brown_planks_05",
+   "name": "Brown Planks 05",
+   "size_m": 1.0,
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "diff": "wood_dark_diff.jpg",
+   "nor": "wood_dark_nor.jpg"
+  },
+  "marble": {
+   "source": "marble_tiles",
+   "name": "Marble Tiles",
+   "size_m": 2.0,
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "diff": "marble_diff.jpg",
+   "nor": "marble_nor.jpg"
+  },
+  "tiles_large": {
+   "source": "large_floor_tiles_02",
+   "name": "Large Floor Tiles 02",
+   "size_m": 3.0,
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "diff": "tiles_large_diff.jpg",
+   "nor": "tiles_large_nor.jpg"
+  },
+  "tiles": {
+   "source": "interior_tiles",
+   "name": "Interior Tiles",
+   "size_m": 1.9,
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "diff": "tiles_diff.jpg",
+   "nor": "tiles_nor.jpg"
+  },
+  "tiles_small": {
+   "source": "anti_skid_tiles",
+   "name": "Anti Skid Tiles",
+   "size_m": 1.8,
+   "authors": [
+    "Amal Kumar"
+   ],
+   "diff": "tiles_small_diff.jpg",
+   "nor": "tiles_small_nor.jpg"
+  },
+  "granite": {
+   "source": "granite_tile",
+   "name": "Granite Tile",
+   "size_m": 2.3,
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "diff": "granite_diff.jpg",
+   "nor": "granite_nor.jpg"
+  },
+  "terrazzo": {
+   "source": "terrazzo_tiles",
+   "name": "Terrazzo Tiles",
+   "size_m": 2.0,
+   "authors": [
+    "Amal Kumar"
+   ],
+   "diff": "terrazzo_diff.jpg",
+   "nor": "terrazzo_nor.jpg"
+  },
+  "terracotta": {
+   "source": "terracotta_floor_tiles",
+   "name": "Terracotta Floor Tiles",
+   "size_m": 2.08,
+   "authors": [
+    "Dimitrios Savva"
+   ],
+   "diff": "terracotta_diff.jpg",
+   "nor": "terracotta_nor.jpg"
+  },
+  "grass": {
+   "source": "leafy_grass",
+   "name": "Leafy Grass",
+   "size_m": 2.0,
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "diff": "grass_diff.jpg",
+   "nor": "grass_nor.jpg"
+  },
+  "pavers": {
+   "source": "herringbone_pavement",
+   "name": "Herringbone Pavement",
+   "size_m": 2.0,
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "diff": "pavers_diff.jpg",
+   "nor": "pavers_nor.jpg"
+  },
+  "concrete": {
+   "source": "concrete_floor_01",
+   "name": "Concrete Floor 01",
+   "size_m": 2.0,
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "diff": "concrete_diff.jpg",
+   "nor": "concrete_nor.jpg"
+  },
+  "carpet": {
+   "source": "poly_wool_herringbone",
+   "name": "Poly Wool Herringbone",
+   "size_m": 0.27,
+   "authors": [
+    "colormass",
+    "Rico Cilliers"
+   ],
+   "diff": "carpet_diff.jpg",
+   "nor": "carpet_nor.jpg"
+  },
+  "f_wood": {
+   "source": "oak_veneer_01",
+   "name": "Oak Veneer 01",
+   "size_m": 1.83,
+   "authors": [
+    "Jenelle van Heerden"
+   ],
+   "diff": "f_wood_diff.jpg",
+   "nor": "f_wood_nor.jpg"
+  },
+  "f_wood_dark": {
+   "source": "walnut_veneer",
+   "name": "Walnut Veneer",
+   "size_m": 1.8,
+   "authors": [
+    "Jenelle van Heerden"
+   ],
+   "diff": "f_wood_dark_diff.jpg",
+   "nor": "f_wood_dark_nor.jpg"
+  },
+  "f_fabric": {
+   "source": "fabric_pattern_07",
+   "name": "Fabric Pattern 07",
+   "size_m": 0.4,
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "nor": "f_fabric_nor.jpg",
+   "diff": "f_fabric_diff.jpg"
+  },
+  "f_leather": {
+   "source": "brown_leather",
+   "name": "Brown Leather",
+   "size_m": 0.4,
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "diff": "f_leather_diff.jpg",
+   "nor": "f_leather_nor.jpg"
+  },
+  "f_plaster": {
+   "source": "painted_plaster_wall",
+   "name": "Painted Plaster Wall",
+   "size_m": 2.0,
+   "authors": [
+    "Amal Kumar"
+   ],
+   "diff": "f_plaster_diff.jpg",
+   "nor": "f_plaster_nor.jpg"
+  }
+ }
+}

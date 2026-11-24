@@ -61,6 +61,19 @@ python -m circopt.app                                   # http://localhost:5000
 Full instructions: [`circrna_opt/README.md`](circrna_opt/README.md) and
 [`circrna_opt/INSTALL.md`](circrna_opt/INSTALL.md).
 
+## home_designer
+
+**Home Designer**: our own floor-plan and interior design tool. You draw walls (exterior and interior, typed
+exact lengths) and rooms, furnish them from a 337-item catalog, annotate places with notes, and see it all in 3D with real
+photo textures, ambient occlusion and real CC0 3D models from Poly Haven. You can also trace over a sketch or photo.
+Designs are saved as JSON in `home_designer/designs/` so they're versioned in git. Only Python 3 is needed.
+
+```bash
+cd public_codes/home_designer && bash start.sh      # http://127.0.0.1:8765
+```
+
+Details: [`home_designer/README.md`](home_designer/README.md).
+
 ## OpenPrism (moved)
 
 **OpenPrism** — the open-source scientific graphing and statistics workbench — now has its own repository:
