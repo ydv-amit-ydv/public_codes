@@ -220,6 +220,60 @@ def _():
             f"CTL memory {la['CTL_mem']:,.0f} vs {pr['CTL_mem']:,.0f}")
 
 
+@check("mrna_boosts_antibody_too",
+       "An mRNA-LNP second dose raises antibody substantially, not only CD8. "
+       "This check exists because a single shared lymphocyte carrying "
+       "capacity let mRNA's very large CD8 response drive the crowding term "
+       "to zero and switch off B cell proliferation entirely: the model "
+       "produced a boost fold-rise of 0.99 - no antibody boost at all - "
+       "while passing every other test in this suite. Carrying capacity is "
+       "now per lineage.")
+def _():
+    m = run("mrna_lnp")
+    assert m["boost_rise"] > 1.5, m["boost_rise"]
+    assert m["boost_rise"] < 200, m["boost_rise"]
+    return (f"mRNA boost fold-rise {m['boost_rise']:.2f}x over the pre-boost "
+            f"baseline")
+
+
+@check("B_cell_numbers_are_physiological",
+       "Activated B, memory B and plasma cell counts must be plausible for "
+       "an antigen-specific clone in a draining lymph node. Antibody is in "
+       "arbitrary units, so a model scored only on titre can meet every "
+       "kinetic target with a handful of cells secreting implausibly fast - "
+       "and did: 13 activated B cells and 2.5 memory B against 100,000 CD4 "
+       "memory in the same run.")
+def _():
+    bad = []
+    for k in ("protein", "mrna_lnp", "adenovirus"):
+        a = "alum" if k == "protein" else None
+        r = run(k, a)
+        if not 1e2 <= r["B_peak"] <= 1e7:
+            bad.append(f"{k} peak B {r['B_peak']:.3g}")
+        if not 10 <= r["B_mem"] <= 1e6:
+            bad.append(f"{k} peak B memory {r['B_mem']:.3g}")
+        if not 10 <= r["PL_peak"] <= 1e6:
+            bad.append(f"{k} peak plasma {r['PL_peak']:.3g}")
+    assert not bad, "; ".join(bad)
+    p = run("protein", "alum")
+    return (f"protein+alum peak B {p['B_peak']:,.0f}, "
+            f"memory B {p['B_mem']:,.0f}, plasma {p['PL_peak']:,.0f}")
+
+
+@check("igg_is_durable",
+       "Vaccine IgG does not decay back to baseline: long-lived bone-marrow "
+       "plasma cells sustain a durable fraction for years. Before a "
+       "long-lived plasma cell compartment existed, modelled IgG always "
+       "returned to baseline and no durability statement could be made.")
+def _():
+    p = run("protein", "alum")
+    assert p["igg_durability"] > 0.02, p["igg_durability"]
+    assert p["LLPC_end"] > 1.0, p["LLPC_end"]
+    return (f"IgG at end of follow-up is "
+            f"{100 * p['igg_durability']:.1f}% of peak, sustained by "
+            f"{p['LLPC_end']:,.0f} long-lived plasma cells")
+
+
 @check("all_platforms_stay_physiological",
        "No platform may produce cell or antibody numbers outside a "
        "physiological range - a runaway ODE can pass a one-sided ordinal "

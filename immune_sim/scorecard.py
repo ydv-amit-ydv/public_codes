@@ -86,10 +86,17 @@ def robustness(n=120, seed=0):
     # parameters the claims are most sensitive to
     vary = ["th_prime", "th_prolif", "th_death", "b_activate", "b_prolif",
             "plasma_diff", "igg_rate", "switch_rate", "aff_rate",
-            "crosspres", "agi_decay", "k_agi_ctl", "dc_mature", "ag_deposit"]
+            "crosspres", "agi_decay", "k_agi_ctl", "dc_mature", "ag_deposit",
+            # the compartment structure added after the sampler caught the
+            # shared-carrying-capacity bug; these must be varied too, or the
+            # robustness figure says nothing about the new parameters
+            "f_carry_b", "k_carry_global", "k_b_act", "k_b_prolif",
+            "llpc_frac", "llpc_death", "llpc_secretion", "b_memory",
+            "b_mem_decay", "b_mem_recall"]
 
     claims = {"mrna_beats_protein_CD8": [], "as01_more_CTL_than_alum": [],
-              "adjuvant_raises_antibody": [], "boost_exceeds_prime": []}
+              "adjuvant_raises_antibody": [], "boost_exceeds_prime": [],
+              "mrna_boosts_antibody": [], "igg_is_durable": []}
 
     for _ in range(n):
         p = dict(base)
@@ -117,6 +124,11 @@ def robustness(n=120, seed=0):
             pre, post = pr[pr.day < bd], pr[pr.day >= bd]
             claims["boost_exceeds_prime"].append(
                 float(post.IgG.max() - pre.IgG.max()))
+            mpre, mpost = m[m.day < bd], m[m.day >= bd]
+            claims["mrna_boosts_antibody"].append(
+                float(mpost.IgG.max() / max(mpre.IgG.iloc[-1], 1e-9) - 1.5))
+            claims["igg_is_durable"].append(
+                float(pr.IgG.iloc[-1] / max(pr.IgG.max(), 1e-9) - 0.02))
         except Exception:
             continue
 
@@ -224,6 +236,10 @@ def build(rob=None):
          "adjuvant_raises_antibody"),
         ("The secondary response exceeds the primary",
          "boost_exceeds_prime"),
+        ("An mRNA boost raises antibody, not only CD8",
+         "mrna_boosts_antibody"),
+        ("Vaccine IgG stays above baseline (long-lived plasma cells)",
+         "igg_is_durable"),
     ]
     for text, key in plat_claims:
         r = (rob or {}).get(key)

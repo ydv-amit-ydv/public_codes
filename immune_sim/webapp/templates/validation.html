@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Validation &middot; immune_sim{% endblock %}
+{% block body %}
+<section class="content wide">
+<h1>What is validated, and how confidently</h1>
+
+<div class="grades">
+  <div class="g a"><b>A</b><span>Measured data, <em>out-of-sample</em>. A
+    prediction that could have failed.</span></div>
+  <div class="g b"><b>B</b><span>Measured data, in-sample. Shows the model
+    can fit, not that it generalises.</span></div>
+  <div class="g c"><b>C</b><span>Direction only, calibrated to published
+    findings. A structured prior.</span></div>
+  <div class="g d"><b>D</b><span>Assumption. Untested here.</span></div>
+</div>
+
+<p class="note">A robustness percentage is <strong>not</strong> a probability
+that the biology is true. It is the share of plausible parameter sets giving
+the stated direction — it answers "is this an artefact of my tuning?", not
+"is this real".</p>
+
+{% macro table(d, caption) %}
+  {% if d %}
+  <h2>{{ caption }}</h2>
+  <div class="tablewrap"><table>
+    <thead><tr>{% for c in d.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for r in d.rows %}<tr>
+      {% for v in r %}<td>{{ '' if v is none else v }}</td>{% endfor %}
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <h2>{{ caption }}</h2>
+  <p class="hint">Not generated yet. Run the script named in the README.</p>
+  {% endif %}
+{% endmacro %}
+
+{{ table(sc, "Every claim, graded") }}
+{{ table(ev, "Grade A — leave-one-pathogen-out binding prediction") }}
+{{ table(wl, "Grade A — boost kinetics vs held-out CMI-PB subjects") }}
+</section>
+{% endblock %}

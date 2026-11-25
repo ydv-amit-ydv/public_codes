@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}immune_sim{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">immune_sim</div>
+  <nav>
+    <a href="/" class="{{ 'on' if request.path == '/' }}">Simulate</a>
+    <a href="/compare" class="{{ 'on' if request.path == '/compare' }}">Compare</a>
+    <a href="/epitopes" class="{{ 'on' if request.path == '/epitopes' }}">Epitopes</a>
+    <a href="/validation" class="{{ 'on' if request.path == '/validation' }}">Validation</a>
+  </nav>
+  <div class="cal" title="parameter set in use">{{ meta.calibration }}</div>
+</header>
+
+<main>{% block body %}{% endblock %}</main>
+
+<footer>
+  Ratios and timings are validated against measured human data; absolute
+  antibody units are arbitrary and platform comparisons are a structured prior.
+  <a href="/validation">What is and is not claimed &rarr;</a>
+</footer>
+
+<script>window.META = {{ meta | tojson }};</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -93,6 +93,73 @@ against the second is how the 10× error entered. `calibrate.py` now measures
 
 ---
 
+## Three structural defects the targets exposed
+
+Each was found by adding a constraint, not by inspection, and each needed a
+change to the model's structure rather than a parameter tweak. They are
+recorded here because every one of them passed the previous benchmark suite.
+
+### 1. One carrying capacity for all lymphocytes
+
+`crowd = 1 - total_lymphocytes / k_carry` throttled every proliferating
+population together. mRNA-LNP drives a very large CD8 response — 1.3e7 CTL
+against a `k_carry` of 1e7 — which drove the term to zero and **switched off B
+cell proliferation entirely**. The model produced an mRNA antibody boost of
+**0.99×**: no boost at all, flatly contrary to trial data, while passing all
+ten benchmarks then in the suite.
+
+T zone and germinal centre are distinct resources; a germinal centre does not
+run out of room because the paracortex is full. Capacity is now per lineage
+(`f_carry_t`, `f_carry_b`) with a weak shared ceiling.
+
+### 2. B cell proliferation could not exceed B cell death
+
+Proliferation was the **product** of four independent saturating gates (T
+help, IL-2, depot antigen, crowding), each below 1, so the effective rate
+never beat death plus plasma differentiation. The B pool could not expand at
+all: peak activated B was **13 cells** and peak memory B **2.5**, against
+100,000 CD4 memory in the same run. The antibody curve still had the right
+shape, because a handful of plasma cells with a fitted secretion rate of 22–60
+units per cell per day can produce any titre you like.
+
+A germinal centre is a burst of 6–10 divisions over a week, so the gates are
+now combined as a **geometric mean**: each can still throttle the reaction
+without three of them multiplying the rate to nothing.
+
+**This is why the cell-count targets exist.** Antibody is in arbitrary units,
+so a model scored only on titre and timing has a free parameter to hide in.
+Four bands close it:
+
+```
+peak_B_active      1e3 - 1e6      peak_plasma_total   1e2 - 1e5
+peak_B_memory      1e2 - 1e5      igg_durability      0.05 - 0.90
+```
+
+### 3. No long-lived plasma cells, so no durable antibody
+
+With a single short-lived plasma pool, modelled IgG always decayed back to
+baseline — so no durability statement could be made at all, and the model
+could not represent the single most important property of a vaccine. A
+bone-marrow long-lived plasma cell compartment was added, exported from mature
+germinal centres in proportion to achieved affinity and T help.
+
+### What the fixes bought
+
+| Quantity | Before | After | Target |
+|---|---|---|---|
+| Peak activated B | 13 | **1,499** | 1e3–1e6 |
+| Peak memory B | 2.5 | **5,044** | 1e2–1e5 |
+| Peak plasma cells | — | **1,365** | 1e2–1e5 |
+| IgG retained at end of follow-up | ~0 | **55%** | 5–90% |
+| mRNA antibody boost (fold over baseline) | **0.99×** | **5.70×** | 2–60× |
+| mRNA secondary ÷ primary peak | **0.28×** | **4.57×** | ≥1× |
+
+The last row is the weakness documented in the previous version of this file
+as holding in only 57% of parameter draws. It was not a tuning problem. It was
+the shared carrying capacity.
+
+---
+
 ## Grade C — direction only, with robustness
 
 No measured dataset in this pipeline compares vaccine platforms. These claims

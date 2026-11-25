@@ -126,11 +126,21 @@ P = dict(
 
     # Density-dependent limit on duplication (C-ImmSim MaxLocalFact).
     # Without this the IL-2 / T-help feedback loop grows without bound.
-    k_carry        = 1.0e7,   # total lymphocyte carrying capacity
+    k_carry        = 1.0e7,   # lymphocyte carrying capacity (scale)
+    f_carry_t      = 1.0,     # T compartment share of it (paracortex)
+    f_carry_b      = 0.35,    # B compartment share of it (germinal centres)
+    k_carry_global = 4.0,     # weak shared ceiling, in units of k_carry
 
     # plasma cells and antibody
     plasma_diff    = 0.30,    # activated B -> plasma
-    plasma_death   = 0.35,
+    plasma_death   = 0.35,    # short-lived plasmablast, days
+    # Long-lived plasma cells: bone-marrow resident, survive years, and are
+    # the reason vaccine IgG does not decay back to baseline. Without them the
+    # model has no durable antibody at all.
+    llpc_frac      = 0.35,    # max share of plasma output that is long-lived
+    llpc_death     = 0.0015,  # ~1.3 y half-life
+    llpc_secretion = 0.6,     # per-cell output relative to a plasmablast
+    k_llpc_aff     = 1.5,     # affinity gain at which LLPC export is half-max
     igm_rate       = 6.0,     # IgM secretion per plasma cell
     igg_rate       = 22.0,    # IgG secretion, after class switch
     switch_rate    = 0.16,    # IgM -> IgG class switch, needs T help
@@ -300,13 +310,13 @@ class Sim:
         THa  = take(self.nII); THm = take(self.nII)
         TCa  = take(self.nI);  TCm = take(self.nI)
         Ba   = take(self.nB);  Bm  = take(self.nB)
-        PL   = take(self.nB)
+        PL   = take(self.nB);  PLl = take(self.nB)
         IgM  = take(1)[0]
         IgG  = take(1)[0]
         Aff  = take(1)[0]
         IL2  = take(1)[0]
         return (Ag, Agd, R, AgI, D, DCm, MAa, THa, THm, TCa, TCm,
-                Ba, Bm, PL, IgM, IgG, Aff, IL2)
+                Ba, Bm, PL, PLl, IgM, IgG, Aff, IL2)
 
     def y0(self):
         return np.concatenate([
@@ -314,19 +324,46 @@ class Sim:
             np.zeros(self.nII), np.zeros(self.nII),
             np.zeros(self.nI), np.zeros(self.nI),
             np.zeros(self.nB), np.zeros(self.nB), np.zeros(self.nB),
+            np.zeros(self.nB),
             [0.0], [0.0], [1.0], [0.0],
         ])
 
     def rhs(self, t, y):
         p = self.p
         (Ag, Agd, R, AgI, D, DCm, MAa, THa, THm, TCa, TCm,
-         Ba, Bm, PL, IgM, IgG, Aff, IL2) = self._unpack(y)
+         Ba, Bm, PL, PLl, IgM, IgG, Aff, IL2) = self._unpack(y)
+
+        # LSODA can step a compartment slightly negative; clamp before any
+        # term multiplies by it, or a tiny negative B pool becomes negative
+        # proliferation and the trajectory is quietly wrong.
+        Ba = np.maximum(Ba, 0.0); Bm = np.maximum(Bm, 0.0)
+        PL = np.maximum(PL, 0.0); PLl = np.maximum(PLl, 0.0)
+        THa = np.maximum(THa, 0.0); THm = np.maximum(THm, 0.0)
+        TCa = np.maximum(TCa, 0.0); TCm = np.maximum(TCm, 0.0)
 
         Ag = max(Ag, 0.0); Agd = max(Agd, 0.0)
         R = max(R, 0.0); AgI = max(AgI, 0.0); D = max(D, 0.0)
         total_lym = float(THa.sum() + TCa.sum() + Ba.sum() + PL.sum()
-                          + THm.sum() + TCm.sum() + Bm.sum())
-        crowd = max(0.0, 1.0 - total_lym / p["k_carry"])
+                          + PLl.sum() + THm.sum() + TCm.sum() + Bm.sum())
+        # Density-dependent limitation, PER LINEAGE.
+        #
+        # One shared carrying capacity is wrong and it bites: a platform that
+        # drives a very large CD8 response (mRNA-LNP here reached 1.3e7 CTL
+        # against k_carry = 1e7) pushed the single `crowd` term to zero and
+        # switched off B cell proliferation altogether, so the model produced
+        # no antibody boost at all for mRNA - which is flatly contrary to the
+        # trial data.
+        #
+        # T zone and germinal centre are distinct resources: a germinal centre
+        # does not run out of room because the paracortex is full. So each
+        # lineage is limited by its own compartment, with a weak shared term
+        # for genuinely global limits (nutrients, lymph node volume).
+        t_lym = float(THa.sum() + TCa.sum() + THm.sum() + TCm.sum())
+        b_lym = float(Ba.sum() + Bm.sum() + PL.sum() + PLl.sum())
+        glob = max(0.0, 1.0 - total_lym / (p["k_carry"] * p["k_carry_global"]))
+        crowd_t = max(0.0, 1.0 - t_lym / (p["k_carry"] * p["f_carry_t"])) * glob
+        crowd_b = max(0.0, 1.0 - b_lym / (p["k_carry"] * p["f_carry_b"])) * glob
+        crowd = crowd_t          # kept for any downstream reference
 
         wI = self.ep.weight.values[self.ci] if self.nI else np.array([])
         wII = self.ep.weight.values[self.cii] if self.nII else np.array([])
@@ -371,7 +408,7 @@ class Sim:
             prime = (p["th_prime"] * wII[k] * DCm
                      * (p["th_naive"] + p["th_mem_recall"] * THm[k]))
             prolif = (p["th_prolif"] * THa[k] * hill(IL2, p["k_il2"])
-                      * hill(DCm, p["k_dc_prolif"]) * crowd)
+                      * hill(DCm, p["k_dc_prolif"]) * crowd_t)
             dTHa[k] = prime + prolif - p["th_death"] * THa[k]
             dTHm[k] = p["th_memory"] * THa[k] - p["th_mem_decay"] * THm[k]
 
@@ -384,29 +421,63 @@ class Sim:
                      * (p["tc_naive"] + p["tc_mem_recall"] * TCm[k]))
             prolif = (p["tc_prolif"] * TCa[k] * hill(IL2, p["k_il2"])
                       * hill(DCm, p["k_dc_prolif"])
-                      * (0.25 + 0.75 * hfac) * crowd)
+                      * (0.25 + 0.75 * hfac) * crowd_t)
             dTCa[k] = prime + prolif - p["tc_death"] * TCa[k]
             dTCm[k] = p["tc_memory"] * TCa[k] - p["tc_mem_decay"] * TCm[k]
 
         # --- B cells: antigen + T help ---
-        dBa = np.zeros(self.nB); dBm = np.zeros(self.nB); dPL = np.zeros(self.nB)
+        dBa = np.zeros(self.nB); dBm = np.zeros(self.nB)
+        dPL = np.zeros(self.nB); dPLl = np.zeros(self.nB)
+
+        # Germinal-centre drive. Proliferation was previously the PRODUCT of
+        # four independent saturating gates (T help, IL-2, depot antigen,
+        # crowding), each below one, so the effective rate never exceeded
+        # death + plasma differentiation and the B pool could not expand:
+        # peak activated B was 13 cells and peak memory 2.5, against 100,000
+        # CD4 memory. The antibody titre was then produced by a handful of
+        # plasma cells with an implausibly large per-cell secretion rate.
+        #
+        # A germinal centre is a burst of ~6-10 divisions over a week, so the
+        # gates are combined as a GEOMETRIC MEAN, which keeps each one able to
+        # throttle the reaction without three of them multiplying the rate to
+        # nothing.
+        gc_gates = np.array([hill(IL2, p["k_il2"]), hill(Agd, p["k_ag_gc"])])
+        gc_env = float(np.exp(np.mean(np.log(np.clip(gc_gates, 1e-12, None)))))
+
         for k in range(self.nB):
             w = wII[k] if self.nII else 1.0
             th_k = THa[k] if self.nII else help_total
+            help_g = hill(th_k, p["k_b_prolif"])
             act = (p["b_activate"] * w * self.ab_gain * hill(ag_ii, p["k_ag_apc"])
                    * (p["b_naive"] + p["b_mem_recall"] * Bm[k])
                    * hill(th_k, p["k_b_act"]))
-            prolif = (p["b_prolif"] * Ba[k] * hill(th_k, p["k_b_prolif"])
-                      * hill(IL2, p["k_il2"]) * hill(Agd, p["k_ag_gc"]) * crowd)
+            prolif = (p["b_prolif"] * Ba[k]
+                      * float(np.sqrt(max(help_g, 0.0) * gc_env))
+                      * crowd_b)
+            # Plasma output splits by germinal-centre maturity. Early, low
+            # affinity output is short-lived; a mature, well-helped GC also
+            # exports LONG-LIVED plasma cells to the bone marrow, which is
+            # what makes post-vaccination IgG persist for years. With a
+            # single short-lived pool, modelled IgG always decays to baseline
+            # and no durability claim can be made at all.
+            ll = p["llpc_frac"] * hill(Aff - 1.0, p["k_llpc_aff"]) * help_g
             dBa[k] = act + prolif - p["b_death"] * Ba[k] - p["plasma_diff"] * Ba[k]
             dBm[k] = p["b_memory"] * Ba[k] - p["b_mem_decay"] * Bm[k]
-            dPL[k] = p["plasma_diff"] * Ba[k] - p["plasma_death"] * PL[k]
+            dPL[k] = (p["plasma_diff"] * Ba[k] * (1.0 - ll)
+                      - p["plasma_death"] * PL[k])
+            dPLl[k] = (p["plasma_diff"] * Ba[k] * ll
+                       - p["llpc_death"] * PLl[k])
 
-        PLs = float(PL.sum())
+        PLs = float(PL.sum()) + float(PLl.sum()) * p["llpc_secretion"]
         # --- antibody: IgM first, IgG after class switch (T-help dependent) ---
         switch = p["switch_rate"] * hill(help_total, p["k_switch"])
-        dIgM = p["igm_rate"] * PLs * (1.0 - switch) - p["igm_decay"] * IgM
-        dIgG = p["igg_rate"] * PLs * switch - p["igg_decay"] * IgG
+        # Long-lived plasma cells are class-switched by construction, so their
+        # output goes to IgG whatever the current help level.
+        PL_short = float(PL.sum())
+        PL_long = float(PLl.sum()) * p["llpc_secretion"]
+        dIgM = p["igm_rate"] * PL_short * (1.0 - switch) - p["igm_decay"] * IgM
+        dIgG = (p["igg_rate"] * (PL_short * switch + PL_long)
+                - p["igg_decay"] * IgG)
 
         # --- affinity maturation: driven by ongoing GC reaction ---
         dAff = (p["aff_rate"] * hill(help_total, p["k_aff_help"]) * hill(Agd, p["k_aff_ag"])
@@ -417,7 +488,8 @@ class Sim:
 
         return np.concatenate([[dAg], [dAgd], [dR], [dAgI], [dD], [dDCm], [dMAa],
                                dTHa, dTHm, dTCa, dTCm,
-                               dBa, dBm, dPL, [dIgM], [dIgG], [dAff], [dIL2]])
+                               dBa, dBm, dPL, dPLl,
+                               [dIgM], [dIgG], [dAff], [dIL2]])
 
     def run(self, n_steps=540):
         """Integrate, applying injections as discontinuous boluses."""
@@ -451,7 +523,7 @@ class Sim:
     def to_frame(self, T, Y):
         cols = {"day": T, "step": T * 24.0 / STEP_HOURS}
         (Ag, Agd, R, AgI, D, DCm, MAa, THa, THm, TCa, TCm,
-         Ba, Bm, PL, IgM, IgG, Aff, IL2) = self._unpack(Y)
+         Ba, Bm, PL, PLl, IgM, IgG, Aff, IL2) = self._unpack(Y)
         cols.update({
             "antigen": Ag, "antigen_depot": Agd, "template": R,
             "antigen_endogenous": AgI, "danger": D, "DC_mature": DCm, "MA_active": MAa,
@@ -459,6 +531,8 @@ class Sim:
             "TC_active": TCa.sum(axis=0), "TC_memory": TCm.sum(axis=0),
             "B_active": Ba.sum(axis=0), "B_memory": Bm.sum(axis=0),
             "plasma": PL.sum(axis=0),
+            "plasma_longlived": PLl.sum(axis=0),
+            "plasma_total": PL.sum(axis=0) + PLl.sum(axis=0),
             "IgM": IgM, "IgG": IgG, "affinity": Aff, "IL2": IL2,
             "Ab_total": IgM + IgG,
         })

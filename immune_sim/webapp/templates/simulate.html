@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Simulate &middot; immune_sim{% endblock %}
+{% block body %}
+<div class="layout">
+  <aside class="panel">
+    <h2>Formulation</h2>
+
+    <label>Platform
+      <select id="platform"></select></label>
+    <p class="hint" id="platform-note"></p>
+
+    <label>Adjuvant
+      <select id="adjuvant"></select></label>
+    <p class="hint" id="adjuvant-note"></p>
+
+    <label>Dose (&micro;g) <span class="sub" id="dose-range"></span>
+      <input type="number" id="dose_ug" step="0.5" min="0.1" placeholder="platform default"></label>
+
+    <label>Heterologous boost platform
+      <select id="heterologous"><option value="">— same as prime —</option></select></label>
+
+    <h2>Schedule</h2>
+    <label>Injection days <span class="sub">comma separated</span>
+      <input type="text" id="inject_days" value="0, 90"></label>
+    <label>Follow for (days)
+      <input type="number" id="days" value="240" min="10" max="900"></label>
+
+    <h2>Antigen</h2>
+    <label>Epitope set
+      <select id="epitope_source"></select></label>
+    <p class="hint">Predict a new set on the
+      <a href="/epitopes">Epitopes</a> page.</p>
+
+    <h2>Parameters</h2>
+    <label>Calibration
+      <select id="calibration">
+        <option value="wetlab">wet-lab fitted (CMI-PB) — default</option>
+        <option value="literature">literature-only</option>
+        <option value="default">uncalibrated defaults</option>
+      </select></label>
+
+    <button id="run" class="primary">Run simulation</button>
+    <button id="dl" class="ghost">Download time course CSV</button>
+    <div id="status" class="status"></div>
+  </aside>
+
+  <section class="content">
+    <div id="summary" class="cards"></div>
+    <div class="chartgrid">
+      <div class="chart" id="c-antigen"></div>
+      <div class="chart" id="c-antibody"></div>
+      <div class="chart" id="c-tcell"></div>
+      <div class="chart" id="c-bcell"></div>
+      <div class="chart" id="c-innate"></div>
+      <div class="chart" id="c-clones"></div>
+    </div>
+    <details id="desc-wrap"><summary>Formulation detail</summary>
+      <pre id="describe"></pre></details>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script>initSimulate();</script>{% endblock %}

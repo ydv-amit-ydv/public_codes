@@ -16,18 +16,18 @@
       "p95": 31.0
     },
     "fold_rise_check": {
-      "model": 8.75352506683819,
-      "percentile_in_cohort": 67.8,
+      "model": 8.193820933436244,
+      "percentile_in_cohort": 66.1,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
-      "p_differs_from_cohort_median": 0.04155458210104817
+      "p_differs_from_cohort_median": 0.12361225765593803
     },
     "peak_day_check": {
-      "model": 16.66666666666643,
+      "model": 15.333333333333115,
       "percentile_in_cohort": 83.1,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
-      "p_differs_from_cohort_median": 0.0021812037816133305
+      "p_differs_from_cohort_median": 0.0065723927803688995
     }
   },
   "PRN": {
@@ -47,18 +47,18 @@
       "p95": 31.0
     },
     "fold_rise_check": {
-      "model": 8.75352506683819,
+      "model": 8.193820933436244,
       "percentile_in_cohort": 79.7,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
-      "p_differs_from_cohort_median": 0.005735015927460398
+      "p_differs_from_cohort_median": 0.012213047840210984
     },
     "peak_day_check": {
-      "model": 16.66666666666643,
+      "model": 15.333333333333115,
       "percentile_in_cohort": 79.7,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
-      "p_differs_from_cohort_median": 0.01579510117302226
+      "p_differs_from_cohort_median": 0.043886026482949814
     }
   },
   "FHA": {
@@ -78,18 +78,18 @@
       "p95": 30.0
     },
     "fold_rise_check": {
-      "model": 8.75352506683819,
+      "model": 8.193820933436244,
       "percentile_in_cohort": 81.4,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
-      "p_differs_from_cohort_median": 0.0004358674537673142
+      "p_differs_from_cohort_median": 0.0006823131775256525
     },
     "peak_day_check": {
-      "model": 16.66666666666643,
-      "percentile_in_cohort": 83.1,
+      "model": 15.333333333333115,
+      "percentile_in_cohort": 81.4,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
-      "p_differs_from_cohort_median": 0.0018639920202332626
+      "p_differs_from_cohort_median": 0.008071947049607314
     }
   },
   "FIM2/3": {
@@ -109,18 +109,18 @@
       "p95": 30.5
     },
     "fold_rise_check": {
-      "model": 8.75352506683819,
+      "model": 8.193820933436244,
       "percentile_in_cohort": 45.2,
       "within_subject_90pct_band": true,
       "within_median_CI": true,
-      "p_differs_from_cohort_median": 0.045629615895450115
+      "p_differs_from_cohort_median": 0.033809719607234
     },
     "peak_day_check": {
-      "model": 16.66666666666643,
+      "model": 15.333333333333115,
       "percentile_in_cohort": 80.6,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
-      "p_differs_from_cohort_median": 0.07945338244209683
+      "p_differs_from_cohort_median": 0.1112518766430264
     }
   },
   "DT": {
@@ -140,14 +140,14 @@
       "p95": 23.0
     },
     "fold_rise_check": {
-      "model": 8.75352506683819,
+      "model": 8.193820933436244,
       "percentile_in_cohort": 100.0,
       "within_subject_90pct_band": false,
       "within_median_CI": false,
       "p_differs_from_cohort_median": 9.313225746154785e-10
     },
     "peak_day_check": {
-      "model": 16.66666666666643,
+      "model": 15.333333333333115,
       "percentile_in_cohort": 93.5,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
@@ -171,14 +171,14 @@
       "p95": 30.0
     },
     "fold_rise_check": {
-      "model": 8.75352506683819,
+      "model": 8.193820933436244,
       "percentile_in_cohort": 100.0,
       "within_subject_90pct_band": false,
       "within_median_CI": false,
       "p_differs_from_cohort_median": 9.313225746154785e-10
     },
     "peak_day_check": {
-      "model": 16.66666666666643,
+      "model": 15.333333333333115,
       "percentile_in_cohort": 80.6,
       "within_subject_90pct_band": true,
       "within_median_CI": false,
@@ -195,8 +195,8 @@
     "antigens": 6,
     "fold_rise_ok": 4,
     "peak_day_ok": 6,
-    "model_fold_rise": 8.75352506683819,
-    "model_peak_day": 16.66666666666643
+    "model_fold_rise": 8.193820933436244,
+    "model_peak_day": 15.333333333333115
   },
   "_meta": {
     "params": "models/calibrated_wetlab.json",

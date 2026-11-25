@@ -127,6 +127,20 @@ clone) and a prime/boost comparison.
 
 ---
 
+## Web GUI
+
+```bash
+pip install -r requirements.txt
+cd webapp && python3 app.py        # http://127.0.0.1:5000
+```
+
+Simulate, compare up to six formulations, predict epitopes from a UniProt
+accession, and read the validation dashboard — all calling the same functions
+as the CLI, so the GUI cannot drift from the validated pipeline. Details in
+[`webapp/README.md`](webapp/README.md).
+
+---
+
 ## Model structure
 
 An ODE system with compartments matching C-ImmSim's: extracellular antigen,
@@ -263,6 +277,15 @@ documented comparisons. They are not measured constants, and
 | `predict.py` | Antigen → epitopes → C-ImmSim parameters |
 | `validate.py` | ROC / PR validation |
 | `test_platforms.py` | Wet-lab benchmark suite |
+| `encoding.py` | Core-scan peptide features (register + flanks + physicochemical) |
+| `model_pan.py` | Pan-allele core-scanning ensemble (the better binding model) |
+| `external_validation_pan.py` | Leave-one-pathogen-out, pan vs `model.py` |
+| `harvest_cmipb.py` | Measured human titer time courses (CMI-PB) |
+| `wetlab_validation.py` | Held-out subject comparison |
+| `external_validation.py` | Leave-one-pathogen-out for `model.py` |
+| `stats.py` | DeLong, bootstrap, permutation, BH-FDR, calibration |
+| `scorecard.py` | Every claim graded A-D, with robustness sampling |
+| `webapp/` | Flask GUI — simulate, compare, predict, validation dashboard |
 
 Data and trained weights are gitignored; the scripts regenerate them.
 Requires `numpy`, `pandas`, `scipy`, `scikit-learn`, `matplotlib`.

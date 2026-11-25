@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Compare &middot; immune_sim{% endblock %}
+{% block body %}
+<div class="layout">
+  <aside class="panel">
+    <h2>Arms</h2>
+    <p class="hint">Same antigen and schedule, different formulations.
+      Up to six.</p>
+    <div id="arms"></div>
+    <button id="add-arm" class="ghost">+ add arm</button>
+
+    <h2>Shared settings</h2>
+    <label>Injection days
+      <input type="text" id="inject_days" value="0, 90"></label>
+    <label>Follow for (days)
+      <input type="number" id="days" value="240" min="10" max="900"></label>
+    <label>Epitope set
+      <select id="epitope_source"></select></label>
+
+    <button id="run" class="primary">Run comparison</button>
+    <div id="status" class="status"></div>
+    <p class="hint warn">Platform rankings are <strong>not</strong> validated
+      against measured data. They reproduce published directions. Read the
+      <a href="/validation">evidence grades</a> before quoting a number.</p>
+  </aside>
+
+  <section class="content">
+    <div class="chartgrid two">
+      <div class="chart" id="c-igg"></div>
+      <div class="chart" id="c-ctl"></div>
+    </div>
+    <div id="table"></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script>initCompare();</script>{% endblock %}
