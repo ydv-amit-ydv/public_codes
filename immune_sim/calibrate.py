@@ -25,6 +25,7 @@ parameter set landing inside every band scores 0.
 """
 import argparse
 import json
+import sys
 import warnings
 from pathlib import Path
 
@@ -39,8 +40,68 @@ MODELS = HERE / "models"
 RESULTS = HERE / "results"
 
 PRIME_STEP, BOOST_STEP, N_STEPS = 2, 270, 700
+# CMI-PB is a Tdap boost: recombinant protein antigens on an aluminium
+# adjuvant. Calibrate the model in that configuration so the comparison with
+# the measured data is like for like.
+PLATFORM, ADJUVANT = "protein", "alum"
 PRIME_DAY = PRIME_STEP * 8 / 24
 BOOST_DAY = BOOST_STEP * 8 / 24
+
+def wetlab_targets(seed=0, train_frac=0.5):
+    """
+    Derive calibration bands from MEASURED human data (CMI-PB), using only a
+    training half of the subjects. The held-out half is never seen here, so
+    wetlab_validation.py --test-only remains an honest evaluation.
+
+    Returns (targets, info) or (None, reason) if the data is not present.
+    """
+    import pandas as pd
+    f = Path(__file__).parent / "data" / "cmipb_ab_titer.csv"
+    if not f.exists():
+        return None, f"missing {f} - run harvest_cmipb.py"
+    sys.path.insert(0, str(Path(__file__).parent))
+    from wetlab_validation import VACCINE_AG, per_subject
+
+    df = pd.read_csv(f)
+    subs = np.sort(df.subject_id.unique())
+    rng = np.random.default_rng(seed)
+    rng.shuffle(subs)
+    train = set(subs[:int(len(subs) * train_frac)])
+    d = df[df.subject_id.isin(train)]
+
+    folds, peaks = [], []
+    for ag in VACCINE_AG:
+        ps = per_subject(d, ag)
+        if len(ps) >= 15:
+            folds.append(ps.fold_rise.values)
+            peaks.append(ps.peak_day.values)
+    if not folds:
+        return None, "not enough training subjects"
+    folds = np.concatenate(folds); peaks = np.concatenate(peaks)
+
+    # Target the interquartile range of real subjects, not the extremes.
+    f_lo, f_hi = np.percentile(folds, [25, 75])
+
+    # Peak day needs care: CMI-PB samples at discrete days (0, 1, 3, 7, 14,
+    # 30), so nearly every observed peak lands exactly on a sampling day and
+    # the IQR collapses to a single point. A true peak anywhere between the
+    # neighbouring sampling days would have been observed at the same day, so
+    # the band is widened to that sampling resolution.
+    sched = np.array([0, 1, 3, 7, 14, 30], float)
+    obs_med = float(np.median(peaks))
+    i = int(np.argmin(np.abs(sched - obs_med)))
+    p_lo = float((sched[i - 1] + sched[i]) / 2) if i > 0 else float(sched[i])
+    p_hi = (float((sched[i] + sched[i + 1]) / 2) if i + 1 < len(sched)
+            else float(sched[i]))
+    info = {"n_train_subjects": len(train), "n_courses": int(len(folds)),
+            "fold_rise_IQR": [float(f_lo), float(f_hi)],
+            "peak_day_band": [float(p_lo), float(p_hi)],
+            "peak_day_band_note": "widened to the sampling resolution",
+            "fold_rise_median": float(np.median(folds)),
+            "peak_day_median": float(np.median(peaks))}
+    return [("boost_fold_over_baseline", float(f_lo), float(f_hi)),
+            ("secondary_peak_day", float(p_lo), float(p_hi))], info
+
 
 # (name, low, high) - bands, not point targets
 TARGETS = [
@@ -56,6 +117,8 @@ TARGETS = [
 ]
 
 # parameters the search is allowed to move, with bounds (log-uniform)
+TARGETS_ACTIVE = None      # set by main(); defaults to TARGETS
+
 SEARCH = {
     "ag_deposit":   (0.005, 0.30),
     "agd_decay":    (0.03,  0.45),
@@ -107,6 +170,11 @@ def measure(df):
 
     # rise above the residual, so a slowly-decaying primary cannot flatter it
     m["boost_ratio"] = (p2 - base) / p1 if p1 > 1e-9 else 0.0
+    # The quantity wet-lab studies actually report: peak after the boost
+    # divided by the pre-boost baseline in the same subject. This is NOT the
+    # same as peak2/peak1 above, and conflating them overstates the response
+    # by an order of magnitude.
+    m["boost_fold_over_baseline"] = p2 / base if base > 1e-9 else 0.0
     m["peak_IgG"] = max(p1, p2)
 
     igm1 = float(pre.IgM.max()); igm2 = float(post.IgM.max())
@@ -124,11 +192,11 @@ def measure(df):
     return m
 
 
-def score(m):
+def score(m, targets=None):
     if m is None:
         return 1e9, {}
     tot, detail = 0.0, {}
-    for name, lo, hi in TARGETS:
+    for name, lo, hi in (targets if targets is not None else TARGETS):
         v = m.get(name, 0.0)
         if not np.isfinite(v) or v <= 0:
             pen = 25.0
@@ -143,16 +211,51 @@ def score(m):
     return tot, detail
 
 
+# Cross-configuration constraints. Fitting a single configuration produced
+# parameters that were badly wrong everywhere else - an unadjuvanted vaccine
+# came out 800x STRONGER than an adjuvanted one, because nothing in the target
+# set ever simulated it. These run alongside the primary fit.
+CROSS_TARGETS = [
+    ("adjuvant_effect",        5.0,   1000.0),   # alum IgG / no-adjuvant IgG
+    ("boost_over_prime_peak",  1.2,     20.0),   # secondary > primary peak
+    ("mrna_ctl_over_protein",  5.0,    1e4),     # endogenous routing -> CD8
+]
+
+
+def _run(params, ep, platform, adjuvant):
+    sim = Sim(ep, p=params,
+              injections=[(PRIME_STEP, None, adjuvant),
+                          (BOOST_STEP, None, adjuvant)],
+              platform=platform, adjuvant=adjuvant)
+    return sim.run(n_steps=N_STEPS)
+
+
 def evaluate(params, ep):
     try:
-        sim = Sim(ep, p=params,
-                  injections=[(PRIME_STEP, 1000.0, 100.0),
-                              (BOOST_STEP, 1000.0, 100.0)])
-        df = sim.run(n_steps=N_STEPS)
+        df = _run(params, ep, PLATFORM, ADJUVANT)
         if not np.all(np.isfinite(df[["IgG", "IgM", "TH_active"]].values)):
             return 1e9, {}, None
         m = measure(df)
-        s, d = score(m)
+        if m is None:
+            return 1e9, {}, None
+
+        # other configurations the parameters must also get right
+        none_df = _run(params, ep, "protein", "none")
+        mrna_df = _run(params, ep, "mrna_lnp", "intrinsic")
+        for d in (none_df, mrna_df):
+            if not np.all(np.isfinite(d[["IgG", "TC_active"]].values)):
+                return 1e9, {}, None
+
+        m["adjuvant_effect"] = (float(df.IgG.max())
+                                / max(float(none_df.IgG.max()), 1e-9))
+        bd = BOOST_DAY
+        pre, post = df[df.day < bd], df[df.day >= bd]
+        m["boost_over_prime_peak"] = (float(post.IgG.max())
+                                      / max(float(pre.IgG.max()), 1e-9))
+        m["mrna_ctl_over_protein"] = (float(mrna_df.TC_active.max())
+                                      / max(float(df.TC_active.max()), 1e-9))
+
+        s, d = score(m, list(TARGETS_ACTIVE) + CROSS_TARGETS)
         return s, d, df
     except Exception:
         return 1e9, {}, None
@@ -202,22 +305,45 @@ def save(params, sc, out):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--epitopes", default="results/P0DTC2_epitopes.csv")
+    ap.add_argument("--epitopes", default="results/demo_epitopes.csv")
     ap.add_argument("--iters", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="models/calibrated.json")
+    ap.add_argument("--wetlab", action="store_true",
+                    help="replace the literature bands for boost magnitude and "
+                         "timing with bands measured from CMI-PB TRAINING "
+                         "subjects (the held-out half stays unseen)")
     args = ap.parse_args()
+
+    global TARGETS_ACTIVE
+    TARGETS_ACTIVE = list(TARGETS)
+    if args.wetlab:
+        wl, info = wetlab_targets()
+        if wl is None:
+            sys.exit(f"--wetlab: {info}")
+        names = {n for n, _, _ in wl}
+        TARGETS_ACTIVE = [t for t in TARGETS_ACTIVE if t[0] not in names] + wl
+        # peak2/peak1 is superseded by the measured fold-over-baseline
+        TARGETS_ACTIVE = [t for t in TARGETS_ACTIVE if t[0] != "boost_ratio"]
+        print("Calibrating against MEASURED human data (CMI-PB training half)")
+        print(f"  {info['n_train_subjects']} training subjects, "
+              f"{info['n_courses']} antigen time courses")
+        print(f"  fold-rise  median {info['fold_rise_median']:.2f}x, "
+              f"IQR {info['fold_rise_IQR'][0]:.2f}-{info['fold_rise_IQR'][1]:.2f}")
+        print(f"  peak day   median {info['peak_day_median']:.0f} d, "
+              f"band {info['peak_day_band'][0]:.1f}-{info['peak_day_band'][1]:.1f} d "
+              f"({info['peak_day_band_note']})\n")
 
     ep = load_epitopes(args.epitopes)
     print(f"Calibrating on {len(ep)} epitope clones, {args.iters} iterations\n")
     bp, bs, bd = search(ep, args.iters, args.seed, out=args.out)
 
     print(f"\n  final score {bs:.4f}")
-    print(f"\n  {'target':22s} {'value':>12s} {'band':>22s} {'penalty':>8s}")
-    for name, lo, hi in TARGETS:
+    print(f"\n  {'target':26s} {'value':>12s} {'band':>22s} {'penalty':>8s}")
+    for name, lo, hi in list(TARGETS_ACTIVE) + CROSS_TARGETS:
         v, pen = bd.get(name, (float('nan'), float('nan')))
         ok = "ok" if pen == 0 else "  "
-        print(f"  {name:22s} {v:12.4g} {f'[{lo:g}, {hi:g}]':>22s} {pen:8.3f} {ok}")
+        print(f"  {name:26s} {v:12.4g} {f'[{lo:g}, {hi:g}]':>22s} {pen:8.3f} {ok}")
 
     save(bp, bs, args.out)
     changed = sum(1 for k, v in bp.items() if abs(v - P.get(k, v)) > 1e-12)

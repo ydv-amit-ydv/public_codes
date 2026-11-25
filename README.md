@@ -44,8 +44,7 @@ switching, affinity maturation, memory, and the faster, larger response to a boo
 
 It reads epitopes straight from an **`epitope_filter_engine` run** (the preferred path —
 eleven fused predictors beat anything trained here), and falls back to its own
-IEDB-trained models (67,365 affinity records; class I binding ROC-AUC 0.916) when the
-engine has not been run. The circRNA platform pairs with **`circrna_opt`** in this repo.
+IEDB-trained models (67,365 affinity records) when the engine has not been run. The circRNA platform pairs with **`circrna_opt`** in this repo.
 
 ```bash
 cd immune_sim
@@ -59,9 +58,12 @@ Ten benchmarks hold the model to documented findings — mRNA beats protein on C
 saRNA is dose-sparing, anti-vector immunity blunts a homologous adenoviral boost.
 Kinetics are calibrated against nine quantitative immunological targets (all met).
 
-**Scope:** the ROC/AUC figures validate epitope *prediction*; the dynamic kinetics are
-calibrated to qualitative benchmarks and are **not fitted to measured titer data**, so
-the model ranks formulations and schedules rather than predicting absolute titers.
+**Validated** against real data, out-of-sample: epitope prediction on 7 unseen pathogens
+(leave-one-pathogen-out, median ROC-AUC 0.769 class I), and boost antibody kinetics
+against **CMI-PB** — 166 adults given a Tdap boost, with subjects split so evaluation
+uses only held-out people. Platform comparisons are *not* validated against data; they
+reproduce published directions. Every claim is graded A-D in
+[`immune_sim/VALIDATION.md`](immune_sim/VALIDATION.md).
 
 Details: [`immune_sim/README.md`](immune_sim/README.md).
 

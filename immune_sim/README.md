@@ -51,13 +51,20 @@ python3 predict.py P0DTC2    # scan an antigen
 
 | Model | Class I | Class II |
 |---|---|---|
-| Binding (ROC-AUC, held-out) | **0.916** | 0.782 |
-| Immunogenicity (ROC-AUC, CV) | 0.714 | 0.620 |
+| Binding, random held-out peptides | 0.916 | 0.782 |
+| **Binding, unseen pathogen (leave-one-pathogen-out)** | **0.769** | **0.733** |
+| Immunogenicity (cross-validated) | 0.714 | 0.620 |
 
-Honest about where this sits: 0.916 is respectable but **below NetMHCpan**,
-which is why the engine is the preferred path. Validated against published
-SARS-CoV-2 spike epitopes — YLQPRTFLL, QYIKWPWYI, IPFAMQMAY and others all
-land in the top 0.5% of a whole-proteome scan.
+**Quote the second row, not the first.** A random peptide split leaks:
+peptides from one organism are compositionally similar and often near
+duplicates. Retraining with an organism entirely removed — the real situation
+when a novel pathogen arrives — gives ~0.77 for class I.
+
+**Class II barely generalises.** On an unseen pathogen it beats a plain
+amino-acid-composition baseline in only 2 of 6 pathogens, and one case came
+out below chance. Another reason the engine is the preferred path.
+
+See [VALIDATION.md](VALIDATION.md) for the full statistics.
 
 ---
 
@@ -187,6 +194,33 @@ with physiological bounds:
 | All platforms physiological | 10/10 within bounds |
 
 ---
+
+## Validation
+
+Full detail in **[VALIDATION.md](VALIDATION.md)**, with evidence grades.
+Headlines:
+
+- **Epitope prediction** is tested out-of-sample on 7 unseen pathogens
+  (10,399 class I test peptides): median ROC-AUC 0.769, beating a composition
+  baseline in 7/7 after Benjamini-Hochberg correction.
+- **Boost kinetics** are tested against **CMI-PB** — 166 real adults given a
+  Tdap boost, titers at days 0/1/3/7/14/30. Subjects are split in half;
+  calibration sees one half, evaluation the other.
+  The first attempt **failed honestly**: the literature-tuned model predicted
+  a 71x boost against an observed 1.7-11.4x. Recalibrating on measured data
+  fixed it, and the fix holds on held-out subjects (6/6 antigens).
+- **Negative control**: non-vaccine antigens rise 1.18x vs 2.91x for vaccine
+  antigens, p<1e-4.
+- **Platform comparisons are NOT validated against data** — they reproduce
+  literature directions. `scorecard.py --robustness` quantifies how much they
+  depend on parameter guesses.
+
+```bash
+python3 harvest_cmipb.py          # open NIH dataset, no key needed
+python3 external_validation.py    # leave-one-pathogen-out
+python3 wetlab_validation.py --split test --params models/calibrated_wetlab.json
+python3 scorecard.py --robustness 100
+```
 
 ## What this model can and cannot claim
 

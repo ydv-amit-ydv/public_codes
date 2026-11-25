@@ -88,3 +88,12 @@ immune_sim/results/*_timecourse.csv
 *.db
 *.tar.gz
 *.zip
+
+# immune_sim: CMI-PB harvest (regenerate with harvest_cmipb.py)
+immune_sim/data/cmipb_*.csv
+immune_sim/results/*.json
+!immune_sim/results/wetlab_validation_*.json
+# validation outputs are small and are the evidence for the README claims
+!immune_sim/results/external_validation.csv
+!immune_sim/results/wetlab_validation_*.csv
+!immune_sim/results/scorecard.csv

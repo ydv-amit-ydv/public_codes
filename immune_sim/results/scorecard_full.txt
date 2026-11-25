@@ -1,0 +1,125 @@
+sampling 100 parameter sets for robustness...
+
+====================================================================================================
+PIPELINE SCORECARD - what is validated, how, and how confidently
+====================================================================================================
+
+  GRADE A: MEASURED DATA, OUT-OF-SAMPLE
+  ------------------------------------------------------------------------------------------------
+
+    Binding model ranks epitopes of an UNSEEN pathogen (MHC class I)
+      evidence   leave-one-pathogen-out, 7 pathogens, n=10,399 test peptides
+      statistic  median ROC-AUC 0.769 (range 0.662-0.855)
+      confidence beats composition baseline in 7/7 after Benjamini-Hochberg
+      caveat     median ECE 0.111
+
+    Binding model ranks epitopes of an UNSEEN pathogen (MHC class II)
+      evidence   leave-one-pathogen-out, 6 pathogens, n=6,114 test peptides
+      statistic  median ROC-AUC 0.733 (range 0.470-0.792)
+      confidence beats composition baseline in 2/6 after Benjamini-Hochberg
+      caveat     median ECE 0.148
+
+    Boost antibody fold-rise matches measured human data
+      evidence   CMI-PB Tdap, held-out subjects, never used for calibration
+      statistic  model 3.08x; inside the observed 5-95% subject band for 6/6 vaccine antigens
+      confidence 6/6 antigens consistent
+      caveat     ratios only - the model's antibody is in arbitrary units
+
+    Boost antibody time-to-peak matches measured human data
+      evidence   CMI-PB Tdap, held-out subjects, never used for calibration
+      statistic  model 23.0 d; inside the band for 6/6 antigens
+      confidence 6/6 antigens consistent
+      caveat     CMI-PB samples at days 0,1,3,7,14,30 - resolution is coarse
+
+    The measured boost signal is real, not analysis noise
+      evidence   CMI-PB vaccine antigens vs non-vaccine controls (OVA etc.)
+      statistic  median fold-rise 2.91x vs 1.18x
+      confidence Mann-Whitney p <1e-4, rank-biserial r=0.744
+      caveat     negative control behaves as it should
+
+  GRADE B: MEASURED DATA, IN-SAMPLE
+  ------------------------------------------------------------------------------------------------
+
+    Boost antibody fold-rise matches measured human data
+      evidence   CMI-PB Tdap, subjects used for calibration
+      statistic  model 3.08x; inside the observed 5-95% subject band for 6/6 vaccine antigens
+      confidence 6/6 antigens consistent
+      caveat     ratios only - the model's antibody is in arbitrary units
+
+    Boost antibody time-to-peak matches measured human data
+      evidence   CMI-PB Tdap, subjects used for calibration
+      statistic  model 23.0 d; inside the band for 6/6 antigens
+      confidence 6/6 antigens consistent
+      caveat     CMI-PB samples at days 0,1,3,7,14,30 - resolution is coarse
+
+    The measured boost signal is real, not analysis noise
+      evidence   CMI-PB vaccine antigens vs non-vaccine controls (OVA etc.)
+      statistic  median fold-rise 2.88x vs 1.16x
+      confidence Mann-Whitney p <1e-4, rank-biserial r=0.701
+      caveat     negative control behaves as it should
+
+  GRADE C: CALIBRATED TO PUBLISHED QUALITATIVE FINDINGS
+  ------------------------------------------------------------------------------------------------
+
+    mRNA-LNP induces more CD8 than adjuvanted protein
+      evidence   direction reported in the vaccine literature; robustness over 100 parameter draws (+-25%)
+      statistic  holds in 100% of parameter draws
+      confidence robustness 100% (NOT a truth probability)
+      caveat     no measured dataset compares these platforms here
+
+    AS01 induces more CTL than alum (Th1 vs Th2)
+      evidence   direction reported in the vaccine literature; robustness over 100 parameter draws (+-25%)
+      statistic  holds in 99% of parameter draws
+      confidence robustness 99% (NOT a truth probability)
+      caveat     no measured dataset compares these platforms here
+
+    An adjuvant is required for a protein antibody response
+      evidence   direction reported in the vaccine literature; robustness over 100 parameter draws (+-25%)
+      statistic  holds in 19% of parameter draws
+      confidence robustness 19% (NOT a truth probability)
+      caveat     no measured dataset compares these platforms here
+
+    The secondary response exceeds the primary
+      evidence   direction reported in the vaccine literature; robustness over 100 parameter draws (+-25%)
+      statistic  holds in 3% of parameter draws
+      confidence robustness 3% (NOT a truth probability)
+      caveat     no measured dataset compares these platforms here
+
+  GRADE D: ASSUMPTION / STRUCTURAL CHOICE
+  ------------------------------------------------------------------------------------------------
+
+    Absolute antibody titer in a named individual
+      evidence   none - the model's antibody is in arbitrary units
+      statistic  not predicted
+      confidence none
+      caveat     only ratios and timings are comparable to data
+
+    Platform constants (half-lives, routing, Th1/Th2 bias)
+      evidence   order-of-magnitude literature values and relative scales
+      statistic  not fitted
+      confidence none
+      caveat     falsifiable prior; see platforms.py docstring
+
+    Primary (first-exposure) response kinetics
+      evidence   no measured primary-response dataset harvested - every CMI-PB subject was primed in infancy
+      statistic  not validated
+      confidence none
+      caveat     the boost arm IS validated; the primary arm is not
+
+    Protection / efficacy against infection
+      evidence   no challenge or efficacy data anywhere in this pipeline
+      statistic  not modelled
+      confidence none
+      caveat     immunogenicity is not efficacy
+
+====================================================================================================
+HOW TO READ THIS
+====================================================================================================
+  Grade A is the only grade where a number was tested out-of-sample
+  and could have failed. Grade C 'robustness' is the share of
+  plausible parameter sets giving the stated direction - it measures
+  how load-bearing a parameter guess is, NOT whether the biology is
+  true. Grade D items are not claims at all; they are listed so
+  nobody mistakes silence for evidence.
+
+  wrote /home/user/public_codes/immune_sim/results/scorecard.csv

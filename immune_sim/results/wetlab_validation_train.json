@@ -1,0 +1,205 @@
+{
+  "PT": {
+    "n_subjects": 53,
+    "observed_fold_rise": {
+      "median": 3.9588707484453716,
+      "ci_lo": 2.5465427410878094,
+      "ci_hi": 7.587027590268918,
+      "p05": 1.2256641471931051,
+      "p95": 26.71100845897955
+    },
+    "observed_peak_day": {
+      "median": 14.0,
+      "ci_lo": 14.0,
+      "ci_hi": 14.0,
+      "p05": 6.6,
+      "p95": 29.4
+    },
+    "fold_rise_check": {
+      "model": 3.0789173759087203,
+      "percentile_in_cohort": 45.3,
+      "within_subject_90pct_band": true,
+      "within_median_CI": true,
+      "p_differs_from_cohort_median": 0.0019163826687327355
+    },
+    "peak_day_check": {
+      "model": 22.999999999999673,
+      "percentile_in_cohort": 90.6,
+      "within_subject_90pct_band": true,
+      "within_median_CI": false,
+      "p_differs_from_cohort_median": 7.610563157432003e-10
+    }
+  },
+  "PRN": {
+    "n_subjects": 53,
+    "observed_fold_rise": {
+      "median": 2.3687949164223934,
+      "ci_lo": 1.6672842307867748,
+      "ci_hi": 4.586954281603978,
+      "p05": 1.0800049620999146,
+      "p95": 23.535071438073256
+    },
+    "observed_peak_day": {
+      "median": 14.0,
+      "ci_lo": 14.0,
+      "ci_hi": 14.0,
+      "p05": 1.0,
+      "p95": 30.0
+    },
+    "fold_rise_check": {
+      "model": 3.0789173759087203,
+      "percentile_in_cohort": 52.8,
+      "within_subject_90pct_band": true,
+      "within_median_CI": true,
+      "p_differs_from_cohort_median": 0.1428847589521032
+    },
+    "peak_day_check": {
+      "model": 22.999999999999673,
+      "percentile_in_cohort": 88.7,
+      "within_subject_90pct_band": true,
+      "within_median_CI": false,
+      "p_differs_from_cohort_median": 2.048164990807825e-09
+    }
+  },
+  "FHA": {
+    "n_subjects": 53,
+    "observed_fold_rise": {
+      "median": 3.7214663672926354,
+      "ci_lo": 2.4421618742887268,
+      "ci_hi": 4.599600106637916,
+      "p05": 1.1140092702264681,
+      "p95": 31.8714604326417
+    },
+    "observed_peak_day": {
+      "median": 14.0,
+      "ci_lo": 14.0,
+      "ci_hi": 14.0,
+      "p05": 7.0,
+      "p95": 30.0
+    },
+    "fold_rise_check": {
+      "model": 3.0789173759087203,
+      "percentile_in_cohort": 43.4,
+      "within_subject_90pct_band": true,
+      "within_median_CI": true,
+      "p_differs_from_cohort_median": 0.022632201225067584
+    },
+    "peak_day_check": {
+      "model": 22.999999999999673,
+      "percentile_in_cohort": 83.0,
+      "within_subject_90pct_band": true,
+      "within_median_CI": false,
+      "p_differs_from_cohort_median": 7.892016288717292e-09
+    }
+  },
+  "FIM2/3": {
+    "n_subjects": 23,
+    "observed_fold_rise": {
+      "median": 11.494351164097113,
+      "ci_lo": 2.562012694647599,
+      "ci_hi": 15.23845119150607,
+      "p05": 1.3832792179876716,
+      "p95": 67.5371788918928
+    },
+    "observed_peak_day": {
+      "median": 14.0,
+      "ci_lo": 14.0,
+      "ci_hi": 15.0,
+      "p05": 7.0,
+      "p95": 29.9
+    },
+    "fold_rise_check": {
+      "model": 3.0789173759087203,
+      "percentile_in_cohort": 34.8,
+      "within_subject_90pct_band": true,
+      "within_median_CI": true,
+      "p_differs_from_cohort_median": 0.0011184215545654297
+    },
+    "peak_day_check": {
+      "model": 22.999999999999673,
+      "percentile_in_cohort": 73.9,
+      "within_subject_90pct_band": true,
+      "within_median_CI": false,
+      "p_differs_from_cohort_median": 0.0002926625419970303
+    }
+  },
+  "DT": {
+    "n_subjects": 23,
+    "observed_fold_rise": {
+      "median": 2.3837638376383805,
+      "ci_lo": 1.944573387560417,
+      "ci_hi": 3.9454264913648096,
+      "p05": 1.2248538181326065,
+      "p95": 7.186364725764106
+    },
+    "observed_peak_day": {
+      "median": 14.0,
+      "ci_lo": 14.0,
+      "ci_hi": 14.0,
+      "p05": 7.700000000000001,
+      "p95": 29.0
+    },
+    "fold_rise_check": {
+      "model": 3.0789173759087203,
+      "percentile_in_cohort": 56.5,
+      "within_subject_90pct_band": true,
+      "within_median_CI": true,
+      "p_differs_from_cohort_median": 0.869666576385498
+    },
+    "peak_day_check": {
+      "model": 22.999999999999673,
+      "percentile_in_cohort": 78.3,
+      "within_subject_90pct_band": true,
+      "within_median_CI": false,
+      "p_differs_from_cohort_median": 0.00011989866577568341
+    }
+  },
+  "TT": {
+    "n_subjects": 23,
+    "observed_fold_rise": {
+      "median": 1.804133449479102,
+      "ci_lo": 1.5567081497386495,
+      "ci_hi": 2.073480957903063,
+      "p05": 1.2167360120486643,
+      "p95": 7.031765955700154
+    },
+    "observed_peak_day": {
+      "median": 14.0,
+      "ci_lo": 14.0,
+      "ci_hi": 14.0,
+      "p05": 14.0,
+      "p95": 29.0
+    },
+    "fold_rise_check": {
+      "model": 3.0789173759087203,
+      "percentile_in_cohort": 82.6,
+      "within_subject_90pct_band": true,
+      "within_median_CI": false,
+      "p_differs_from_cohort_median": 0.11864614486694336
+    },
+    "peak_day_check": {
+      "model": 22.999999999999673,
+      "percentile_in_cohort": 82.6,
+      "within_subject_90pct_band": true,
+      "within_median_CI": false,
+      "p_differs_from_cohort_median": 4.924181035316935e-05
+    }
+  },
+  "_vaccine_vs_control": {
+    "p": 1.510939881150832e-08,
+    "effect_rank_biserial": 0.7013729977116705,
+    "median_vaccine": 2.882475896679975,
+    "median_control": 1.159091582617969
+  },
+  "_summary": {
+    "antigens": 6,
+    "fold_rise_ok": 6,
+    "peak_day_ok": 6,
+    "model_fold_rise": 3.0789173759087203,
+    "model_peak_day": 22.999999999999673
+  },
+  "_meta": {
+    "params": "models/calibrated_wetlab.json",
+    "split": "train"
+  }
+}
