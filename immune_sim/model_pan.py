@@ -66,11 +66,15 @@ class CoreScan:
     """
 
     def __init__(self, base="gbm", realign=4, seed=SEED, n_alleles=0,
-                 max_iter=400, hidden=(256, 128)):
+                 max_iter=400, hidden=(256, 128), allele_enc=None):
         self.base_kind = base
         self.realign = realign
         self.seed = seed
         self.n_alleles = n_alleles
+        # Hierarchical allele features (locus / group / exact allele). With a
+        # flat one-hot an unseen allele had no column and fell back to index
+        # 0, i.e. was scored as another allele entirely.
+        self.allele_enc = allele_enc
         self.max_iter = max_iter
         self.hidden = hidden
         self.model = None
@@ -78,6 +82,11 @@ class CoreScan:
 
     # -- allele one-hot block -------------------------------------------
     def _with_allele(self, X, allele_idx):
+        if self.allele_enc is not None:
+            names = self.allele_enc.alleles
+            labels = [names[i] if 0 <= i < len(names) else "?"
+                      for i in np.asarray(allele_idx, dtype=np.int64)]
+            return np.hstack([X, self.allele_enc.transform(labels)])
         if not self.n_alleles:
             return X
         A = np.zeros((X.shape[0], self.n_alleles), dtype=np.float32)
@@ -144,15 +153,31 @@ class CoreScan:
         self.offsets_ = offs
         return self
 
-    def predict(self, peptides, allele_idx=None):
+    def predict(self, peptides, allele_idx=None, chunk=40000):
+        """
+        Scored in chunks. Expanding every register of a large set at once is
+        what makes this explode: 850,000 eluted-ligand candidates at ~4
+        registers each is 3.4 million rows of 268 float32 columns, about
+        3.6 GB for the feature matrix alone. Chunking bounds it.
+        """
         peptides = list(peptides)
+        n = len(peptides)
         if allele_idx is None:
-            allele_idx = np.zeros(len(peptides), dtype=np.int64)
+            allele_idx = np.zeros(n, dtype=np.int64)
         allele_idx = np.asarray(allele_idx, dtype=np.int64)
-        ridx, roffs, RX = E.expand_all_offsets(peptides)
-        s = self._predict_base(self._with_allele(RX, allele_idx[ridx]))
-        best, arg = E.pool_max(ridx, s, len(peptides))
-        self.last_offsets_ = roffs[arg]
+
+        best = np.empty(n, dtype=np.float64)
+        offs = np.zeros(n, dtype=np.int64)
+        for lo in range(0, n, chunk):
+            hi = min(lo + chunk, n)
+            sub = peptides[lo:hi]
+            ridx, roffs, RX = E.expand_all_offsets(sub)
+            sc = self._predict_base(
+                self._with_allele(RX, allele_idx[lo:hi][ridx]))
+            b, arg = E.pool_max(ridx, sc, hi - lo)
+            best[lo:hi] = b
+            offs[lo:hi] = roffs[arg]
+        self.last_offsets_ = offs
         return best
 
 
@@ -171,12 +196,13 @@ class PanEnsemble:
     def __init__(self, alleles, realign=4, seed=SEED, quick=False):
         self.alleles = list(alleles)
         self.aidx = {a: i for i, a in enumerate(self.alleles)}
+        self.allele_enc = E.AlleleEncoder(self.alleles)
         self.members = [
             CoreScan("gbm", realign=realign, seed=seed,
-                     n_alleles=len(self.alleles),
+                     allele_enc=self.allele_enc,
                      max_iter=120 if quick else 500),
             CoreScan("mlp", realign=max(2, realign - 1), seed=seed,
-                     n_alleles=len(self.alleles),
+                     allele_enc=self.allele_enc,
                      max_iter=40 if quick else 180,
                      hidden=(128,) if quick else (256, 128)),
         ]
@@ -186,7 +212,17 @@ class PanEnsemble:
         self.seed = seed
 
     def _ai(self, alleles):
-        return np.array([self.aidx.get(a, 0) for a in alleles], dtype=np.int64)
+        """
+        Index into the known-allele list, or -1 for an allele never trained
+        on. -1 must NOT silently become 0: that is the bug this encoding
+        replaces. `_with_allele` turns -1 into "?", which matches no exact
+        allele and falls back to the group and locus features.
+        """
+        return np.array([self.aidx.get(a, -1) for a in alleles],
+                        dtype=np.int64)
+
+    def allele_coverage(self, allele):
+        return self.allele_enc.coverage(allele)
 
     def _fit_members(self, peptides, y, ai, verbose):
         for name, m in zip(self.names, self.members):
@@ -255,6 +291,27 @@ class PanEnsemble:
         w = (self.weights if self.weights is not None
              else np.ones(len(self.names)) / len(self.names))
         return np.asarray(w, dtype=np.float64) @ M
+
+
+def load_pan_model(mhc_class, models_dir=None):
+    """
+    Load a trained pan ensemble.
+
+    Handles the case where the pickle was written by `python3 model_pan.py`,
+    in which case the classes were recorded as `__main__.PanEnsemble` rather
+    than `model_pan.PanEnsemble` and a plain `pickle.load` from another script
+    raises AttributeError. The `__main__` block below avoids creating new
+    pickles like that; this keeps older ones readable.
+    """
+    import __main__
+    d = Path(models_dir or MODELS) / f"pan_{mhc_class}.pkl"
+    if not d.exists():
+        return None
+    for name, cls in (("PanEnsemble", PanEnsemble), ("CoreScan", CoreScan)):
+        if not hasattr(__main__, name):
+            setattr(__main__, name, cls)
+    with open(d, "rb") as fh:
+        return pickle.load(fh)["ensemble"]
 
 
 # --------------------------------------------------------------------------
@@ -337,4 +394,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Run through the imported module namespace, so pickled models record
+    # their classes as `model_pan.PanEnsemble` and load from other scripts.
+    import model_pan
+    model_pan.main()

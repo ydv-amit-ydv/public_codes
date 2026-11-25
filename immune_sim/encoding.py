@@ -169,3 +169,81 @@ def pool_max(idx, scores, n):
             best[i] = s
             arg[i] = r
     return best, arg
+
+
+# --------------------------------------------------------------------------
+# allele representation
+# --------------------------------------------------------------------------
+import re as _re
+
+
+class AlleleEncoder:
+    """
+    Hierarchical allele features, replacing a flat one-hot.
+
+    A one-hot over training alleles cannot transfer to an allele it has never
+    seen - there is no column to put it in - and a fallback to index 0 is
+    worse than useless: it scores the new allele as if it were whichever
+    allele happens to be first. Measured on mass-spectrometry eluted ligands,
+    that is exactly what happened. On the nine alleles in the training set the
+    model reached ROC-AUC 0.90-0.98; on alleles outside it, 0.54-0.76.
+
+    So the allele is encoded at three levels of specificity:
+
+        locus        HLA-A, HLA-B, HLA-C, HLA-DRB1, H2-K, ...
+        group        the first field, e.g. B*44 - shared by B*44:02 and B*44:03
+        allele       the exact allele
+
+    A trained allele lights up all three. An unseen allele lights up the two
+    coarser ones and degrades to its group's or locus's average motif instead
+    of to an arbitrary allele's. Groups matter because MHC alleles within a
+    first-field group share most of their binding pocket; this is the cheap,
+    offline approximation to a pseudo-sequence encoding.
+    """
+
+    def __init__(self, alleles):
+        self.alleles = list(dict.fromkeys(alleles))
+        self.loci = sorted({self.locus(a) for a in self.alleles})
+        self.groups = sorted({self.group(a) for a in self.alleles})
+        self._li = {k: i for i, k in enumerate(self.loci)}
+        self._gi = {k: i for i, k in enumerate(self.groups)}
+        self._ai = {k: i for i, k in enumerate(self.alleles)}
+        self.dim = len(self.loci) + len(self.groups) + len(self.alleles)
+
+    @staticmethod
+    def locus(a):
+        a = str(a)
+        m = _re.match(r"^([A-Za-z0-9]+-[A-Za-z0-9]+)", a.replace("*", "-"))
+        if m:
+            return m.group(1).split("-")[0] + "-" + m.group(1).split("-")[1]
+        return a.split("*")[0] or "unknown"
+
+    @staticmethod
+    def group(a):
+        a = str(a)
+        if "*" in a:
+            head, rest = a.split("*", 1)
+            return f"{head}*{rest.split(':')[0]}"
+        return a
+
+    def transform(self, alleles):
+        A = np.zeros((len(alleles), self.dim), dtype=np.float32)
+        off_g = len(self.loci)
+        off_a = off_g + len(self.groups)
+        for i, a in enumerate(alleles):
+            li = self._li.get(self.locus(a))
+            if li is not None:
+                A[i, li] = 1.0
+            gi = self._gi.get(self.group(a))
+            if gi is not None:
+                A[i, off_g + gi] = 1.0
+            ai = self._ai.get(a)
+            if ai is not None:
+                A[i, off_a + ai] = 1.0
+        return A
+
+    def coverage(self, allele):
+        """Which levels an allele matches: for reporting, not for scoring."""
+        return {"locus": self.locus(allele) in self._li,
+                "group": self.group(allele) in self._gi,
+                "allele": allele in self._ai}
