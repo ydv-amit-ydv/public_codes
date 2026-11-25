@@ -21,13 +21,13 @@ PIPELINE SCORECARD - what is validated, how, and how confidently
 
     Boost antibody fold-rise matches measured human data
       evidence   CMI-PB Tdap, held-out subjects, never used for calibration
-      statistic  model 3.08x; inside the observed 5-95% subject band for 6/6 vaccine antigens
-      confidence 6/6 antigens consistent
+      statistic  model 8.75x; inside the observed 5-95% subject band for 4/6 vaccine antigens
+      confidence 4/6 antigens consistent
       caveat     ratios only - the model's antibody is in arbitrary units
 
     Boost antibody time-to-peak matches measured human data
       evidence   CMI-PB Tdap, held-out subjects, never used for calibration
-      statistic  model 23.0 d; inside the band for 6/6 antigens
+      statistic  model 16.7 d; inside the band for 6/6 antigens
       confidence 6/6 antigens consistent
       caveat     CMI-PB samples at days 0,1,3,7,14,30 - resolution is coarse
 
@@ -69,20 +69,20 @@ PIPELINE SCORECARD - what is validated, how, and how confidently
 
     AS01 induces more CTL than alum (Th1 vs Th2)
       evidence   direction reported in the vaccine literature; robustness over 100 parameter draws (+-25%)
-      statistic  holds in 99% of parameter draws
-      confidence robustness 99% (NOT a truth probability)
+      statistic  holds in 100% of parameter draws
+      confidence robustness 100% (NOT a truth probability)
       caveat     no measured dataset compares these platforms here
 
     An adjuvant is required for a protein antibody response
       evidence   direction reported in the vaccine literature; robustness over 100 parameter draws (+-25%)
-      statistic  holds in 19% of parameter draws
-      confidence robustness 19% (NOT a truth probability)
+      statistic  holds in 100% of parameter draws
+      confidence robustness 100% (NOT a truth probability)
       caveat     no measured dataset compares these platforms here
 
     The secondary response exceeds the primary
       evidence   direction reported in the vaccine literature; robustness over 100 parameter draws (+-25%)
-      statistic  holds in 3% of parameter draws
-      confidence robustness 3% (NOT a truth probability)
+      statistic  holds in 57% of parameter draws
+      confidence robustness 57% (NOT a truth probability)
       caveat     no measured dataset compares these platforms here
 
   GRADE D: ASSUMPTION / STRUCTURAL CHOICE

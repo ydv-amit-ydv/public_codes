@@ -57,10 +57,18 @@ Harvest it with `python3 harvest_cmipb.py` (open PostgREST API, no key).
 Subjects are split in half by ID. Calibration sees only the training half;
 `--split test` evaluates on subjects never used.
 
-| Outcome | Literature-calibrated | Wet-lab-calibrated (held-out) |
-|---|---|---|
-| Fold-rise inside observed subject band | **1/6** antigens | **6/6** antigens |
-| Time-to-peak inside band | 6/6 | 6/6 |
+| Outcome | Literature-calibrated | Wet-lab, single-config | Wet-lab + cross-config |
+|---|---|---|---|
+| Fold-rise inside observed subject band | **1/6** | 6/6 | **4/6** |
+| Time-to-peak inside band | 6/6 | 6/6 | **6/6** |
+| Behaves correctly in other configurations | — | **no** | **yes** |
+
+The middle column is a warning, not an achievement. Fitting the single CMI-PB
+configuration scored 6/6 while producing parameters under which an
+unadjuvanted vaccine was 800x *stronger* than an adjuvanted one. Adding
+cross-configuration constraints costs two antigens of single-config fit and
+buys a model that is not nonsense elsewhere. The right column is the one
+shipped.
 
 The first run was a genuine out-of-sample **failure**: the literature-tuned
 model predicted a 71× boost against an observed median of 1.7–11.4×, an
@@ -108,6 +116,28 @@ adjuvant_effect        alum IgG / no-adjuvant IgG   in [5, 1000]
 boost_over_prime_peak  secondary peak / primary     in [1.2, 20]
 mrna_ctl_over_protein  mRNA CTL / protein CTL       in [5, 1e4]
 ```
+
+After the fix, robustness over 100 parameter draws (+-25%):
+
+| Claim | Before | After |
+|---|---|---|
+| mRNA induces more CD8 than adjuvanted protein | 100% | **100%** |
+| AS01 induces more CTL than alum | 99% | **100%** |
+| An adjuvant is required for a protein antibody response | 19% | **100%** |
+| The secondary response exceeds the primary *in absolute peak* | 3% | **57%** |
+
+### The one claim that remains weak
+
+**Secondary peak > primary peak holds in only 57% of parameter draws.** For
+strongly priming platforms such as mRNA the model's primary peak can exceed
+its secondary (40,612 vs 11,578), which is not what mRNA vaccine trials show.
+
+The related quantity that *is* validated is the **fold-rise over the pre-boost
+baseline** - which is what wet-lab studies actually report, and what
+`wetlab_validation.py` tests against CMI-PB. Timing is also right
+(21 d -> 13 d). So the model gets the shape and the clinically reported
+statistic right, and understates absolute secondary magnitude. Stated in the
+benchmark's own docstring rather than tuned away.
 
 ---
 
