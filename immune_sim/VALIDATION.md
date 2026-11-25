@@ -46,6 +46,65 @@ n=206) came out at 0.470 — below chance. Class II calls on an unseen pathogen
 should be treated as weak evidence. Use the
 [`epitope_filter_engine`](../epitope_filter_engine) instead where possible.
 
+### Pan-allele core-scan on an unseen pathogen
+
+`external_validation_pan.py` repeats the leave-one-pathogen-out test for
+`model_pan.py` — one shared model across all alleles, a sliding 9-mer binding
+register chosen by iterative realignment, and a hierarchical allele encoding
+(locus / first-field group / exact allele) so an untrained allele falls back
+rather than being silently scored as a different one.
+
+16 pathogens, 8 per class, each removed from training entirely.
+
+| | Class I | Class II |
+|---|---|---|
+| Pathogens | 8 | 8 |
+| Usable rows | 36,792 | 18,274 |
+| Median ROC-AUC, pan | **0.873** (0.849–0.961) | **0.748** (0.596–0.803) |
+| Median ROC-AUC, `model.py` on the shared rows | 0.766 | 0.754 |
+| Median difference | **+0.123** | **+0.013** |
+| Pan better | 8/8 | 5/8 |
+| Significant after BH (paired DeLong) | **7/8** | 3/8 |
+| Beats composition baseline after BH | **8/8** | **2/8** |
+
+Per pathogen:
+
+| Pathogen | Class | n | pan | `model.py` | diff | p |
+|---|---|---|---|---|---|---|
+| Vaccinia virus WR | I | 7,442 | 0.849 | 0.772 | +0.112 | <1e-4 |
+| SARS coronavirus Tor2 | I | 2,437 | 0.857 | 0.781 | +0.098 | <1e-4 |
+| Homo sapiens | I | 1,888 | 0.861 | 0.764 | +0.112 | <1e-4 |
+| Zaire ebolavirus | I | 1,573 | 0.886 | 0.751 | +0.135 | <1e-4 |
+| Influenza A virus | I | 1,488 | 0.959 | 0.769 | +0.202 | <1e-4 |
+| Giardia lamblia | I | 1,040 | 0.961 | 0.769 | +0.191 | <1e-4 |
+| Mycobacterium tuberculosis | I | 812 | 0.952 | 0.662 | +0.285 | <1e-4 |
+| Dengue virus 2 | I | 622 | 0.849 | 0.738 | +0.052 | 0.142 |
+| Phleum pratense | II | 2,571 | 0.737 | 0.745 | −0.009 | 0.377 |
+| Homo sapiens | II | 2,044 | 0.725 | 0.721 | +0.054 | 4.5e-4 |
+| Mammarenavirus juninense | II | 868 | 0.803 | 0.792 | +0.011 | 0.516 |
+| Mammarenavirus brazilense | II | 840 | 0.788 | 0.764 | +0.024 | 0.170 |
+| LCM virus | II | 817 | 0.754 | 0.781 | −0.027 | 0.118 |
+| Mammarenavirus guanaritoense | II | 817 | 0.747 | 0.786 | −0.040 | 0.028 |
+| Mammarenavirus machupoense | II | 789 | 0.748 | 0.732 | +0.016 | 0.393 |
+| SARS coronavirus Tor2 | II | 788 | 0.596 | 0.470 | +0.126 | <1e-4 |
+
+**Class I: the added complexity is worth it.** Median AUC on a pathogen the
+model has never seen rises from 0.766 to 0.873, and the gain is significant in
+7 of 8 after correction. The one non-significant case (Dengue 2) still favours
+the pan model.
+
+**Class II: it is not.** The median difference is +0.013 and the pan model is
+*worse* on 3 of 8 pathogens, one of them significantly so. More tellingly it
+beats a plain amino-acid-composition baseline in only **2 of 8** — the same
+result as the simpler model, and the same conclusion the independent
+mass-spectrometry set reached. Two independent lines of evidence now say the
+class II layer on an unseen pathogen is close to composition-matching. It
+should not be used to make decisions on its own.
+
+The SARS class II row is worth reading carefully rather than as a win: the
+pan model's 0.596 beats `model.py`'s 0.470 (below chance) by a wide margin and
+with a tiny p-value, but 0.596 is itself barely better than guessing.
+
 ### Boost kinetics against measured human data
 
 `wetlab_validation.py` tests the dynamic model against **CMI-PB** — an openly
@@ -57,11 +116,41 @@ Harvest it with `python3 harvest_cmipb.py` (open PostgREST API, no key).
 Subjects are split in half by ID. Calibration sees only the training half;
 `--split test` evaluates on subjects never used.
 
-| Outcome | Literature-calibrated | Wet-lab, single-config | Wet-lab + cross-config |
-|---|---|---|---|
-| Fold-rise inside observed subject band | **1/6** | 6/6 | **4/6** |
-| Time-to-peak inside band | 6/6 | 6/6 | **6/6** |
-| Behaves correctly in other configurations | — | **no** | **yes** |
+| Outcome | Literature-calibrated | Wet-lab, single-config | Wet-lab + cross-config | **+ timing targets (shipped)** |
+|---|---|---|---|---|
+| Fold-rise inside observed subject band | **1/6** | 6/6 | 4/6 | **6/6** |
+| Time-to-peak inside band | 6/6 | 6/6 | 6/6 | **6/6** |
+| Behaves correctly in other configurations | — | **no** | yes | **yes** |
+| Platform benchmarks passed | — | — | 12/13 | **13/13** |
+
+The shipped column adds two cross-configuration constraints on mRNA response
+*timing* (`mrna_primary_peak_day` 8–35 d, `mrna_secondary_peak_day` 3–21 d).
+They were added because the long-lived plasma cell compartment, introduced to
+fix antibody durability, let total IgG climb for two months and put mRNA's
+primary peak at **day 61** — while protein+alum stayed correct, because it was
+the only arm whose timing anything constrained. Adding the two targets raised
+the training objective from 0.0002 to **1.6703**, confirming the violation was
+real and not a reporting artefact; re-searching brought it to 2.5e-05 and
+recovered the two antigens of fold-rise fit lost to the cross-config
+constraints.
+
+Held-out numbers under the shipped parameters: model fold-rise **3.86×**
+(observed medians 1.70–10.56× across the six antigens), model peak day
+**19.3 d**.
+
+**Two caveats the "6/6 inside the band" line hides.** The subject band is the
+5–95% range across individuals and it is very wide — 0.95–34× for fold-rise,
+1–31 d for peak day — so sitting inside it is a weak test. Measured against
+the bootstrap CI of the *median* instead:
+
+- fold-rise: the model's 3.86× is inside the median CI for 3 of 6 antigens.
+  It sits at the 87th and 94th percentile for DT and TT, so it **over-predicts
+  the weakly-responding antigens**.
+- peak day: the model's 19.3 d is **outside** the median CI (14–14 d) for
+  **all six**. CMI-PB samples on days 0/1/3/7/14/30, so an observed peak can
+  only land on one of those days and the median is pinned at 14 with no
+  spread; the model is ~5 days late against a grid that cannot resolve 5 days.
+  This is a real discrepancy, partially masked by the sampling schedule.
 
 The middle column is a warning, not an achievement. Fitting the single CMI-PB
 configuration scored 6/6 while producing parameters under which an
@@ -262,16 +351,48 @@ germinal centres in proportion to achieved affinity and T help.
 
 | Quantity | Before | After | Target |
 |---|---|---|---|
-| Peak activated B | 13 | **1,499** | 1e3–1e6 |
-| Peak memory B | 2.5 | **5,044** | 1e2–1e5 |
-| Peak plasma cells | — | **1,365** | 1e2–1e5 |
-| IgG retained at end of follow-up | ~0 | **55%** | 5–90% |
-| mRNA antibody boost (fold over baseline) | **0.99×** | **5.70×** | 2–60× |
-| mRNA secondary ÷ primary peak | **0.28×** | **4.57×** | ≥1× |
+| Peak activated B | 13 | **1,269** | 1e3–1e6 |
+| Peak memory B | 2.5 | **1,487** | 1e2–1e5 |
+| Peak plasma cells | — | **474** | 1e2–1e5 |
+| IgG retained at end of follow-up | ~0 | **70%** | 5–90% |
+| mRNA antibody boost (fold over baseline) | **0.99×** | **2.04×** | 2–60× |
+| mRNA primary peak day | **61 d** | **within 8–35 d** | 8–35 d |
 
 The last row is the weakness documented in the previous version of this file
 as holding in only 57% of parameter draws. It was not a tuning problem. It was
 the shared carrying capacity.
+
+---
+
+## A fourth defect, this one in the test rather than the model
+
+With the recalibrated parameters the `live_attenuated_is_most_durable`
+benchmark failed. The claim was that a replicating live attenuated vaccine
+gives "the longest antigen exposure", measured by days the antigen stays above
+**1% of that arm's own peak**. That metric normalises away the thing being
+compared: an arm with a 10× higher peak is scored against a 10× higher bar, so
+it measures peak shape, not persistence. Live attenuated read 15.7 d against
+protein+alum's 19.3 d purely because its peak is 6.4e3 against 6.3e2.
+
+Rescoring on a shared absolute threshold shows the original claim was simply
+wrong about the tail:
+
+| Threshold | Live attenuated | Protein + alum |
+|---|---|---|
+| above 1% of the larger peak (64 units) | **15.7 d** | 11.7 d |
+| above 1% of the smaller peak (6.3 units) | 19.3 d | 19.3 d |
+| above 1 unit | 22.0 d | **25.0 d** |
+
+An alum depot sustains trace antigen at least as long as replication does.
+What live attenuated dominates is the *amount* of antigen over time
+(cumulative exposure 44,395 vs 3,489, 12.7×) and the memory it leaves (CTL
+memory 450,007 vs 3,984, 113×). The benchmark now asserts those two and
+states in its own text that the tail is comparable and not claimed.
+
+This is recorded because it is the same failure mode as the single-config fit
+and the unconstrained mRNA timing: a metric that cannot distinguish the
+quantity of interest will pass for the wrong reason until something changes
+underneath it. The benchmark had been passing on a scale artefact.
 
 ---
 
@@ -366,11 +487,26 @@ python3 scorecard.py --robustness 100
 ## The honest summary
 
 The **epitope prediction layer** is validated out-of-sample on a novel
-pathogen: solid for class I (~0.77), weak for class II.
+pathogen across 16 leave-one-pathogen-out folds. Class I is solid and the
+pan-allele core-scan model is a real improvement: median AUC **0.873** against
+0.766 for the simpler per-allele model, significant in 7 of 8 pathogens after
+correction, beating a composition baseline in 8 of 8. Class II is weak and the
+extra complexity does not help it: median AUC 0.748 against 0.754, better in
+only 5 of 8, and beating a composition baseline in only 2 of 8. On the
+independent mass-spectrometry set the same comparison came out +0.000 for
+class I and **−0.048** for class II. Zero-shot transfer to an allele never
+seen in training remains unsolved (PPV@1% 0.087 → 0.121, Wilcoxon p = 0.45).
 
 The **boost kinetics** of the dynamic model are validated out-of-sample
 against 166 real human subjects, for one formulation (Tdap, protein + alum),
-in ratio and timing but not absolute magnitude.
+in ratio and timing but not absolute magnitude. Fold-rise and time-to-peak
+both sit inside the observed subject band for 6/6 antigens, but the band is
+wide: against the bootstrap CI of the median the model is inside for 3/6 on
+fold-rise and **0/6 on peak day**, running ~5 days late against a sampling
+grid too coarse to resolve 5 days. All 13 platform benchmarks pass, one of
+them only after a scale artefact in the benchmark itself was fixed. The
+221-trial clinical dataset does **not** corroborate the platform ordering
+(Spearman ρ = −0.10, p = 0.95, 5 platforms, not randomised).
 
 Everything about **platform comparison** — mRNA vs protein, circRNA vs mRNA,
 adjuvant choice — is a structured prior reproducing literature directions, not

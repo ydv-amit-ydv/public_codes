@@ -53,19 +53,27 @@ python3 predict.py P0DTC2    # scan an antigen
 |---|---|---|
 | Binding, random held-out peptides (`model.py`) | 0.916 | 0.782 |
 | Binding, random held-out peptides (`model_pan.py`) | 0.923 | 0.794 |
-| **Binding, unseen pathogen (leave-one-pathogen-out)** | **0.769** | **0.733** |
+| **Binding, unseen pathogen, `model.py`** (leave-one-pathogen-out) | 0.766 | 0.754 |
+| **Binding, unseen pathogen, `model_pan.py`** (leave-one-pathogen-out) | **0.873** | **0.748** |
 | **Eluted ligands, trained allele** — ROC-AUC / PPV@1% | **0.948 / 0.833** | 0.648 / 0.202 |
 | **Eluted ligands, untrained allele** — ROC-AUC / PPV@1% | **0.705 / 0.083** | 0.547 / 0.044 |
 | Immunogenicity (cross-validated) | 0.714 | 0.620 |
 
-**Quote the second row, not the first.** A random peptide split leaks:
-peptides from one organism are compositionally similar and often near
-duplicates. Retraining with an organism entirely removed — the real situation
-when a novel pathogen arrives — gives ~0.77 for class I.
+**Quote the leave-one-pathogen-out rows, not the random-split rows.** A
+random peptide split leaks: peptides from one organism are compositionally
+similar and often near duplicates. Retraining with an organism entirely
+removed — the real situation when a novel pathogen arrives — gives **0.873**
+for class I with `model_pan.py`, against 0.766 for the per-allele model.
+Across 8 class I pathogens the pan model wins 8/8, significant in 7/8 after
+Benjamini-Hochberg correction on paired DeLong tests.
 
-**Class II barely generalises.** On an unseen pathogen it beats a plain
-amino-acid-composition baseline in only 2 of 6 pathogens, and one case came
-out below chance. Another reason the engine is the preferred path.
+**Class II barely generalises, and the bigger model does not rescue it.**
+Median AUC 0.748 against `model.py`'s 0.754; better on only 5 of 8 pathogens,
+worse on 3; and it beats a plain amino-acid-composition baseline in only
+**2 of 8**. On the independent mass-spectrometry set the same comparison came
+out −0.048. Two independent datasets agree: class II calls on an unseen
+pathogen are close to composition-matching. Another reason the engine is the
+preferred path.
 
 **Only use an allele the model was trained on.** Against 42,641
 mass-spectrometry eluted ligands from 131 publications - peptides a live cell
@@ -233,9 +241,11 @@ with physiological bounds:
 Full detail in **[VALIDATION.md](VALIDATION.md)**, with evidence grades.
 Headlines:
 
-- **Epitope prediction** is tested out-of-sample on 7 unseen pathogens
-  (10,399 class I test peptides): median ROC-AUC 0.769, beating a composition
-  baseline in 7/7 after Benjamini-Hochberg correction.
+- **Epitope prediction** is tested out-of-sample on 16 unseen pathogens
+  (36,792 class I rows, 18,274 class II): median ROC-AUC **0.873** class I for
+  `model_pan.py`, beating a composition baseline in 8/8 after
+  Benjamini-Hochberg correction. Class II reaches 0.748 and beats that
+  baseline in only 2/8.
 - **Boost kinetics** are tested against **CMI-PB** — 166 real adults given a
   Tdap boost, titers at days 0/1/3/7/14/30. Subjects are split in half;
   calibration sees one half, evaluation the other.
