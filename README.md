@@ -34,6 +34,37 @@ form — the engine runs without it and tells you where to put it.
 Full details, and every step by hand: [`epitope_filter_engine/INSTALL.md`](epitope_filter_engine/INSTALL.md).
 What each model gives and how the consensus works: [`epitope_filter_engine/README.md`](epitope_filter_engine/README.md).
 
+## immune_sim
+
+A dynamic model of the immune response, in the spirit of **C-ImmSim**, driven by
+predicted epitopes and by **vaccine platform physiology**. Give it an antigen and a
+formulation — mRNA-LNP, circRNA, saRNA, protein + AS01, adenovirus, live attenuated —
+and it simulates the T cell, B cell and antibody response over months: priming, class
+switching, affinity maturation, memory, and the faster, larger response to a boost.
+
+It reads epitopes straight from an **`epitope_filter_engine` run** (the preferred path —
+eleven fused predictors beat anything trained here), and falls back to its own
+IEDB-trained models (67,365 affinity records; class I binding ROC-AUC 0.916) when the
+engine has not been run. The circRNA platform pairs with **`circrna_opt`** in this repo.
+
+```bash
+cd immune_sim
+python3 simulate.py --engine ../epitope_filter_engine/engine_workspace/runs/<run_id> --platform mrna_lnp
+python3 simulate.py --list-platforms
+python3 test_platforms.py     # 10 wet-lab benchmark comparisons
+```
+
+Ten benchmarks hold the model to documented findings — mRNA beats protein on CD8
+(18,806 vs 3), alum is Th2 while AS01 is Th1, circRNA expresses longer than linear mRNA,
+saRNA is dose-sparing, anti-vector immunity blunts a homologous adenoviral boost.
+Kinetics are calibrated against nine quantitative immunological targets (all met).
+
+**Scope:** the ROC/AUC figures validate epitope *prediction*; the dynamic kinetics are
+calibrated to qualitative benchmarks and are **not fitted to measured titer data**, so
+the model ranks formulations and schedules rather than predicting absolute titers.
+
+Details: [`immune_sim/README.md`](immune_sim/README.md).
+
 ## circrna_opt
 
 `circopt` — a dual-species, structure-aware CDS optimiser for **circRNA vaccines**. It

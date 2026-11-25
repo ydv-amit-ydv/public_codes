@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""
+Benchmarks: does the platform model reproduce documented wet-lab findings?
+
+Each test states a comparison that is well established in the vaccine
+literature and asserts the simulation reproduces its DIRECTION. These are
+ordinal checks, not fits to measured magnitudes - the model has not been
+fitted to any titer dataset, so only the ranking is claimed.
+
+Run:  python3 test_platforms.py      (or: pytest test_platforms.py)
+"""
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
+
+from dynamics import Sim, load_epitopes          # noqa: E402
+from platforms import ADJUVANTS, PLATFORMS, resolve   # noqa: E402
+
+PRIME, BOOST, STEPS = 2, 270, 700
+_CACHE = {}
+
+
+def params():
+    f = HERE / "models" / "calibrated.json"
+    return json.loads(f.read_text())["params"] if f.exists() else {}
+
+
+def epitopes():
+    if "ep" not in _CACHE:
+        f = HERE / "results" / "demo_epitopes.csv"
+        if not f.exists():
+            raise SystemExit(
+                "no epitope file - run:\n"
+                "  python3 predict.py P0DTC2\n"
+                "then copy results/P0DTC2_epitopes.csv to results/demo_epitopes.csv")
+        _CACHE["ep"] = load_epitopes(str(f))
+    return _CACHE["ep"]
+
+
+def run(platform, adjuvant=None, dose_ug=None, boost=True, heterologous=None):
+    key = (platform, adjuvant, dose_ug, boost, heterologous)
+    if key in _CACHE:
+        return _CACHE[key]
+    inj = [(PRIME, dose_ug, adjuvant)]
+    if boost:
+        inj.append((BOOST, dose_ug, adjuvant))
+    sim = Sim(epitopes(), p=params(), injections=inj, platform=platform,
+              adjuvant=adjuvant, dose_ug=dose_ug, heterologous=heterologous)
+    df = sim.run(n_steps=STEPS)
+    out = {
+        "IgG": float(df.IgG.max()),
+        "IgM": float(df.IgM.max()),
+        "CTL": float(df.TC_active.max()),
+        "TH": float(df.TH_active.max()),
+        "CTL_mem": float(df.TC_memory.max()),
+        "B_mem": float(df.B_memory.max()),
+        "affinity": float(df.affinity.max()),
+        # Days of ANTIGEN EXPOSURE: any antigen pool above 1 % of its peak.
+        "expr_days": float((df.antigen + df.antigen_endogenous >
+                            0.01 * (df.antigen + df.antigen_endogenous).max()
+                            ).sum() * 8 / 24.0),
+        # Days the TEMPLATE is still producing antigen. This is the right
+        # measure for "expression lasts longer": the antigen-exposure tail is
+        # dominated by the follicular depot's own decay, not by the template.
+        "templ_days": float((df.template > 0.01 * df.template.max()).sum()
+                            * 8 / 24.0) if df.template.max() > 0 else 0.0,
+        "df": df,
+    }
+    _CACHE[key] = out
+    return out
+
+
+CHECKS = []
+
+
+def check(name, claim):
+    def deco(fn):
+        CHECKS.append((name, claim, fn))
+        return fn
+    return deco
+
+
+# --------------------------------------------------------------------------
+@check("mrna_beats_protein_on_CD8",
+       "mRNA-LNP induces far stronger CD8/CTL responses than adjuvanted "
+       "protein, because endogenous translation feeds MHC class I directly "
+       "while protein reaches class I only by cross-presentation.")
+def _():
+    m, p = run("mrna_lnp"), run("protein", "alum")
+    assert m["CTL"] > 10 * p["CTL"], (m["CTL"], p["CTL"])
+    return f"CTL mRNA {m['CTL']:,.0f} vs protein+alum {p['CTL']:,.0f}"
+
+
+@check("alum_is_Th2",
+       "Alum is Th2-biased: good antibody, poor CTL. AS01 (MPL+QS-21) is "
+       "Th1-biased and drives CD8. Same protein antigen in both arms.")
+def _():
+    al, as01 = run("protein", "alum"), run("protein", "as01")
+    assert as01["CTL"] > al["CTL"], (as01["CTL"], al["CTL"])
+    r_as01 = as01["CTL"] / max(as01["IgG"], 1e-9)
+    r_alum = al["CTL"] / max(al["IgG"], 1e-9)
+    assert r_as01 > r_alum
+    return (f"CTL/IgG ratio AS01 {r_as01:.3g} vs alum {r_alum:.3g}")
+
+
+@check("adjuvant_is_required",
+       "Unadjuvanted protein is poorly immunogenic; adding alum raises the "
+       "antibody response by a large factor.")
+def _():
+    none, al = run("protein", "none"), run("protein", "alum")
+    assert al["IgG"] > 5 * none["IgG"], (al["IgG"], none["IgG"])
+    return f"IgG alum {al['IgG']:,.0f} vs no adjuvant {none['IgG']:,.0f}"
+
+
+@check("circrna_expresses_longer",
+       "circRNA is exonuclease-resistant (no free ends), so antigen "
+       "expression from one dose lasts considerably longer than linear mRNA.")
+def _():
+    c = run("circrna_lnp", boost=False)
+    m = run("mrna_lnp", boost=False)
+    assert c["templ_days"] > 1.5 * m["templ_days"], (c["templ_days"], m["templ_days"])
+    return (f"template circRNA {c['templ_days']:.0f} d vs mRNA {m['templ_days']:.0f} d "
+            f"({c['templ_days']/m['templ_days']:.1f}x); antigen exposure "
+            f"{c['expr_days']:.0f} d vs {m['expr_days']:.0f} d")
+
+
+@check("sarna_is_dose_sparing",
+       "Self-amplifying RNA reaches a comparable response at roughly a tenth "
+       "of the mRNA dose, because the replicon amplifies the template.")
+def _():
+    sa = run("sarna_lnp", dose_ug=5.0)
+    m = run("mrna_lnp", dose_ug=50.0)
+    ratio = sa["IgG"] / max(m["IgG"], 1e-9)
+    # Two-sided: comparable at a tenth of the dose means within about 0.5-5x,
+    # NOT orders of magnitude larger (that would be runaway replication).
+    assert 0.5 <= ratio <= 5.0, (sa["IgG"], m["IgG"], ratio)
+    return (f"IgG saRNA 5 ug {sa['IgG']:,.0f} vs mRNA 50 ug {m['IgG']:,.0f} "
+            f"({ratio:.2f}x at a tenth of the dose)")
+
+
+@check("anti_vector_blunts_homologous_boost",
+       "Anti-vector immunity blunts a homologous adenoviral boost; a "
+       "heterologous boost avoids it. This is why ChAdOx/Ad26 regimens "
+       "switch platform for the second dose.")
+def _():
+    homo = run("adenovirus")
+    het = run("adenovirus", heterologous="mva")
+    assert het["IgG"] > homo["IgG"], (het["IgG"], homo["IgG"])
+    return f"IgG heterologous {het['IgG']:,.0f} vs homologous {homo['IgG']:,.0f}"
+
+
+@check("boost_beats_prime",
+       "A secondary response is faster and larger than the primary, with "
+       "class switching to IgG - the core behaviour C-ImmSim reproduces.")
+def _():
+    df = run("mrna_lnp")["df"]
+    pre = df[(df.day >= 1) & (df.day < BOOST * 8 / 24)]
+    post = df[df.day >= BOOST * 8 / 24]
+    p1, p2 = pre.IgG.max(), post.IgG.max()
+    t1 = pre.day.values[int(np.argmax(pre.IgG.values))] - PRIME * 8 / 24
+    t2 = post.day.values[int(np.argmax(post.IgG.values))] - BOOST * 8 / 24
+    assert p2 > p1 and t2 < t1, (p1, p2, t1, t2)
+    return f"IgG {p1:,.0f}->{p2:,.0f}, peak {t1:.0f} d -> {t2:.0f} d"
+
+
+@check("dose_response_is_monotonic",
+       "Within the usable range, a higher dose gives a higher response.")
+def _():
+    lo, mid, hi = (run("mrna_lnp", dose_ug=d)["IgG"] for d in (5.0, 30.0, 100.0))
+    assert lo < mid < hi, (lo, mid, hi)
+    return f"IgG 5 ug {lo:,.0f} < 30 ug {mid:,.0f} < 100 ug {hi:,.0f}"
+
+
+@check("live_attenuated_is_most_durable",
+       "A replicating live attenuated vaccine gives the longest antigen "
+       "exposure and the largest memory pool of the platforms modelled.")
+def _():
+    la = run("live_attenuated", boost=False)
+    pr = run("protein", "alum", boost=False)
+    assert la["expr_days"] > pr["expr_days"], (la["expr_days"], pr["expr_days"])
+    assert la["CTL_mem"] > pr["CTL_mem"], (la["CTL_mem"], pr["CTL_mem"])
+    # It must still be CONTROLLED: a live attenuated vaccine is cleared, so
+    # expression cannot run the whole simulation, and cell counts must stay
+    # physiological (a human has ~1e12 lymphocytes in total).
+    assert la["expr_days"] < 90, f"antigen never cleared: {la['expr_days']:.0f} d"
+    assert la["CTL_mem"] < 1e9, f"unphysiological CTL memory {la['CTL_mem']:.3g}"
+    return (f"expression {la['expr_days']:.0f} d vs {pr['expr_days']:.0f} d; "
+            f"CTL memory {la['CTL_mem']:,.0f} vs {pr['CTL_mem']:,.0f}")
+
+
+@check("all_platforms_stay_physiological",
+       "No platform may produce cell or antibody numbers outside a "
+       "physiological range - a runaway ODE can pass a one-sided ordinal "
+       "test while being nonsense.")
+def _():
+    bad = []
+    for k in PLATFORMS:
+        r = run(k)
+        for field, cap in (("CTL", 1e9), ("TH", 1e9), ("IgG", 1e9),
+                           ("CTL_mem", 1e9), ("B_mem", 1e9)):
+            if not np.isfinite(r[field]) or r[field] > cap:
+                bad.append(f"{k}.{field}={r[field]:.3g}")
+    assert not bad, "; ".join(bad)
+    return f"{len(PLATFORMS)} platforms all within physiological bounds"
+
+
+def main():
+    print("Platform benchmarks - reproducing documented wet-lab comparisons\n")
+    passed = failed = 0
+    for name, claim, fn in CHECKS:
+        try:
+            detail = fn()
+            print(f"  PASS  {name}\n        {detail}")
+            passed += 1
+        except AssertionError as e:
+            print(f"  FAIL  {name}\n        {claim}\n        got {e}")
+            failed += 1
+        except Exception as e:
+            print(f"  ERROR {name}: {type(e).__name__}: {e}")
+            failed += 1
+    print(f"\n  {passed} passed, {failed} failed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

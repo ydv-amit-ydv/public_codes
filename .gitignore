@@ -1,13 +1,90 @@
-# virtualenvs the engine makes on first run
-.venv/
-venv/
-__pycache__/
-*.pyc
+# ---------------------------------------------------------------------------
+# Repo-wide ignores. Each project may add its own .gitignore for anything
+# specific to it; those are additive, so nothing here needs repeating there.
+# ---------------------------------------------------------------------------
 
-# engine runtime state (runs, caches, learned timings, downloaded proteomes)
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- virtualenvs (projects build these on first run) ---
+.venv/
+.venv*/
+venv/
+env/
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# --- logs and scratch ---
+*.log
+logs_*.txt
+.scratch/
+tmp/
+
+# ===========================================================================
+# epitope_filter_engine
+# ===========================================================================
+# runtime state: runs, caches, learned timings, downloaded proteomes
 engine_workspace/
 engine_config.json
 timings.json
+# the eleven predictors are licensed separately and never redistributed here
+epitope_filter_engine/MHC1/models/
+epitope_filter_engine/MHC2/models/
 
-# local scratch
-*.log
+# ===========================================================================
+# circrna_opt
+# ===========================================================================
+third_party/
+runs/
+
+# ===========================================================================
+# construct_design
+# ===========================================================================
+# constructs saved through the server at runtime; the shared library/ is kept
+constructs/
+construct_design/data/*.json
+
+# ===========================================================================
+# immune_sim
+# ===========================================================================
+# Harvested IEDB data (~22 MB). Regenerate with: python3 harvest_iedb.py
+# Not redistributed here - IEDB has its own citation and licence terms.
+immune_sim/data/
+# Trained model weights. Regenerate with: python3 model.py && python3 immunogenicity.py
+immune_sim/models/*.pkl
+immune_sim/models/immuno_curves.json
+# Run outputs. The committed demo epitope set and figures are forced back in
+# below so the project can be read without running anything.
+immune_sim/results/*.csv
+immune_sim/results/*_timecourse.csv
+!immune_sim/results/demo_epitopes.csv
+
+# ---------------------------------------------------------------------------
+# Large binaries anywhere: keep the repo cloneable
+# ---------------------------------------------------------------------------
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+*.npz
+*.parquet
+*.sqlite
+*.db
+*.tar.gz
+*.zip

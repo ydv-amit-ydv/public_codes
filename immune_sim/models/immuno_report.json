@@ -1,0 +1,206 @@
+{
+  "HLA-A*01:01": {
+    "mhc_class": "I",
+    "n": 1067,
+    "positive_rate": 0.115,
+    "roc_auc": 0.783,
+    "roc_auc_ci": [
+      0.74,
+      0.825
+    ],
+    "pr_auc": 0.411,
+    "pr_auc_ci": [
+      0.328,
+      0.503
+    ],
+    "baseline_affinity_auc": 0.523,
+    "lift_over_affinity": 0.26
+  },
+  "HLA-A*02:01": {
+    "mhc_class": "I",
+    "n": 4453,
+    "positive_rate": 0.436,
+    "roc_auc": 0.655,
+    "roc_auc_ci": [
+      0.639,
+      0.67
+    ],
+    "pr_auc": 0.609,
+    "pr_auc_ci": [
+      0.587,
+      0.63
+    ],
+    "baseline_affinity_auc": 0.532,
+    "lift_over_affinity": 0.123
+  },
+  "HLA-A*03:01": {
+    "mhc_class": "I",
+    "n": 1079,
+    "positive_rate": 0.149,
+    "roc_auc": 0.748,
+    "roc_auc_ci": [
+      0.7,
+      0.796
+    ],
+    "pr_auc": 0.509,
+    "pr_auc_ci": [
+      0.434,
+      0.588
+    ],
+    "baseline_affinity_auc": 0.512,
+    "lift_over_affinity": 0.236
+  },
+  "HLA-A*11:01": {
+    "mhc_class": "I",
+    "n": 1304,
+    "positive_rate": 0.166,
+    "roc_auc": 0.706,
+    "roc_auc_ci": [
+      0.67,
+      0.744
+    ],
+    "pr_auc": 0.335,
+    "pr_auc_ci": [
+      0.283,
+      0.405
+    ],
+    "baseline_affinity_auc": 0.563,
+    "lift_over_affinity": 0.142
+  },
+  "HLA-A*24:02": {
+    "mhc_class": "I",
+    "n": 1723,
+    "positive_rate": 0.241,
+    "roc_auc": 0.757,
+    "roc_auc_ci": [
+      0.73,
+      0.782
+    ],
+    "pr_auc": 0.525,
+    "pr_auc_ci": [
+      0.477,
+      0.575
+    ],
+    "baseline_affinity_auc": 0.467,
+    "lift_over_affinity": 0.29
+  },
+  "HLA-B*07:02": {
+    "mhc_class": "I",
+    "n": 1014,
+    "positive_rate": 0.224,
+    "roc_auc": 0.656,
+    "roc_auc_ci": [
+      0.614,
+      0.698
+    ],
+    "pr_auc": 0.372,
+    "pr_auc_ci": [
+      0.316,
+      0.437
+    ],
+    "baseline_affinity_auc": 0.564,
+    "lift_over_affinity": 0.091
+  },
+  "HLA-B*08:01": {
+    "mhc_class": "I",
+    "n": 378,
+    "positive_rate": 0.341,
+    "roc_auc": 0.76,
+    "roc_auc_ci": [
+      0.713,
+      0.808
+    ],
+    "pr_auc": 0.588,
+    "pr_auc_ci": [
+      0.509,
+      0.679
+    ],
+    "baseline_affinity_auc": 0.554,
+    "lift_over_affinity": 0.206
+  },
+  "HLA-B*35:01": {
+    "mhc_class": "I",
+    "n": 408,
+    "positive_rate": 0.593,
+    "roc_auc": 0.627,
+    "roc_auc_ci": [
+      0.574,
+      0.681
+    ],
+    "pr_auc": 0.702,
+    "pr_auc_ci": [
+      0.639,
+      0.773
+    ],
+    "baseline_affinity_auc": 0.531,
+    "lift_over_affinity": 0.096
+  },
+  "HLA-B*44:02": {
+    "mhc_class": "I",
+    "n": 522,
+    "positive_rate": 0.098,
+    "roc_auc": 0.738,
+    "roc_auc_ci": [
+      0.661,
+      0.811
+    ],
+    "pr_auc": 0.372,
+    "pr_auc_ci": [
+      0.254,
+      0.505
+    ],
+    "baseline_affinity_auc": 0.678,
+    "lift_over_affinity": 0.06
+  },
+  "HLA-DRB1*01:01": {
+    "mhc_class": "II",
+    "n": 653,
+    "positive_rate": 0.507,
+    "roc_auc": 0.58,
+    "roc_auc_ci": [
+      0.534,
+      0.622
+    ],
+    "pr_auc": 0.59,
+    "pr_auc_ci": [
+      0.536,
+      0.646
+    ],
+    "baseline_affinity_auc": 0.541,
+    "lift_over_affinity": 0.039
+  },
+  "HLA-DRB1*04:01": {
+    "mhc_class": "II",
+    "n": 346,
+    "positive_rate": 0.809,
+    "roc_auc": 0.577,
+    "roc_auc_ci": [
+      0.5,
+      0.655
+    ],
+    "pr_auc": 0.845,
+    "pr_auc_ci": [
+      0.797,
+      0.896
+    ],
+    "baseline_affinity_auc": 0.542,
+    "lift_over_affinity": 0.035
+  },
+  "HLA-DRB1*15:01": {
+    "mhc_class": "II",
+    "n": 446,
+    "positive_rate": 0.749,
+    "roc_auc": 0.702,
+    "roc_auc_ci": [
+      0.643,
+      0.756
+    ],
+    "pr_auc": 0.861,
+    "pr_auc_ci": [
+      0.815,
+      0.899
+    ],
+    "baseline_affinity_auc": 0.622,
+    "lift_over_affinity": 0.08
+  }
+}

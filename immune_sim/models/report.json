@@ -1,0 +1,119 @@
+{
+  "HLA-A*01:01": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 2463,
+    "n_test": 615,
+    "spearman": 0.582,
+    "auc": 0.929,
+    "test_binder_frac": 0.148
+  },
+  "HLA-A*02:01": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 6684,
+    "n_test": 1671,
+    "spearman": 0.814,
+    "auc": 0.932,
+    "test_binder_frac": 0.403
+  },
+  "HLA-A*03:01": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 3603,
+    "n_test": 900,
+    "spearman": 0.716,
+    "auc": 0.936,
+    "test_binder_frac": 0.257
+  },
+  "HLA-A*11:01": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 2992,
+    "n_test": 748,
+    "spearman": 0.809,
+    "auc": 0.944,
+    "test_binder_frac": 0.373
+  },
+  "HLA-A*24:02": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 1580,
+    "n_test": 395,
+    "spearman": 0.669,
+    "auc": 0.863,
+    "test_binder_frac": 0.251
+  },
+  "HLA-B*07:02": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 2386,
+    "n_test": 596,
+    "spearman": 0.741,
+    "auc": 0.936,
+    "test_binder_frac": 0.282
+  },
+  "HLA-B*08:01": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 1647,
+    "n_test": 411,
+    "spearman": 0.622,
+    "auc": 0.893,
+    "test_binder_frac": 0.307
+  },
+  "HLA-B*35:01": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 922,
+    "n_test": 230,
+    "spearman": 0.678,
+    "auc": 0.85,
+    "test_binder_frac": 0.578
+  },
+  "HLA-B*44:02": {
+    "mhc_class": "I",
+    "peptide_length": 9,
+    "n_train": 1062,
+    "n_test": 265,
+    "spearman": 0.619,
+    "auc": 0.958,
+    "test_binder_frac": 0.174
+  },
+  "HLA-DRB1*01:01": {
+    "mhc_class": "II",
+    "peptide_length": 15,
+    "n_train": 5820,
+    "n_test": 1454,
+    "spearman": 0.582,
+    "auc": 0.779,
+    "test_binder_frac": 0.602
+  },
+  "HLA-DRB1*04:01": {
+    "mhc_class": "II",
+    "peptide_length": 15,
+    "n_train": 2276,
+    "n_test": 569,
+    "spearman": 0.477,
+    "auc": 0.756,
+    "test_binder_frac": 0.387
+  },
+  "HLA-DRB1*07:01": {
+    "mhc_class": "II",
+    "peptide_length": 15,
+    "n_train": 1833,
+    "n_test": 458,
+    "spearman": 0.67,
+    "auc": 0.826,
+    "test_binder_frac": 0.491
+  },
+  "HLA-DRB1*15:01": {
+    "mhc_class": "II",
+    "peptide_length": 15,
+    "n_train": 1952,
+    "n_test": 487,
+    "spearman": 0.565,
+    "auc": 0.767,
+    "test_binder_frac": 0.407
+  }
+}
