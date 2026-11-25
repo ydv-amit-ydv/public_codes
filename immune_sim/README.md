@@ -51,8 +51,11 @@ python3 predict.py P0DTC2    # scan an antigen
 
 | Model | Class I | Class II |
 |---|---|---|
-| Binding, random held-out peptides | 0.916 | 0.782 |
+| Binding, random held-out peptides (`model.py`) | 0.916 | 0.782 |
+| Binding, random held-out peptides (`model_pan.py`) | 0.923 | 0.794 |
 | **Binding, unseen pathogen (leave-one-pathogen-out)** | **0.769** | **0.733** |
+| **Eluted ligands, trained allele** — ROC-AUC / PPV@1% | **0.948 / 0.833** | 0.648 / 0.202 |
+| **Eluted ligands, untrained allele** — ROC-AUC / PPV@1% | **0.705 / 0.083** | 0.547 / 0.044 |
 | Immunogenicity (cross-validated) | 0.714 | 0.620 |
 
 **Quote the second row, not the first.** A random peptide split leaks:
@@ -63,6 +66,22 @@ when a novel pathogen arrives — gives ~0.77 for class I.
 **Class II barely generalises.** On an unseen pathogen it beats a plain
 amino-acid-composition baseline in only 2 of 6 pathogens, and one case came
 out below chance. Another reason the engine is the preferred path.
+
+**Only use an allele the model was trained on.** Against 42,641
+mass-spectrometry eluted ligands from 131 publications - peptides a live cell
+really presented, an assay wholly independent of the IC50 data used for
+training - a trained allele reaches ROC-AUC 0.948 with **83% precision in its
+top 1%**. An untrained allele falls to PPV@1% 0.083. The hierarchical allele
+encoding in `encoding.py` removes the worst failure mode (a flat one-hot
+scored an unseen allele as if it were a different allele entirely) but does
+not fix transfer: zero-shot prediction for a new allele needs real MHC
+pseudo-sequences, which this pipeline does not have.
+
+**The pan model's extra complexity does not pay off out of assay.** Against
+`model.py` on identical eluted-ligand cases the difference is +0.000 ROC-AUC
+for class I and -0.048 for class II. It is kept because the core scan and
+all-length training are the right structure, and because it wins slightly on a
+random split - not because it has been shown to be better where it counts.
 
 See [VALIDATION.md](VALIDATION.md) for the full statistics.
 

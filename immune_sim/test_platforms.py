@@ -65,6 +65,11 @@ def run(platform, adjuvant=None, dose_ug=None, boost=True, heterologous=None):
         "TH": float(df.TH_active.max()),
         "CTL_mem": float(df.TC_memory.max()),
         "B_mem": float(df.B_memory.max()),
+        "B_peak": float(df.B_active.max()),
+        "PL_peak": float(df.get("plasma_total", df.plasma).max()),
+        "LLPC_end": float(df.get("plasma_longlived", df.plasma).iloc[-1]),
+        "IgG_end": float(df.IgG.iloc[-1]),
+        "igg_durability": float(df.IgG.iloc[-1] / max(df.IgG.max(), 1e-9)),
         "affinity": float(df.affinity.max()),
         # Response to the BOOST specifically. The overall maximum is often set
         # by the prime, so it cannot detect anything that only alters the

@@ -273,6 +273,17 @@ CROSS_TARGETS = [
     # all (fold-rise 0.99) while trials report a large one.
     ("mrna_boost_fold",        2.0,     60.0),
     ("mrna_secondary_over_primary", 1.0, 30.0),
+    # TIMING on the mRNA arm, not only magnitude. Adding the long-lived
+    # plasma cell compartment made total IgG keep climbing for two months,
+    # because LLPC accumulate faster than IgG decays - so mRNA's primary peak
+    # landed at day 61 and its secondary peak 67 days after the boost, when
+    # real vaccine IgG peaks within two to four weeks of a dose. The
+    # protein+alum arm was inside its 10-21 d band throughout, because that
+    # was the only arm whose timing anything constrained. Same class of bug
+    # as the single-configuration fit: a target set that covers one
+    # configuration says nothing about the others.
+    ("mrna_primary_peak_day",  8.0,     35.0),
+    ("mrna_secondary_peak_day", 3.0,    21.0),
 ]
 
 
@@ -314,6 +325,10 @@ def evaluate(params, ep):
                                     / max(float(mpre.IgG.iloc[-1]), 1e-9))
             m["mrna_secondary_over_primary"] = (
                 float(mpost.IgG.max()) / max(float(mpre.IgG.max()), 1e-9))
+            m["mrna_primary_peak_day"] = float(
+                mpre.day.values[int(np.argmax(mpre.IgG.values))] - PRIME_DAY)
+            m["mrna_secondary_peak_day"] = float(
+                mpost.day.values[int(np.argmax(mpost.IgG.values))] - bd)
 
         s, d = score(m, list(TARGETS_ACTIVE) + CROSS_TARGETS)
         return s, d, df

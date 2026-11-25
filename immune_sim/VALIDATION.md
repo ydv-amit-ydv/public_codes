@@ -93,6 +93,121 @@ against the second is how the 10× error entered. `calibrate.py` now measures
 
 ---
 
+## Grade A — two further datasets, neither in training
+
+### Mass-spectrometry eluted ligands: what a cell actually presents
+
+`harvest_eluted.py` / `validate_eluted.py`. **42,641 peptides** recovered from
+the surface of live cells by immunoprecipitation and mass spectrometry, across
+**42 alleles and 131 publications**, with 810,179 decoys sampled from the same
+parent proteins at the same lengths.
+
+This is independent in *assay technology*, not merely in split. The models are
+trained on purified-MHC IC50 values; natural presentation additionally
+requires proteasomal cleavage, TAP transport and peptide loading, none of
+which an affinity assay measures.
+
+| Class I alleles | n | ROC-AUC | PPV@1% |
+|---|---|---|---|
+| **In the training set** | 9 | **0.948** | **0.833** |
+| First-field group seen only | 5 | 0.701 | 0.181 |
+| Locus seen only | 9 | 0.709 | 0.135 |
+| Nothing seen | 9 | 0.705 | 0.083 |
+
+**On a trained allele the model is strong**: 83% of its top 1% of peptides are
+real eluted ligands, at a prevalence of 5%. **On an allele it has not been
+trained on it is not usable** for ranking, whatever the ROC-AUC suggests.
+
+> Decoys are peptides mass spectrometry did not detect, not peptides measured
+> as unpresented. Absolute ROC-AUC therefore depends on the decoy ratio.
+> **PPV@1% is the figure to quote** — it is far less sensitive to it, and it is
+> what a designer actually does: take the top few peptides and test them.
+
+### The allele one-hot bug this dataset found
+
+The allele had been encoded as a flat one-hot over training alleles, with an
+unseen allele falling back to index 0 — so **HLA-B\*44:03 was scored as if it
+were HLA-A\*01:01**. "Pan-allele" meant pooled training, not transfer.
+`encoding.AlleleEncoder` replaces it with locus / first-field group / exact
+allele, so B\*44:03 inherits the B\*44 group from B\*44:02 and degrades to a
+group average rather than to an arbitrary allele.
+
+Paired over the same alleles:
+
+| | one-hot | hierarchical | improved |
+|---|---|---|---|
+| Trained, ROC-AUC | 0.931 | **0.942** | 9/11 |
+| Trained, PPV@1% | 0.772 | **0.809** | 10/11 |
+| Untrained, ROC-AUC | 0.608 | **0.679** | 20/32 |
+| Untrained, PPV@1% | 0.087 | 0.121 | 16/32 |
+
+The first three are real improvements. The fourth is not: Wilcoxon
+**p = 0.45**, and 16 of 32 is a coin flip. The pathological fallback is gone,
+but **zero-shot transfer to a new allele is unsolved** and needs real MHC
+pseudo-sequences, which this pipeline does not have offline.
+
+### Does the extra model complexity pay off?
+
+On identical cases, the pan core-scan ensemble against per-allele `model.py`:
+
+| | class I | class II |
+|---|---|---|
+| Random split | 0.916 → **0.923** | 0.782 → **0.794** |
+| **Eluted ligands (paired)** | **+0.000**, better in 3/9 | **-0.048**, better in 0/2 |
+
+So the core scan, pooling and all lengths buy a small gain on a random split
+and **nothing measurable on the independent assay** — on class II they may
+cost a little, on two alleles. Stated because it is the result, not the hoped
+result: `model.py` remains a reasonable choice, and the
+[`epitope_filter_engine`](../epitope_filter_engine) consensus is still the
+preferred path.
+
+### Measured vaccine fold-rise from 221 clinical trials
+
+`harvest_trials.py` / `validate_trials.py`. **14,364 posted GMFR measurements
+from 221 completed trials** on ClinicalTrials.gov. GMFR is the quantity
+`calibrate.py` fits, so platform predictions face numbers for the first time.
+
+Clustered by trial, because one trial posts a value per strain, arm and
+timepoint — treating 3,500 mRNA rows from 46 trials as independent shrank the
+median's CI to 3.60–3.93 and made the model look falsified. Bootstrapping over
+trials gives 2.83–5.71.
+
+| Platform | Trials | Observed median [CI] | Model | Percentile |
+|---|---|---|---|---|
+| protein | 58 | 8.32× [6.75–11.51] | 2.16× | 10th |
+| mRNA-LNP | 46 | 4.20× [2.83–5.71] | 2.19× | 9th |
+| live-attenuated | 18 | 2.42× [1.79–4.20] | 1.26× | 11th |
+| inactivated | 11 | 4.75× [2.20–7.05] | 3.01× | 27th |
+| saRNA | 4 | 7.75× [2.75–11.40] | 1.24× | 0th |
+
+Two findings, one reassuring and one not.
+
+**Reassuring**: two wholly independent datasets agree on the order of
+magnitude of a vaccine boost — CMI-PB's 166 subjects give a median 2.88×, the
+221 trials give 5.71×. The gap is explicable rather than contradictory: every
+CMI-PB subject was primed in infancy, so 2.88× is a boost in an already-immune
+adult, while the trial set is dominated by primary series in naive subjects.
+The model was fitted to the CMI-PB design and sits in the trials' lower tail —
+it **under-predicts a primary series**, which is the direction of the error.
+
+**Not reassuring**: the between-platform ordering is **Spearman ρ = -0.10,
+permutation p = 0.95 — no relationship at all.** The platform rankings this
+model produces are *not* corroborated by the only measured data available.
+
+They have not been tuned to fix that, for a reason that must be weighed
+against the result: platform is **not randomised** across trials. A protein
+row is often a conjugate vaccine in naive infants; an mRNA row is usually a
+COVID-19 vaccine in previously exposed adults. Antigen, age, prior immunity,
+schedule and assay all differ. With five platforms the test also has almost no
+power. So this is not a clean refutation — but it is evidence against, and it
+replaces the "100% robustness" framing that previously stood behind these
+claims with nothing better than a confounded null.
+
+**Platform comparison should be treated as hypothesis generation only.**
+
+---
+
 ## Three structural defects the targets exposed
 
 Each was found by adding a constraint, not by inspection, and each needed a
