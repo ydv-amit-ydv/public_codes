@@ -52,11 +52,11 @@ python3 predict.py P0DTC2    # scan an antigen
 | Model | Class I | Class II |
 |---|---|---|
 | Binding, random held-out peptides (`model.py`) | 0.916 | 0.782 |
-| Binding, random held-out peptides (`model_pan.py`) | 0.923 | 0.794 |
+| Binding, random held-out peptides (`model_pan.py`) | 0.921 | 0.765 |
 | **Binding, unseen pathogen, `model.py`** (leave-one-pathogen-out) | 0.766 | 0.754 |
 | **Binding, unseen pathogen, `model_pan.py`** (leave-one-pathogen-out) | **0.873** | **0.748** |
-| **Eluted ligands, trained allele** — ROC-AUC / PPV@1% | **0.948 / 0.833** | 0.648 / 0.202 |
-| **Eluted ligands, untrained allele** — ROC-AUC / PPV@1% | **0.705 / 0.083** | 0.547 / 0.044 |
+| **Eluted ligands, trained allele** — ROC-AUC / PPV@1% | **0.943 / 0.835** | 0.637 / 0.140 |
+| **Eluted ligands, untrained allele** — ROC-AUC / PPV@1% | **0.682 / 0.125** | 0.534 / 0.061 |
 | Immunogenicity (cross-validated) | 0.714 | 0.620 |
 
 **Quote the leave-one-pathogen-out rows, not the random-split rows.** A

@@ -198,14 +198,23 @@ which an affinity assay measures.
 
 | Class I alleles | n | ROC-AUC | PPV@1% |
 |---|---|---|---|
-| **In the training set** | 9 | **0.948** | **0.833** |
-| First-field group seen only | 5 | 0.701 | 0.181 |
-| Locus seen only | 9 | 0.709 | 0.135 |
-| Nothing seen | 9 | 0.705 | 0.083 |
+| **In the training set** | 9 | **0.943** | **0.835** |
+| First-field group seen only | 5 | 0.735 | 0.143 |
+| Locus seen only | 9 | 0.704 | 0.169 |
+| Nothing seen | 9 | 0.682 | 0.125 |
 
-**On a trained allele the model is strong**: 83% of its top 1% of peptides are
-real eluted ligands, at a prevalence of 5%. **On an allele it has not been
-trained on it is not usable** for ranking, whatever the ROC-AUC suggests.
+| Class II alleles | n | ROC-AUC | PPV@1% |
+|---|---|---|---|
+| In the training set | 2 | 0.637 | 0.140 |
+| First-field group seen only | 1 | 0.605 | 0.167 |
+| Locus seen only | 2 | 0.606 | 0.132 |
+| Nothing seen | 6 | 0.534 | 0.061 |
+
+**On a trained class I allele the model is strong**: 84% of its top 1% of
+peptides are real eluted ligands, at a prevalence of 5%. **On an allele it has
+not been trained on it is not usable** for ranking, whatever the ROC-AUC
+suggests. **Class II is weak even on a trained allele** — 0.637 ROC-AUC and
+14% precision in the top 1%, against a 5% base rate.
 
 > Decoys are peptides mass spectrometry did not detect, not peptides measured
 > as unpresented. Absolute ROC-AUC therefore depends on the decoy ratio.
@@ -241,11 +250,14 @@ On identical cases, the pan core-scan ensemble against per-allele `model.py`:
 
 | | class I | class II |
 |---|---|---|
-| Random split | 0.916 → **0.923** | 0.782 → **0.794** |
-| **Eluted ligands (paired)** | **+0.000**, better in 3/9 | **-0.048**, better in 0/2 |
+| Random split | 0.916 → **0.921** | 0.782 → **0.765** |
+| **Eluted ligands (paired)** | **+0.000**, better in 3/9 | **−0.041**, better in 0/2 |
+| **Leave-one-pathogen-out** | 0.766 → **0.873**, 8/8 | 0.754 → 0.748, 5/8 |
 
-So the core scan, pooling and all lengths buy a small gain on a random split
-and **nothing measurable on the independent assay** — on class II they may
+On the rebuilt, reproducible figures the core scan does not beat `model.py`
+on a class II random split at all (0.765 against 0.782). Where it does win
+decisively is class I on an unseen pathogen, +0.107. On class II it buys
+**nothing measurable on the independent assay** — on class II they may
 cost a little, on two alleles. Stated because it is the result, not the hoped
 result: `model.py` remains a reasonable choice, and the
 [`epitope_filter_engine`](../epitope_filter_engine) consensus is still the
@@ -361,6 +373,58 @@ germinal centres in proportion to achieved affinity and T help.
 The last row is the weakness documented in the previous version of this file
 as holding in only 57% of parameter draws. It was not a tuning problem. It was
 the shared carrying capacity.
+
+---
+
+## A reproducibility failure, found by rebuilding what was already committed
+
+Rebuilding `model_pan.py` so its report and its weight files came from the
+same fit did **not** reproduce the committed figures:
+
+| Random split, ROC-AUC | Committed | Rebuilt | Change |
+|---|---|---|---|
+| class I, GBM member | 0.920 | 0.917 | −0.003 |
+| class I, ensemble | 0.923 | **0.921** | −0.002 |
+| class II, GBM member | 0.788 | 0.770 | −0.018 |
+| class II, ensemble | 0.794 | **0.765** | **−0.029** |
+
+Every class II allele moved in the same direction (HLA-DRB1\*01:01
+0.788→0.757, \*04:01 0.762→0.705, \*07:01 0.787→0.778, \*15:01 0.758→0.739),
+so this is not noise in one allele. Everything downstream moved with it: on
+the eluted-ligand set, class II trained-allele ROC-AUC went 0.648→0.637 and
+PPV@1% 0.202→0.140.
+
+What was checked and ruled out:
+
+- **Not nondeterminism in the current tree.** Three separate processes gave
+  bit-identical results (0.770 / 0.708 / 0.765), and forcing
+  `OMP_NUM_THREADS=1` gave the same again, so it is not thread-level
+  floating-point reduction order.
+- **Not the data.** `data/binding_affinity.csv` is unchanged since
+  2026-11-25 13:56 and both runs report the same 19,152 class II rows and the
+  same 4 alleles.
+- **Not the committed code.** `git diff HEAD` is empty for `model_pan.py`,
+  `encoding.py`, `model.py` and `stats.py`.
+
+The probable cause: `results/eluted_validation_onehot.csv` exists, written
+17:59 that day, and **no script in the tree writes it** — it was produced by
+editing the allele encoding to the flat one-hot form, running it, and
+reverting. The committed `pan_report.json` was most likely written during
+that window, from a tree state that no longer exists, and never regenerated
+afterwards. That is consistent with the direction of the change but it is not
+proven, and the honest statement is that the earlier figure cannot be
+reproduced and the cause was not established with certainty.
+
+**What this means for any future claim about class II.** The reproducible
+figure is now 0.765, and the gap to the unreproducible 0.794 is 0.029. A
+class II improvement smaller than that cannot be distinguished from whatever
+produced this discrepancy on a single run. Class II changes must therefore be
+judged on repeated runs with an interval, or on the leave-one-pathogen-out
+and eluted-ligand sets, not on one random-split number.
+
+The leave-one-pathogen-out results above are **unaffected**:
+`external_validation_pan.py` retrains from scratch inside each fold and never
+reads `pan_report.json` or the shipped weights.
 
 ---
 

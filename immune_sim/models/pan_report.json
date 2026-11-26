@@ -4,42 +4,42 @@
     "n_alleles": 9,
     "metrics": {
       "corescan_gbm": {
-        "auc": 0.92,
-        "lo": 0.914,
-        "hi": 0.926,
-        "spearman": 0.757
+        "auc": 0.917,
+        "lo": 0.91,
+        "hi": 0.923,
+        "spearman": 0.749
       },
       "corescan_mlp": {
-        "auc": 0.886,
-        "lo": 0.878,
-        "hi": 0.894,
-        "spearman": 0.681
+        "auc": 0.881,
+        "lo": 0.873,
+        "hi": 0.888,
+        "spearman": 0.674
       },
       "ensemble": {
-        "auc": 0.923,
-        "lo": 0.917,
-        "hi": 0.929,
-        "spearman": 0.761
+        "auc": 0.921,
+        "lo": 0.914,
+        "hi": 0.927,
+        "spearman": 0.755
       }
     },
     "per_allele": {
-      "HLA-A*01:01": 0.94,
-      "HLA-A*02:01": 0.932,
-      "HLA-A*03:01": 0.911,
-      "HLA-A*11:01": 0.935,
-      "HLA-A*24:02": 0.872,
-      "HLA-B*07:02": 0.929,
-      "HLA-B*08:01": 0.91,
-      "HLA-B*35:01": 0.835,
-      "HLA-B*44:02": 0.92
+      "HLA-A*01:01": 0.936,
+      "HLA-A*02:01": 0.931,
+      "HLA-A*03:01": 0.909,
+      "HLA-A*11:01": 0.937,
+      "HLA-A*24:02": 0.855,
+      "HLA-B*07:02": 0.928,
+      "HLA-B*08:01": 0.904,
+      "HLA-B*35:01": 0.824,
+      "HLA-B*44:02": 0.911
     },
     "blend_weights": {
-      "corescan_gbm": 0.879,
-      "corescan_mlp": 0.121
+      "corescan_gbm": 0.826,
+      "corescan_mlp": 0.174
     },
     "blend_split_auc": {
-      "corescan_gbm": 0.918,
-      "corescan_mlp": 0.862
+      "corescan_gbm": 0.913,
+      "corescan_mlp": 0.874
     }
   },
   "II": {
@@ -47,37 +47,37 @@
     "n_alleles": 4,
     "metrics": {
       "corescan_gbm": {
-        "auc": 0.788,
-        "lo": 0.774,
-        "hi": 0.802,
-        "spearman": 0.563
+        "auc": 0.77,
+        "lo": 0.755,
+        "hi": 0.784,
+        "spearman": 0.536
       },
       "corescan_mlp": {
-        "auc": 0.722,
-        "lo": 0.707,
-        "hi": 0.738,
-        "spearman": 0.439
+        "auc": 0.708,
+        "lo": 0.691,
+        "hi": 0.724,
+        "spearman": 0.417
       },
       "ensemble": {
-        "auc": 0.794,
-        "lo": 0.78,
-        "hi": 0.808,
-        "spearman": 0.573
+        "auc": 0.765,
+        "lo": 0.75,
+        "hi": 0.78,
+        "spearman": 0.527
       }
     },
     "per_allele": {
-      "HLA-DRB1*01:01": 0.788,
-      "HLA-DRB1*04:01": 0.762,
-      "HLA-DRB1*07:01": 0.787,
-      "HLA-DRB1*15:01": 0.758
+      "HLA-DRB1*01:01": 0.757,
+      "HLA-DRB1*04:01": 0.705,
+      "HLA-DRB1*07:01": 0.778,
+      "HLA-DRB1*15:01": 0.739
     },
     "blend_weights": {
-      "corescan_gbm": 0.767,
-      "corescan_mlp": 0.233
+      "corescan_gbm": 0.568,
+      "corescan_mlp": 0.432
     },
     "blend_split_auc": {
-      "corescan_gbm": 0.767,
-      "corescan_mlp": 0.716
+      "corescan_gbm": 0.745,
+      "corescan_mlp": 0.72
     }
   }
 }
