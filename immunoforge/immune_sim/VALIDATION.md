@@ -376,6 +376,56 @@ the shared carrying capacity.
 
 ---
 
+## A class II improvement that did not work
+
+Class II is the weak half of the epitope layer: median ROC-AUC 0.748 on a
+pathogen it has never seen, beating an amino-acid-composition baseline in
+only 2 of 8. The obvious explanation is that it is starved of data — 21,394
+affinity measurements over **4 alleles**, against 97,746 mass-spectrometry
+eluted-ligand rows over **11 alleles** that this project used only for
+validation. Training on both assays is what NetMHCIIpan 4.x does.
+
+Tested properly: the same leave-one-pathogen-out folds, run twice, differing
+only in whether eluted ligands were added to the training set. Every test
+peptide was removed from the eluted rows first — the eluted set has no
+organism column, so the held-out pathogen can only be excluded by sequence,
+and without that the comparison would have measured leakage.
+
+| pathogen | baseline | + eluted | diff |
+|---|---|---|---|
+| Phleum pratense | 0.737 | 0.710 | −0.027 |
+| Homo sapiens | 0.725 | 0.739 | +0.014 |
+| Mammarenavirus juninense | 0.803 | 0.789 | −0.014 |
+| Mammarenavirus brazilense | 0.788 | 0.739 | −0.049 |
+| LCM virus | 0.754 | 0.737 | −0.017 |
+| Mammarenavirus guanaritoense | 0.747 | 0.715 | −0.032 |
+| Mammarenavirus machupoense | 0.748 | 0.703 | −0.045 |
+| SARS coronavirus Tor2 | 0.596 | 0.629 | +0.033 |
+
+**Median paired change −0.022, better in 2 of 8, Wilcoxon p = 0.156.** It also
+drops from beating the composition baseline in 2 of 8 to 1 of 8.
+
+Not significant, but consistently negative — six of eight folds worse — and
+nowhere near the **+0.029** reproducibility floor measured earlier in this
+file. So it does not ship: `model_pan.py --eluted` defaults to `none`. More
+training data that does not measurably help is still a change that would have
+to be defended.
+
+The baseline arm of this experiment reproduced the committed figures exactly
+(median 0.748, composition 2 of 8), which is what makes the comparison worth
+reading at all.
+
+**One implementation flaw is a candidate explanation rather than a
+conclusion.** Eluted rows were down-weighted to 0.35 of a real measurement,
+because the two assays measure different things. `HistGradientBoostingRegressor`
+honours `sample_weight`; `MLPRegressor` does not accept it at all. So for the
+neural half of the ensemble the down-weighting was silently ignored and
+25,000 eluted rows swamped 14,000 affinity measurements. Whether the idea
+fails or only this implementation of it does is a separate question, and it
+has not been answered here.
+
+---
+
 ## Does the simulation read the antigen at all?
 
 A user reported that C-ImmSim returned the same response for an antigenic
