@@ -207,7 +207,7 @@ PLANS = {
               "positions. This is the standing check that the model reads "
               "the antigen rather than returning the same response for "
               "anything - the defect reported for C-ImmSim.",
-        est="about 30 minutes"),
+        est="1-2 hours (86 arms, each a full protein scan)"),
     "validate": dict(steps=VALIDATE_STEPS, label="Re-run the validation",
                      about="Everything in VALIDATION.md end to end. Any of "
                            "it can fail, and a failure is a result.",
