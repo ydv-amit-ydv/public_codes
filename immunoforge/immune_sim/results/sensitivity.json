@@ -1,0 +1,94 @@
+{
+ "checks": [
+  {
+   "name": "positive controls respond",
+   "ok": true,
+   "detail": "median peak IgG 5,413 across 2 antigens",
+   "why": "a vaccine antigen the model cannot respond to would be useless"
+  },
+  {
+   "name": "negative controls do not",
+   "ok": true,
+   "detail": "every one of the 4 negative controls gives exactly 0",
+   "why": "self proteins and sequences with no epitope structure must give nothing, each for its own reason"
+  },
+  {
+   "name": "positive and negative are separated",
+   "ok": true,
+   "detail": "positives 5,413 against the worst negative 0",
+   "why": "this is the comparison C-ImmSim failed: an antigen and a housekeeping protein must not come out the same"
+  },
+  {
+   "name": "the epitopes come from the sequence, not the composition",
+   "ok": true,
+   "detail": "SARS-CoV-2 spike: 0.0% of epitopes survive shuffling; response 5,732 vs 5,390; ovalbumin: 0.0% of epitopes survive shuffling; response 5,094 vs 5,019",
+   "why": "a shuffled protein has identical composition, so if the same peptides came back the model would be counting residues. It is EXPECTED that a shuffled protein is still immunogenic - it is still foreign - so the magnitudes are reported, not asserted on"
+  },
+  {
+   "name": "an anchor substitution destroys binding, a non-anchor one does not",
+   "ok": true,
+   "detail": "predicted affinity worsens 26.7-fold when an anchor residue is changed, against 1.3-fold for a residue pointing at the T cell (n=52 and 52 substitutions)",
+   "why": "measured on the peptide itself, where it cannot be hidden by a whole-protein response that saturates. This is the check that the model has learned where the MHC groove grips"
+  }
+ ],
+ "n_arms": 86,
+ "epitope_level": {
+  "anchor_loss": 26.684,
+  "non_anchor_loss": 1.332,
+  "n_anchor": 52,
+  "n_non_anchor": 52
+ },
+ "scrambles": [
+  {
+   "parent": "SARS-CoV-2 spike",
+   "real": 5732.22,
+   "scramble_median": 5389.82,
+   "scramble_max": 5949.39,
+   "n": 10,
+   "epitope_overlap_median": 0.0
+  },
+  {
+   "parent": "ovalbumin",
+   "real": 5093.77,
+   "scramble_median": 5018.5650000000005,
+   "scramble_max": 5352.14,
+   "n": 10,
+   "epitope_overlap_median": 0.0
+  }
+ ],
+ "mutations": [
+  {
+   "parent": "SARS-CoV-2 spike",
+   "real": 5732.22,
+   "mut_anchor": 5727.165,
+   "mut_anchor_drop": 0.09,
+   "mut_non_anchor": 5726.21,
+   "mut_non_anchor_drop": 0.1,
+   "mut_random": 5732.22,
+   "mut_random_drop": 0.0
+  },
+  {
+   "parent": "ovalbumin",
+   "real": 5093.77,
+   "mut_anchor": 5118.49,
+   "mut_anchor_drop": -0.49,
+   "mut_non_anchor": 5064.6900000000005,
+   "mut_non_anchor_drop": 0.57,
+   "mut_random": 5092.26,
+   "mut_random_drop": 0.03
+  }
+ ],
+ "limitations": [
+  {
+   "name": "a single substitution does not move the whole-protein response",
+   "detail": "SARS-CoV-2 spike: anchor 0.09%, non-anchor 0.1%, random 0.0%; ovalbumin: anchor -0.49%, non-anchor 0.57%, random 0.03%",
+   "why": "an antigen with thousands of predicted binders does not notice losing one, so escape has to be studied at the epitope, not by re-simulating the mutated protein and comparing totals"
+  }
+ ],
+ "whole_protein_mutation_effect": {
+  "anchor_mean_drop_pct": -0.2,
+  "non_anchor_mean_drop_pct": 0.335
+ },
+ "passed": 5,
+ "total": 5
+}

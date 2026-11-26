@@ -1,0 +1,87 @@
+n_binders,n_clones,sum_weight,peak_IgG,peak_CTL,peak_B,reason,arm,label,why,length,epitope_overlap,parent,rep,epitope,position,anchor_pos,from_aa,to_aa
+2494,48.0,17.205,5732.22,1005601.7,4210.8,,positive,SARS-CoV-2 spike,a real vaccine antigen,1273,,,,,,,,
+759,41.0,11.632,5093.77,990470.0,3604.8,,positive,ovalbumin,the standard experimental immunogen,386,,,,,,,,
+539,,,0.0,0.0,,"Every predicted epitope in this protein is identical to a host protein, so central toleran",negative,GAPDH (human),self: central tolerance should delete it,335,,,,,,,,
+251,,,0.0,0.0,,"Every predicted epitope in this protein is identical to a host protein, so central toleran",negative,IFN-gamma (human),"self, and a short one",166,,,,,,,,
+286,,,0.0,0.0,,"Every predicted epitope in this protein is identical to a host protein, so central toleran",negative,poly_A,one residue repeated: no real epitope structure,300,,,,,,,,
+0,,,0.0,0.0,,no predicted binders,negative,poly_GS,"a flexible linker, not an antigen",300,,,,,,,,
+2543,47.0,15.279,5594.65,999910.3,4076.4,,scramble,SARS-CoV-2 spike scrambled #1,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,1.0,,,,,
+2534,47.0,13.661,5159.12,1000848.3,3687.0,,scramble,SARS-CoV-2 spike scrambled #2,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,2.0,,,,,
+2507,48.0,12.829,4739.35,1010540.4,3384.2,,scramble,SARS-CoV-2 spike scrambled #3,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,3.0,,,,,
+2585,48.0,15.35,5720.15,995559.9,4162.7,,scramble,SARS-CoV-2 spike scrambled #4,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,4.0,,,,,
+2529,48.0,14.968,5320.92,1003206.1,3841.6,,scramble,SARS-CoV-2 spike scrambled #5,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,5.0,,,,,
+2523,48.0,14.956,5220.33,1005844.7,3760.6,,scramble,SARS-CoV-2 spike scrambled #6,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,6.0,,,,,
+2533,48.0,12.033,5465.75,987600.9,3923.5,,scramble,SARS-CoV-2 spike scrambled #7,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,7.0,,,,,
+2548,48.0,13.013,5204.58,995192.3,3708.9,,scramble,SARS-CoV-2 spike scrambled #8,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,8.0,,,,,
+2486,48.0,14.846,5949.39,992225.7,4370.6,,scramble,SARS-CoV-2 spike scrambled #9,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,9.0,,,,,
+2534,46.0,14.425,5458.72,997561.3,3946.0,,scramble,SARS-CoV-2 spike scrambled #10,"composition preserved, epitopes destroyed",1273,0.0,SARS-CoV-2 spike,10.0,,,,,
+752,43.0,12.105,5352.14,989158.5,3822.5,,scramble,ovalbumin scrambled #1,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,1.0,,,,,
+748,44.0,12.666,5327.48,992995.9,3812.0,,scramble,ovalbumin scrambled #2,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,2.0,,,,,
+785,45.0,12.433,4238.58,1013613.7,2948.6,,scramble,ovalbumin scrambled #3,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,3.0,,,,,
+759,44.0,12.875,5186.62,995716.9,3693.2,,scramble,ovalbumin scrambled #4,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,4.0,,,,,
+761,40.0,11.816,4630.86,1001356.1,3235.2,,scramble,ovalbumin scrambled #5,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,5.0,,,,,
+774,38.0,12.526,4562.12,1008436.4,3193.6,,scramble,ovalbumin scrambled #6,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,6.0,,,,,
+780,39.0,12.172,5053.42,996063.8,3589.9,,scramble,ovalbumin scrambled #7,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,7.0,,,,,
+762,43.0,12.628,4983.71,997471.2,3523.3,,scramble,ovalbumin scrambled #8,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,8.0,,,,,
+803,40.0,13.247,5099.17,998564.3,3624.0,,scramble,ovalbumin scrambled #9,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,9.0,,,,,
+735,44.0,12.529,4966.75,999582.0,3526.4,,scramble,ovalbumin scrambled #10,"composition preserved, epitopes destroyed",386,0.0,ovalbumin,10.0,,,,,
+2495,48.0,16.672,5756.06,1002683.7,4222.8,,mut_anchor,SARS-CoV-2 spike W1214M (P2),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,WPWYIWLGF,1214.0,2.0,W,M
+2486,48.0,16.707,5569.43,1007396.4,4084.3,,mut_anchor,SARS-CoV-2 spike I1221T (P9),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,WPWYIWLGF,1221.0,9.0,I,T
+2509,48.0,17.03,5751.41,1004749.5,4225.8,,mut_anchor,SARS-CoV-2 spike D867V (P2),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,LTDEMIAQY,867.0,2.0,D,V
+2491,48.0,17.205,5732.22,1005601.7,4210.8,,mut_anchor,SARS-CoV-2 spike T874H (P9),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,LTDEMIAQY,874.0,9.0,T,H
+2490,48.0,17.181,5733.33,1005469.3,4211.3,,mut_anchor,SARS-CoV-2 spike F898C (P2),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,IPFAMQMAY,898.0,2.0,F,C
+2484,48.0,17.205,5732.22,1005601.7,4210.8,,mut_anchor,SARS-CoV-2 spike R905E (P9),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,IPFAMQMAY,905.0,9.0,R,E
+2488,48.0,16.839,5563.96,1008075.2,4081.1,,mut_anchor,SARS-CoV-2 spike A1222T (P2),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,FIAGLIAIV,1222.0,2.0,A,T
+2484,48.0,16.844,5563.75,1008101.4,4081.0,,mut_anchor,SARS-CoV-2 spike M1229C (P9),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,FIAGLIAIV,1229.0,9.0,M,C
+2489,48.0,17.276,5722.11,1006016.1,4202.6,,mut_anchor,SARS-CoV-2 spike F515M (P1),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,SFELLHAPATVCGPK,515.0,1.0,F,M
+2489,48.0,17.032,5636.81,1007021.6,4135.4,,mut_anchor,SARS-CoV-2 spike L518H (P4),anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,SFELLHAPATVCGPK,518.0,4.0,L,H
+2496,48.0,16.854,5563.28,1008162.4,4080.7,,mut_non_anchor,SARS-CoV-2 spike W1217Y (P5),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,WPWYIWLGF,1217.0,5.0,W,Y
+2498,48.0,17.097,5554.06,1009247.4,4075.2,,mut_non_anchor,SARS-CoV-2 spike G1219L (P7),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,WPWYIWLGF,1219.0,7.0,G,L
+2490,48.0,17.187,5732.89,1005527.8,4211.1,,mut_non_anchor,SARS-CoV-2 spike I870V (P5),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,LTDEMIAQY,870.0,5.0,I,V
+2497,48.0,17.456,5721.65,1006800.0,4205.3,,mut_non_anchor,SARS-CoV-2 spike Q872S (P7),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,LTDEMIAQY,872.0,7.0,Q,S
+2497,48.0,17.223,5731.4,1005698.6,4210.4,,mut_non_anchor,SARS-CoV-2 spike Q901V (P5),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,IPFAMQMAY,901.0,5.0,Q,V
+2496,48.0,17.236,5730.77,1005773.4,4210.0,,mut_non_anchor,SARS-CoV-2 spike A903Y (P7),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,IPFAMQMAY,903.0,7.0,A,Y
+2487,48.0,17.294,5745.71,1005742.3,4224.5,,mut_non_anchor,SARS-CoV-2 spike I1225V (P5),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,FIAGLIAIV,1225.0,5.0,I,V
+2491,48.0,17.743,5893.87,1002886.3,4354.4,,mut_non_anchor,SARS-CoV-2 spike I1227K (P7),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,FIAGLIAIV,1227.0,7.0,I,K
+2494,48.0,16.704,5572.02,1007997.2,4093.6,,mut_non_anchor,SARS-CoV-2 spike H519R (P5),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,SFELLHAPATVCGPK,519.0,5.0,H,R
+2499,48.0,16.881,5593.16,1007731.1,4105.3,,mut_non_anchor,SARS-CoV-2 spike A522W (P8),non_anchor position of a dominant epitope,1273,,SARS-CoV-2 spike,,SFELLHAPATVCGPK,522.0,8.0,A,W
+2494,48.0,17.205,5732.22,1005601.7,4210.8,,mut_random,SARS-CoV-2 spike C1254Y (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,1254.0,,C,Y
+2485,48.0,17.205,5732.22,1005601.7,4210.8,,mut_random,SARS-CoV-2 spike R34E (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,34.0,,R,E
+2505,48.0,17.205,5732.22,1005601.7,4210.8,,mut_random,SARS-CoV-2 spike P561I (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,561.0,,P,I
+2487,48.0,17.205,5732.22,1005601.7,4210.8,,mut_random,SARS-CoV-2 spike L1193H (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,1193.0,,L,H
+2495,48.0,17.174,5733.29,1005486.2,4211.3,,mut_random,SARS-CoV-2 spike S325W (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,325.0,,S,W
+2487,48.0,17.205,5732.22,1005601.7,4210.8,,mut_random,SARS-CoV-2 spike F220A (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,220.0,,F,A
+2499,48.0,17.229,5752.38,1005328.7,4229.4,,mut_random,SARS-CoV-2 spike D1118N (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,1118.0,,D,N
+2494,48.0,17.171,5733.37,1005477.3,4211.4,,mut_random,SARS-CoV-2 spike I358Y (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,358.0,,I,Y
+2497,48.0,17.205,5732.22,1005601.7,4210.8,,mut_random,SARS-CoV-2 spike V327F (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,327.0,,V,F
+2500,48.0,17.205,5732.22,1005601.7,4210.8,,mut_random,SARS-CoV-2 spike D936N (random),a substitution anywhere in the protein,1273,,SARS-CoV-2 spike,,,936.0,,D,N
+763,41.0,11.799,5273.48,987942.6,3748.5,,mut_anchor,ovalbumin V97F (P1),anchor position of a dominant epitope,386,,ovalbumin,,DVYSFSLASRLYAEE,97.0,1.0,V,F
+757,41.0,11.458,4998.37,991918.2,3530.5,,mut_anchor,ovalbumin F100C (P4),anchor position of a dominant epitope,386,,ovalbumin,,DVYSFSLASRLYAEE,100.0,4.0,F,C
+760,41.0,11.603,5073.43,990775.9,3588.8,,mut_anchor,ovalbumin L102Y (P6),anchor position of a dominant epitope,386,,ovalbumin,,DVYSFSLASRLYAEE,102.0,6.0,L,Y
+767,41.0,11.721,5163.55,989496.5,3660.0,,mut_anchor,ovalbumin R105V (P9),anchor position of a dominant epitope,386,,ovalbumin,,DVYSFSLASRLYAEE,105.0,9.0,R,V
+758,42.0,11.821,5222.16,987420.1,3697.2,,mut_anchor,ovalbumin I35A (P2),anchor position of a dominant epitope,386,,ovalbumin,,IAIMSALAM,35.0,2.0,I,A
+755,41.0,12.486,5303.41,990834.1,3783.2,,mut_anchor,ovalbumin V42Q (P9),anchor position of a dominant epitope,386,,ovalbumin,,IAIMSALAM,42.0,9.0,V,Q
+757,42.0,11.576,5053.34,992200.6,3580.3,,mut_anchor,ovalbumin F365M (P1),anchor position of a dominant epitope,386,,ovalbumin,,PFLFCIKHIATNAVL,365.0,1.0,F,M
+763,41.0,11.515,5173.17,988384.9,3670.4,,mut_anchor,ovalbumin C368A (P4),anchor position of a dominant epitope,386,,ovalbumin,,PFLFCIKHIATNAVL,368.0,4.0,C,A
+759,41.0,11.394,5015.4,990202.5,3539.1,,mut_anchor,ovalbumin K370C (P6),anchor position of a dominant epitope,386,,ovalbumin,,PFLFCIKHIATNAVL,370.0,6.0,K,C
+760,41.0,11.114,4937.65,991642.2,3479.0,,mut_anchor,ovalbumin A373K (P9),anchor position of a dominant epitope,386,,ovalbumin,,PFLFCIKHIATNAVL,373.0,9.0,A,K
+762,41.0,11.525,5113.29,989019.8,3617.9,,mut_non_anchor,ovalbumin S101T (P5),non_anchor position of a dominant epitope,386,,ovalbumin,,DVYSFSLASRLYAEE,101.0,5.0,S,T
+761,41.0,11.394,4977.32,992226.2,3514.5,,mut_non_anchor,ovalbumin S104C (P8),non_anchor position of a dominant epitope,386,,ovalbumin,,DVYSFSLASRLYAEE,104.0,8.0,S,C
+760,41.0,10.767,4957.77,990396.7,3491.9,,mut_non_anchor,ovalbumin A38H (P5),non_anchor position of a dominant epitope,386,,ovalbumin,,IAIMSALAM,38.0,5.0,A,H
+760,41.0,11.805,5080.07,992161.4,3597.4,,mut_non_anchor,ovalbumin A40S (P7),non_anchor position of a dominant epitope,386,,ovalbumin,,IAIMSALAM,40.0,7.0,A,S
+763,41.0,11.618,5157.7,990309.2,3664.6,,mut_non_anchor,ovalbumin I369Y (P5),non_anchor position of a dominant epitope,386,,ovalbumin,,PFLFCIKHIATNAVL,369.0,5.0,I,Y
+756,41.0,11.991,5107.05,992771.8,3616.5,,mut_non_anchor,ovalbumin I372M (P8),non_anchor position of a dominant epitope,386,,ovalbumin,,PFLFCIKHIATNAVL,372.0,8.0,I,M
+760,41.0,11.091,4847.14,992917.0,3400.8,,mut_non_anchor,ovalbumin I33M (P5),non_anchor position of a dominant epitope,386,,ovalbumin,,IFYCPIAIMSALAMV,33.0,5.0,I,M
+751,41.0,11.419,5172.13,987703.8,3670.8,,mut_non_anchor,ovalbumin M36G (P8),non_anchor position of a dominant epitope,386,,ovalbumin,,IFYCPIAIMSALAMV,36.0,8.0,M,G
+756,41.0,11.271,4962.62,991161.8,3497.5,,mut_non_anchor,ovalbumin K370Q (P5),non_anchor position of a dominant epitope,386,,ovalbumin,,FLFCIKHIATNAVLF,370.0,5.0,K,Q
+753,41.0,11.434,5049.31,989301.4,3565.1,,mut_non_anchor,ovalbumin A373D (P8),non_anchor position of a dominant epitope,386,,ovalbumin,,FLFCIKHIATNAVLF,373.0,8.0,A,D
+759,41.0,11.592,5172.85,987493.4,3661.2,,mut_random,ovalbumin F380E (random),a substitution anywhere in the protein,386,,ovalbumin,,,380.0,,F,E
+755,41.0,11.533,5100.16,989476.8,3608.0,,mut_random,ovalbumin I279F (random),a substitution anywhere in the protein,386,,ovalbumin,,,279.0,,I,F
+766,41.0,11.632,5093.77,990470.0,3604.8,,mut_random,ovalbumin G349W (random),a substitution anywhere in the protein,386,,ovalbumin,,,349.0,,G,W
+762,41.0,12.001,5070.33,993883.6,3592.6,,mut_random,ovalbumin E249Q (random),a substitution anywhere in the protein,386,,ovalbumin,,,249.0,,E,Q
+768,42.0,12.069,5221.88,990553.0,3708.8,,mut_random,ovalbumin T239L (random),a substitution anywhere in the protein,386,,ovalbumin,,,239.0,,T,L
+759,41.0,11.022,4852.4,994183.8,3408.9,,mut_random,ovalbumin S225T (random),a substitution anywhere in the protein,386,,ovalbumin,,,225.0,,S,T
+764,41.0,11.624,5094.22,990402.9,3605.0,,mut_random,ovalbumin P113A (random),a substitution anywhere in the protein,386,,ovalbumin,,,113.0,,P,A
+760,41.0,12.027,5079.07,993883.3,3600.7,,mut_random,ovalbumin Y107M (random),a substitution anywhere in the protein,386,,ovalbumin,,,107.0,,Y,M
+760,43.0,11.687,5090.75,990914.1,3603.2,,mut_random,ovalbumin A361S (random),a substitution anywhere in the protein,386,,ovalbumin,,,361.0,,A,S
+767,41.0,11.688,5090.55,990949.3,3603.1,,mut_random,ovalbumin K56M (random),a substitution anywhere in the protein,386,,ovalbumin,,,56.0,,K,M
