@@ -187,7 +187,27 @@ def epitope_level_anchor_test(models, host_ix, seqs, rng, n=40):
             "table": df.head(200).to_dict("records")}
 
 
-def run(reps=8, seed=0, quick=False, out="sensitivity"):
+def _load_user_antigen(spec):
+    """A UniProt accession, a FASTA file, or a bare sequence."""
+    spec = str(spec).strip()
+    f = Path(spec)
+    if f.exists():
+        txt = f.read_text()
+        seq = "".join(l.strip() for l in txt.splitlines()
+                      if l.strip() and not l.startswith(">"))
+        name = f.stem
+    elif len(spec) <= 20 and spec.isalnum():
+        name, seq = PR.fetch_uniprot(spec)
+        name = name.split("|")[-1].strip()[:40] or spec
+    else:
+        seq, name = spec, "your antigen"
+    seq = "".join(c for c in seq.upper() if c.isalpha())
+    if len(seq) < 9:
+        raise SystemExit(f"{spec!r}: no usable protein sequence found")
+    return name, seq
+
+
+def run(reps=8, seed=0, quick=False, out="sensitivity", antigen=None):
     import json as _json
     rng = np.random.default_rng(seed)
     params = _json.loads((HERE / "models" / "calibrated_wetlab.json")
@@ -230,6 +250,13 @@ def run(reps=8, seed=0, quick=False, out="sensitivity"):
         return r
 
     print("\nPOSITIVE CONTROLS - these should respond")
+    if antigen:
+        # Your own antigen, run through the same controls: its own shuffled
+        # replicates and its own anchor substitutions, beside the standard
+        # positives and negatives so there is something to compare it to.
+        uname, useq = _load_user_antigen(antigen)
+        seqs[uname] = useq
+        arm("positive", uname, useq, "the antigen you asked about")
     for acc, label, why in POSITIVES:
         _n, s = PR.fetch_uniprot(acc)
         seqs[label] = s
@@ -464,5 +491,10 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--out", default="sensitivity")
+    ap.add_argument("--antigen", default=None,
+                    help="your own protein: a UniProt accession, a FASTA "
+                         "file, or a bare sequence. It is put through the "
+                         "same controls as the built-in positives.")
     a = ap.parse_args()
-    run(reps=a.reps, seed=a.seed, quick=a.quick, out=a.out)
+    run(reps=a.reps, seed=a.seed, quick=a.quick, out=a.out,
+        antigen=a.antigen)
