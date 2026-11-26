@@ -73,6 +73,66 @@ def load_models(wanted=None):
     return out
 
 
+def scan_pan(seq, alleles=None, lengths=None):
+    """Scan a protein with the PAN-ALLELE model, which is the better one.
+
+    On a pathogen it has never seen the pan model reaches a median ROC-AUC of
+    0.873 for class I against 0.766 for the per-allele models, so when it is
+    trained this is what should feed a simulation. scan() with the per-allele
+    models stays as the fallback for an install that has not trained it.
+
+    Returns the same frame scan() does, so callers need not care which ran.
+    """
+    import model_pan as MP
+    out = []
+    for mclass in ("I", "II"):
+        ens = MP.load_pan_model(mclass)
+        if ens is None:
+            continue
+        have = [a for a in ens.alleles if not alleles or a in alleles]
+        if not have:
+            continue
+        lens = lengths or ([8, 9, 10, 11] if mclass == "I"
+                           else [13, 15, 17, 19])
+        peps, starts = [], []
+        for L in lens:
+            for i, pep in tile(seq, L):
+                peps.append(pep)
+                starts.append(i)
+        if not peps:
+            continue
+        for allele in have:
+            score = ens.predict(peps, [allele] * len(peps))
+            nm = inv_log50k(np.clip(score, 0.0, 1.0))
+            out.append(pd.DataFrame({
+                "allele": allele, "mhc_class": mclass, "start": starts,
+                "peptide": peps, "length": [len(x) for x in peps],
+                "score": score, "pred_IC50_nM": nm}))
+    if not out:
+        return None
+    df = pd.concat(out, ignore_index=True)
+    df["percentile_rank"] = (df.groupby("allele").score
+                               .rank(pct=True, ascending=False) * 100).round(2)
+    df["call"] = np.where(df.pred_IC50_nM < STRONG_NM, "strong",
+                 np.where(df.pred_IC50_nM < WEAK_NM, "weak", "non-binder"))
+    return df.sort_values("pred_IC50_nM").reset_index(drop=True)
+
+
+def scan_best(seq, alleles=None):
+    """The best predictor available, and which one it was.
+
+    Returns (frame, name). Callers show the name, because a user is entitled
+    to know whether they got the 0.873 model or the 0.766 one.
+    """
+    try:
+        df = scan_pan(seq, alleles)
+        if df is not None and len(df):
+            return df, "pan-allele core-scan"
+    except Exception:                                        # noqa: BLE001
+        pass
+    return scan(seq, load_models(alleles)), "per-allele"
+
+
 def tile(seq, k):
     return [(i + 1, seq[i:i + k]) for i in range(len(seq) - k + 1)]
 

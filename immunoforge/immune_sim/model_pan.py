@@ -395,6 +395,11 @@ def main():
     from scipy.stats import spearmanr
     from stats import auc_ci_delong, delong_test, fmt_p
 
+    suffix = "_quick" if args.quick else ""
+    if args.quick:
+        print("  --quick: small models, one realignment pass. Writing to "
+              "pan_*_quick.pkl so the shipped model is left alone. These "
+              "numbers are NOT the real ones.")
     report = {}
     for mclass in args.classes.split(","):
         df = load_wide(mclass)
@@ -460,12 +465,32 @@ def main():
                                                     [round(float(x), 3)
                                                      for x in ens.weights])),
                           "blend_split_auc": ens.blend_auc}
-        with open(MODELS / f"pan_{mclass}.pkl", "wb") as f:
+        with open(MODELS / f"pan_{mclass}{suffix}.pkl", "wb") as f:
             pickle.dump({"ensemble": ens, "mhc_class": mclass,
                          "alleles": alleles}, f)
 
-    (MODELS / "pan_report.json").write_text(json.dumps(report, indent=2))
-    print(f"\n  wrote {MODELS/'pan_report.json'} and pan_*.pkl")
+    # A --quick run writes pan_*_quick.pkl and pan_report_quick.json, never
+    # the shipped files. Twice now a smoke test has silently replaced the
+    # real model with a debug one - small models, one realignment pass - and
+    # the second time it also dropped class I from the report, because a run
+    # with --classes II rewrites the whole report from what that run did.
+    # A debug run must not be able to touch what the application loads.
+    if suffix:
+        (MODELS / f"pan_report{suffix}.json").write_text(
+            json.dumps(report, indent=2))
+    else:
+        # merge, so --classes II keeps the class I entry a previous run wrote
+        f = MODELS / "pan_report.json"
+        merged = {}
+        if f.exists():
+            try:
+                merged = json.loads(f.read_text())
+            except ValueError:
+                merged = {}
+        merged.update(report)
+        f.write_text(json.dumps(merged, indent=2))
+    print(f"\n  wrote {MODELS}/pan_report{suffix}.json and "
+          f"pan_*{suffix}.pkl")
     print("\n  NOTE: these are random-split numbers and are optimistic. "
           "Run external_validation_pan.py for leave-one-pathogen-out.")
 
