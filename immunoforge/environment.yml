@@ -16,3 +16,9 @@ dependencies:
   - python=3.11
   - flask>=3.0
   - pandas>=2.0
+  # The Simulation module runs in this interpreter, so its dependencies are
+  # here too. matplotlib is not needed: only the command-line figure scripts
+  # use it, and the GUI draws its charts in the browser.
+  - numpy>=1.24
+  - scipy>=1.10
+  - scikit-learn>=1.3

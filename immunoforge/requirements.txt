@@ -1,2 +1,17 @@
+# Immunoforge server. Deliberately small: this process runs the web page and
+# the pipeline, and never imports torch or any predictor's code - each
+# predictor has its own environment (see INSTALL.md).
 flask
 pandas
+
+# The Simulation module (immune_sim/) runs in THIS interpreter, so its
+# dependencies belong here. Leaving them out is what made Install fail with
+# "No module named 'scipy'" on an environment created before the simulator
+# was merged in.
+numpy
+scipy
+scikit-learn
+
+# matplotlib is NOT required: only the command-line figure scripts
+# (immune_sim/simulate.py, immune_sim/validate.py) use it, and the GUI draws
+# its own charts in the browser. Install it if you want those PNGs.

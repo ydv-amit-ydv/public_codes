@@ -67,10 +67,33 @@ def _report(name):
         return None
 
 
+# The Simulation module runs in THIS interpreter, not in a predictor's own
+# environment, so it needs its packages here. An environment created before
+# the simulator was merged in has only flask and pandas, and the first thing
+# Install did was crash with "No module named 'scipy'" several steps in.
+# Check up front instead, and offer to fix it.
+NEEDED = [("numpy", "numpy"), ("scipy", "scipy"),
+          ("sklearn", "scikit-learn"), ("pandas", "pandas")]
+
+
+def missing_packages():
+    """[(import name, pip name)] that this interpreter cannot import."""
+    import importlib.util
+    return [(mod, pip) for mod, pip in NEEDED
+            if importlib.util.find_spec(mod) is None]
+
+
 def health(deep=False):
     """Health card lines, in the engine's own format."""
     from server import _check                          # late: avoids a cycle
     out = []
+    miss = missing_packages()
+    out.append(_check(
+        "python packages", not miss,
+        "all present in " + os.path.basename(PY_EXE) if not miss
+        else ("missing: " + ", ".join(p for _m, p in miss)
+              + " - press Install, or run: "
+              + f"{PY_EXE} -m pip install " + " ".join(p for _m, p in miss))))
     data = datasets()
     missing = [d["name"] for d in data if not d.get("present")]
     bundled = sum(1 for d in data if d.get("copy") == "bundled")
@@ -176,12 +199,47 @@ PLANS = {
 }
 
 
+def _install_packages(job):
+    """Install the Simulation module's dependencies into this interpreter.
+
+    Only ever installs what is actually missing, and names them in the log.
+    This is what "Install" means for a module that runs in the server's own
+    process, and it is shown as a step rather than done silently.
+    """
+    miss = missing_packages()
+    if not miss:
+        job.log("all required packages are already present")
+        return
+    pkgs = [pip for _m, pip in miss]
+    job.log(f"installing into {PY_EXE}: {', '.join(pkgs)}")
+    r = run_cmd([PY_EXE, "-m", "pip", "install", *pkgs], job=job, merge=True,
+                on_line=lambda l: job.log(l.rstrip()), cwd=SIM)
+    if r.returncode != 0:
+        raise RuntimeError(
+            "Could not install " + ", ".join(pkgs) + ". Install them yourself "
+            "and press Install again:  " + PY_EXE + " -m pip install "
+            + " ".join(pkgs))
+    still = missing_packages()
+    if still:
+        raise RuntimeError(
+            "pip reported success but " + ", ".join(p for _m, p in still)
+            + " still cannot be imported. If this is a conda environment, "
+            "install them with conda instead.")
+
+
 def _run_plan(job, steps):
     """Run the steps in order as one engine job, one stage each."""
+    steps = [("deps", "Python packages the simulator needs", None)] + list(steps)
     for name, label, _cmd in steps:
         job.stage(name, label, weight=1.0)
     for name, label, cmd in steps:
         job.check()
+        if cmd is None:                      # the dependency step
+            job.update(name, state="running", msg="")
+            job.log(f"=== {label} ===")
+            _install_packages(job)
+            job.finish_stage(name)
+            continue
         job.update(name, state="running", msg="")
         job.log(f"=== {label} ===")
 

@@ -176,6 +176,15 @@ name, so you never have to activate anything before a run — see §7.
 git clone https://github.com/ydv-amit-ydv/public_codes.git ~/public_codes
 cd ~/public_codes/immunoforge
 conda env create -f environment.yml          # creates "epitope-engine": python 3.11, flask, pandas
+
+If you created that environment before the Simulation module was added, it
+has only flask and pandas and the simulator's Install will say so under
+**Settings &rarr; Immune simulation**. Either press Install, which installs
+what is missing into the same interpreter, or do it yourself:
+
+```bash
+conda run -n immunoforge python -m pip install numpy scipy scikit-learn
+```
 ```
 
 ```bash
