@@ -2150,8 +2150,10 @@ async function simLoadRuns(){
     return;
   }
   sel.disabled = false;
-  sel.innerHTML = d.runs.map(r =>
-    `<option value="${r.id}">${esc(r.name)} · ${esc(r.input || r.kind || "")}</option>`).join("");
+  sel.innerHTML = d.runs.map(r => {
+    const tail = r.detail || r.kind || "";
+    return `<option value="${r.id}">${esc(r.name)}${tail ? " · " + esc(tail) : ""}</option>`;
+  }).join("");
 }
 
 function simSource(){

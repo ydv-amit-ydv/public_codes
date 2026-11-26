@@ -46,12 +46,12 @@ def find_tables(path):
     if p.is_file():
         return p, None
     if not p.is_dir():
-        raise SystemExit(f"not found: {p}")
+        raise ValueError(f"not found: {p}")
     pairs = sorted(p.glob("*_pairs.csv")) or sorted(p.rglob("*_pairs.csv"))
     peps = (sorted(p.glob("*_peptides.csv")) or sorted(p.glob("*_candidates.csv"))
             or sorted(p.rglob("*_peptides.csv")))
     if not pairs and not peps:
-        raise SystemExit(
+        raise ValueError(
             f"no engine tables under {p}\n"
             f"expected *_pairs.csv or *_peptides.csv from an engine run")
     return (pairs[-1] if pairs else None), (peps[-1] if peps else None)
@@ -124,12 +124,12 @@ def load(path, top_i=4, top_ii=3, use_priority=True):
     if tab is None and peps_f is not None:
         tab = from_peptides(pd.read_csv(peps_f))
     if tab is None:
-        raise SystemExit("could not find the expected columns in the engine output")
+        raise ValueError("could not find the expected columns in the engine output")
 
     tab = tab.dropna(subset=["peptide", "allele", "bind_rank"])
     tab = tab[tab.peptide.str.len().between(6, 30)]
     if tab.empty:
-        raise SystemExit("no usable rows in the engine output")
+        raise ValueError("no usable rows in the engine output")
 
     tab["mhc_class"] = tab.allele.map(mhc_class)
     tab["length"] = tab.peptide.str.len()
@@ -166,7 +166,7 @@ def load(path, top_i=4, top_ii=3, use_priority=True):
 
     tab = tab[tab.call != "non-binder"]
     if tab.empty:
-        raise SystemExit("engine run contains no binders at its own cut-offs")
+        raise ValueError("engine run contains no binders at its own cut-offs")
 
     keep = []
     for cls, n in (("I", top_i), ("II", top_ii)):
@@ -182,7 +182,10 @@ def load(path, top_i=4, top_ii=3, use_priority=True):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__)
-    t = load(sys.argv[1])
+    try:
+        t = load(sys.argv[1])
+    except ValueError as e:                 # a library raises; the CLI exits
+        sys.exit(str(e))
     print(f"{len(t)} epitope clones from engine output\n")
     cols = [c for c in ["allele", "mhc_class", "peptide", "start", "bind_rank",
                         "immuno_p", "coverage", "priority", "weight", "call"]

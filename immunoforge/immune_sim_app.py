@@ -230,9 +230,22 @@ def register(app):
         for r in runs.listing():
             if r.get("state") != "done":
                 continue
+            # runs.listing() gives `input` as a dict (proteins, residues,
+            # mode, sha1). Sending it raw put "[object Object]" in the
+            # dropdown, so the readable line is built here, once.
+            inp = r.get("input") or {}
+            bits = []
+            prots = inp.get("proteins") or []
+            if prots:
+                bits.append(", ".join(prots[:2])
+                            + (f" +{len(prots) - 2} more" if len(prots) > 2 else ""))
+            elif inp.get("n_proteins"):
+                bits.append(f"{inp['n_proteins']} proteins")
+            if inp.get("residues"):
+                bits.append(f"{inp['residues']:,} aa")
             out.append({"id": r["id"], "name": r.get("name") or r["id"][:8],
                         "kind": r.get("kind"), "created": r.get("created"),
-                        "input": r.get("input")})
+                        "detail": " \u00b7 ".join(bits)})
         return jsonify(runs=out[:60])
 
     @app.get("/api/sim/status")
@@ -281,6 +294,18 @@ def register(app):
             return jsonify(design(request.get_json(force=True) or {}))
         except ValueError as e:
             return jsonify(error=str(e)), 400
+        except SystemExit as e:
+            # SystemExit inherits from BaseException, so "except Exception"
+            # does not catch it: it unwinds the worker thread and the browser
+            # sees nothing but "Failed to fetch". These modules are libraries
+            # here and CLIs elsewhere, so this stays as a backstop even though
+            # the ones we call now raise ValueError.
+            return jsonify(error=f"the simulator stopped: {e}"), 400
+        except Exception as e:                               # noqa: BLE001
+            import traceback
+            if os.environ.get("IMMUNOFORGE_DEBUG"):
+                traceback.print_exc()
+            return jsonify(error=f"{type(e).__name__}: {e}"), 500
 
     @app.get("/api/sim/validation")
     def sim_validation():

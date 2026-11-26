@@ -199,11 +199,17 @@ def design(payload):
             summary["boost_peak_day_after"] = float(
                 df.day[post.IgG.idxmax()] - boost)
 
+    # Show the numbers the source actually produced. An engine run's native
+    # scale is percentile rank with agreement and coverage behind it; showing
+    # only the nM that was derived from it would hide the real measurement and
+    # make a fused eleven-predictor call look like a single affinity estimate.
     cols = [c for c in ("allele", "mhc_class", "start", "peptide", "length",
-                        "pred_IC50_nM", "percentile_rank", "call")
+                        "bind_rank", "agreement", "coverage", "priority",
+                        "pred_IC50_nM", "percentile_rank", "weight", "call")
             if c in table.columns]
     top = table[cols].head(int(payload.get("limit", 80)))
-    for c in ("pred_IC50_nM", "percentile_rank"):
+    for c in ("pred_IC50_nM", "percentile_rank", "bind_rank", "agreement",
+              "coverage", "priority", "weight"):
         if c in top.columns:
             top[c] = top[c].round(3)
 

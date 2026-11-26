@@ -69,7 +69,7 @@ def load_models(wanted=None):
             continue
         out[d["allele"]] = d
     if not out:
-        sys.exit("no models found - run model.py first")
+        raise ValueError("no models found - run model.py first")
     return out
 
 
@@ -230,7 +230,10 @@ def main():
     print(f"Length  : {len(seq)} aa\n")
 
     wanted = set(args.alleles.split(",")) if args.alleles else None
-    models = load_models(wanted)
+    try:
+        models = load_models(wanted)
+    except ValueError as e:                 # a library raises; the CLI exits
+        sys.exit(str(e))
     print(f"Alleles : {', '.join(sorted(models))}\n")
 
     df = scan(seq, models)
