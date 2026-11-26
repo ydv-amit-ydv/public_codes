@@ -158,6 +158,11 @@ UPDATE_STEPS = [
     ("harvest_trials", "ClinicalTrials.gov fold-rises", [PY_EXE, "-u", "harvest_trials.py"]),
 ]
 
+SENSITIVITY_STEPS = [
+    ("sensitivity", "Controls, scrambles and point mutations",
+     [PY_EXE, "-u", "sensitivity.py", "--reps", "10"]),
+]
+
 VALIDATE_STEPS = [
     ("benchmarks", "13 platform benchmarks", [PY_EXE, "-u", "test_platforms.py"]),
     ("wetlab", "Held-out human subjects",
@@ -170,6 +175,8 @@ VALIDATE_STEPS = [
     ("trials", "Clinical trial fold-rises", [PY_EXE, "-u", "validate_trials.py"]),
     ("scorecard", "Evidence scorecard + robustness",
      [PY_EXE, "-u", "scorecard.py", "--robustness", "100"]),
+    ("sensitivity", "Controls, scrambles and point mutations",
+     [PY_EXE, "-u", "sensitivity.py", "--reps", "10"]),
 ]
 
 PLANS = {
@@ -192,6 +199,15 @@ PLANS = {
                          "Every number in VALIDATION.md came from the "
                          "committed copies, so results may move after this.",
                    est="15-40 minutes, needs the network"),
+    "sensitivity": dict(
+        steps=SENSITIVITY_STEPS, label="Check antigen sensitivity",
+        about="Runs the simulation against positive controls, self proteins, "
+              "low-complexity sequences, shuffled versions of each antigen, "
+              "and single point substitutions at anchor and non-anchor "
+              "positions. This is the standing check that the model reads "
+              "the antigen rather than returning the same response for "
+              "anything - the defect reported for C-ImmSim.",
+        est="about 30 minutes"),
     "validate": dict(steps=VALIDATE_STEPS, label="Re-run the validation",
                      about="Everything in VALIDATION.md end to end. Any of "
                            "it can fail, and a failure is a result.",

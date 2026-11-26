@@ -2429,7 +2429,7 @@ async function simSettings(){
   SIMSTATUS = d;
   $("siminfo").textContent = d.installed
     ? "installed" : "not installed — press Install";
-  const order = ["install", "quick", "update", "validate"];
+  const order = ["install", "quick", "sensitivity", "update", "validate"];
   $("simplans").innerHTML = order.filter(k => d.plans[k]).map(k => {
     const p = d.plans[k];
     const cls = (k === "install" && !d.installed) ? "primary" : "b";

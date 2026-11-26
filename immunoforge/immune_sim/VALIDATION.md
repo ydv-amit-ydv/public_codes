@@ -376,6 +376,105 @@ the shared carrying capacity.
 
 ---
 
+## Does the simulation read the antigen at all?
+
+A user reported that C-ImmSim returned the same response for an antigenic
+protein and for GAPDH under identical parameters. Tested the same way, with
+four real proteins fetched from UniProt and everything else held fixed, **this
+model had the identical defect**:
+
+| antigen | peak IgG, before the fix |
+|---|---|
+| GAPDH (human housekeeping) | **1,903** |
+| SARS-CoV-2 spike | 1,825 |
+| ovalbumin | 1,538 |
+| IFN-gamma (human) | 1,691 |
+
+A human housekeeping protein out-responded the spike protein, and peak CD8
+was identical across all four to within 1.3%.
+
+### Three causes, measured separately
+
+1. `load_epitopes` rescaled weights so the best epitope of **every** antigen
+   became 1.0, giving every antigen a clone priming at full strength however
+   bad its best epitope was.
+2. A per-allele cap collapsed 2,494 binders and 251 binders to a similar
+   handful of clones.
+3. Nothing distinguished a human protein from a pathogen's.
+
+Removing the rescaling alone moved the spread from 1.24x to 1.52x, and
+raising the caps made it **worse** (1.20x) because the response saturates
+against carrying capacity. Cause 3 was the one that mattered.
+
+### The fix: central tolerance
+
+Every epitope is classified against the human proteome by the engine's own
+host-proteome check and weighted by how much of that clone survives thymic
+selection — identical 0.0, near 0.15, distinct 1.0. The separation is a
+property of the data, not a tuned threshold:
+
+| | binders | identical to the host proteome |
+|---|---|---|
+| GAPDH | 539 | **100%** |
+| IFN-gamma | 251 | **100%** |
+| SARS-CoV-2 spike | 2,494 | 0% (5.5% near) |
+| ovalbumin | 759 | 18.7% |
+
+### Where the model discriminates, and where it does not
+
+Measured, after the fix:
+
+| comparison | ratio |
+|---|---|
+| self against non-self | 8,755 against **0** |
+| a weak epitope set against a strong one | **6.2x** |
+| one HLA allele against thirteen | 0 against **1,340** |
+| an anchor substitution against a non-anchor one | **24x** |
+| two epitope-rich foreign antigens | 1.13x |
+
+The last row is small and is **left alone deliberately**. Two foreign
+proteins with thousands of binders each, at the same dose on the same
+platform, should give responses of similar size; what differs between them is
+which epitopes, not how much antibody. Inventing a spread there would be
+fitting a number nobody has measured.
+
+The one-allele row is worth reading twice: with a single class I allele and
+no class II epitope there is no CD4 help, so antibody is **zero**. That is
+the right immunology and the model was not capable of it before.
+
+### Two of my own test designs were wrong
+
+Recorded because the tests, not the model, were what failed first.
+
+**The scramble check** asserted that a real protein out-responds its shuffled
+replicates. That is not immunology: a shuffled protein is still a foreign
+protein of the same size and *should* be immunogenic. What must change is
+which epitopes are found, so the check is now on epitope identity and the
+magnitudes are reported without being asserted on.
+
+**The anchor-mutation check** mutated peptide positions 1-9, which is only
+valid for class I — a class II 15-mer's binding core sits somewhere inside
+it, so position 2 of the peptide is not position 2 of the core.
+
+**The whole-protein mutation test measures noise.** One substitution in 1,273
+residues moves the response by under 2%, and the anchor/non-anchor ordering
+came out backwards. An antigen with 2,494 binders does not notice losing one.
+Asked where it is sharp — on the peptide itself — the answer is unambiguous:
+
+| substitution | predicted affinity |
+|---|---|
+| **anchor** residue (sits in the MHC groove) | **26.7x worse** |
+| non-anchor residue (points at the T cell) | 1.1x worse |
+
+The model has learned where the groove grips. The sensitivity was real all
+along; the whole-protein test could not see it.
+
+`sensitivity.py` runs all of this as a standing check, with replicates, and
+`response_depends_on_the_antigen` in the benchmark suite locks in the part
+that can be asserted cheaply.
+
+---
+
 ## A reproducibility failure, found by rebuilding what was already committed
 
 Rebuilding `model_pan.py` so its report and its weight files came from the
