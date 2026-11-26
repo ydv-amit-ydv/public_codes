@@ -120,5 +120,10 @@ immunoforge/immune_sim/results/*.json
 !immunoforge/immune_sim/results/eluted_validation.csv
 !immunoforge/immune_sim/results/trial_validation.csv
 !immunoforge/immune_sim/results/trial_validation.json
+# the antigen-sensitivity controls: two of the Evidence tab's charts read
+# these, so leaving them untracked would repeat exactly the mistake that
+# made four verdicts say "not tested yet" in a fresh clone
+!immunoforge/immune_sim/results/sensitivity.csv
+!immunoforge/immune_sim/results/sensitivity.json
 !immunoforge/immune_sim/results/wetlab_validation_*.csv
 !immunoforge/immune_sim/results/scorecard.csv
