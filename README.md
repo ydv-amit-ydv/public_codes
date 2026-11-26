@@ -11,6 +11,8 @@ application with several modules, all in one GUI:
 | **Construct** | Assemble chosen epitopes into a vaccine construct, with linkers and screening |
 | **Comparison** | Several antigens or settings side by side |
 | **Simulation** | What the immune system does with those epitopes over months: T cells, B cells, class switching, affinity maturation, memory, boost response |
+| **Sim compare** | Several formulations, doses or antigens on one axis, with +ve/&minus;ve control presets |
+| **Evidence** | Whether the simulation works, drawn: the model's prediction against real human subjects, performance on pathogens it has never seen, and the limits stated plainly |
 | **Projects / Settings** | Stored runs, per-module install and update, health checks |
 
 It was previously called the Epitope Filter Engine. The name changed when it

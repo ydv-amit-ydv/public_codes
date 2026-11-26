@@ -66,11 +66,12 @@ def baseline_model(train, test, L):
     return m.predict(encode(te.peptide.values, L)), te
 
 
-def run(quick=False, realign=4, eluted=False, out_name=None):
+def run(quick=False, realign=4, eluted=False, out_name=None,
+        classes="I,II"):
     df = tag_organism(load())
     rows = []
 
-    for mclass in ("I", "II"):
+    for mclass in [c.strip() for c in classes.split(",")]:
         L = CANON_LEN[mclass]
         sub = df[(df.mhc_class == mclass)
                  & (df.length >= MIN_LEN[mclass])
@@ -176,7 +177,7 @@ def run(quick=False, realign=4, eluted=False, out_name=None):
     print("\n" + "=" * 78)
     print("PAN-ALLELE CORE-SCAN vs model.py, on pathogens neither has seen")
     print("=" * 78)
-    for mclass in ("I", "II"):
+    for mclass in [c.strip() for c in classes.split(",")]:
         s = tab[tab.mhc_class == mclass]
         if s.empty:
             continue
@@ -209,6 +210,8 @@ if __name__ == "__main__":
                     help="also train on eluted ligands; every test peptide is "
                          "excluded from them first, or the comparison would "
                          "be measuring leakage")
+    ap.add_argument("--classes", default="I,II",
+                    help="which MHC classes to fold over")
     ap.add_argument("--out", dest="out_name", default=None,
                     help="result CSV name under results/")
     run(**vars(ap.parse_args()))
