@@ -474,6 +474,56 @@ def charts():
                 "ref": 0.05, "ref_label": "chance",
             })
 
+    # 3b. is the simulation reading the antigen at all?
+    sn = _json("sensitivity.json")
+    if sn:
+        import pandas as _pd
+        st = _csv("sensitivity.csv")
+        if st is not None and "arm" in st.columns:
+            groups = [("positive", "a real antigen"),
+                      ("scramble", "its residues shuffled"),
+                      ("negative", "a self protein, or no epitopes")]
+            xs, ys = [], []
+            for k, lab in groups:
+                sub = st[st.arm == k]
+                if len(sub):
+                    xs.append(lab)
+                    ys.append(round(float(sub.peak_IgG.median()), 1))
+            if xs:
+                out.append({
+                    "id": "antigen_sensitivity",
+                    "title": "Does the simulation read the antigen, or ignore it?",
+                    "plain": "This is the comparison C-ImmSim was reported "
+                             "failing: an antigenic protein and a housekeeping "
+                             "protein giving the same answer. A self protein "
+                             "must give nothing, because the T cells that "
+                             "would recognise it were deleted in the thymus. "
+                             "A shuffled protein is still foreign, so it is "
+                             "still immunogenic - what must change there is "
+                             "WHICH epitopes are found, not how big the "
+                             "response is.",
+                    "kind": "bars", "x": xs, "y": ys,
+                    "ylabel": "peak IgG (arbitrary units)",
+                })
+        epl = sn.get("epitope_level") or {}
+        if epl.get("anchor_loss"):
+            out.append({
+                "id": "anchor_sensitivity",
+                "title": "Is it sensitive to a single mutation?",
+                "plain": "One residue changed in one peptide. An ANCHOR "
+                         "residue sits in the MHC groove and holds the "
+                         "peptide there; a non-anchor residue points outward "
+                         "at the T cell. Changing the anchor should destroy "
+                         "binding and changing the other should not. Measured "
+                         "on the peptide, because a whole protein has "
+                         "thousands of epitopes and losing one is invisible.",
+                "kind": "bars",
+                "x": ["anchor residue changed", "non-anchor residue changed"],
+                "y": [epl["anchor_loss"], epl["non_anchor_loss"]],
+                "ylabel": "how much worse the predicted binding gets (x)",
+                "ref": 1.0, "ref_label": "no change",
+            })
+
     # 4. clinical trials
     t = _csv("trial_validation.csv")
     if t is not None and "model_fold_rise" in t.columns:

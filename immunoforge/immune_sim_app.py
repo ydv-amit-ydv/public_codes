@@ -365,6 +365,61 @@ def register(app):
                 traceback.print_exc()
             return jsonify(error=f"{type(e).__name__}: {e}"), 500
 
+    @app.post("/api/sim/compare")
+    def sim_compare():
+        """Several formulations, antigens or schedules on one axis.
+
+        Each arm goes through the same code path as a single simulation, so
+        a curve here and a curve on the Simulation tab are the same
+        computation. An arm that fails returns its reason instead of
+        removing itself: a self protein giving nothing is a RESULT, and
+        dropping it silently would hide the most informative arm in the
+        comparison.
+        """
+        from immune_sim_design import design
+        body = request.get_json(force=True) or {}
+        arms = body.get("arms") or []
+        if not 1 <= len(arms) <= 8:
+            return jsonify(error="give between 1 and 8 arms"), 400
+        shared = {k: v for k, v in body.items() if k != "arms"}
+        out = []
+        for i, a in enumerate(arms):
+            cfg = dict(shared, **a)
+            label = a.get("label") or f"arm {i + 1}"
+            try:
+                d = design(cfg)
+            except ValueError as e:
+                out.append({"label": label, "error": str(e),
+                            "no_response": "tolerance" in str(e).lower()})
+                continue
+            except Exception as e:                           # noqa: BLE001
+                out.append({"label": label, "error": f"{type(e).__name__}: {e}"})
+                continue
+            keep = ("IgG", "IgM", "TC_active", "TH_active", "B_active",
+                    "B_memory", "TC_memory", "affinity", "antigen")
+            out.append({
+                "label": label,
+                "antigen": d["antigen"],
+                "day": d["day"],
+                "series": {k: v for k, v in d["series"].items() if k in keep},
+                "summary": d["summary"],
+                "epitopes": {k: d["epitopes"][k]
+                             for k in ("n", "n_alleles", "n_clones", "by_class")
+                             if k in d["epitopes"]},
+                "info": d["info"],
+            })
+        return jsonify(arms=out)
+
+    @app.get("/api/sim/sensitivity")
+    def sim_sensitivity():
+        """The standing controls: positives, negatives, scrambles, mutations."""
+        f = os.path.join(SIM, "results", "sensitivity.json")
+        if not os.path.exists(f):
+            return jsonify(available=False,
+                           hint="Run it with: python3 immune_sim/sensitivity.py")
+        with open(f) as fh:
+            return jsonify(available=True, **json.load(fh))
+
     @app.get("/api/sim/validation")
     def sim_validation():
         sys.path.insert(0, os.path.join(SIM, "webapp"))

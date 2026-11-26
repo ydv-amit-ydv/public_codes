@@ -33,7 +33,7 @@ from external_validation import (MIN_TEST, MIN_TRAIN, N_PATHOGENS,   # noqa: E40
                                  aa_composition_baseline, organism)
 from model import (BINDER_NM, CANON_LEN, SEED, encode,               # noqa: E402
                    inv_log50k, load)
-from model_pan import MAX_LEN, MIN_LEN, PanEnsemble                  # noqa: E402
+from model_pan import MAX_LEN, MIN_LEN, PanEnsemble, load_eluted                  # noqa: E402
 from stats import (auc_ci_delong, bh_fdr, calibration,               # noqa: E402
                    delong_test, fmt_p)
 import dataio                                            # noqa: E402
@@ -66,7 +66,7 @@ def baseline_model(train, test, L):
     return m.predict(encode(te.peptide.values, L)), te
 
 
-def run(quick=False, realign=4):
+def run(quick=False, realign=4, eluted=False, out_name=None):
     df = tag_organism(load())
     rows = []
 
@@ -90,10 +90,26 @@ def run(quick=False, realign=4):
                 continue
 
             # --- pan model, on every length -----------------------------
-            ens = PanEnsemble(sorted(train.allele.unique()),
-                              realign=realign, quick=quick)
-            ens.fit(train.peptide.values, train.y.values,
-                    train.allele.values, verbose=False)
+            peps, ys, als = (train.peptide.values, train.y.values,
+                             train.allele.values)
+            sw = np.ones(len(train))
+            alleles = sorted(train.allele.unique())
+            if eluted:
+                # Leakage control, and the whole comparison depends on it:
+                # the eluted set is keyed by peptide only, with no organism
+                # column, so the held-out pathogen cannot be excluded by
+                # name. Exclude by SEQUENCE instead - every test peptide is
+                # dropped from the eluted rows before they are trained on.
+                el = load_eluted(mclass, exclude_peptides=set(test.peptide),
+                                 seed=SEED)
+                if el is not None and len(el):
+                    peps = np.concatenate([peps, el.peptide.values])
+                    ys = np.concatenate([ys, el.y.values])
+                    als = np.concatenate([als, el.allele.values])
+                    sw = np.concatenate([sw, el.w.values])
+                    alleles = sorted(set(alleles) | set(el.allele.unique()))
+            ens = PanEnsemble(alleles, realign=realign, quick=quick)
+            ens.fit(peps, ys, als, verbose=False, sw=sw)
             p_pan = ens.predict(test.peptide.values, test.allele.values)
             y_pan = (inv_log50k(test.y.values) < BINDER_NM).astype(int)
             if len(np.unique(y_pan)) < 2:
@@ -181,7 +197,7 @@ def run(quick=False, realign=4):
             print(f"    beats composition baseline in "
                   f"{int(g.get('sig_vs_comp', pd.Series(dtype=bool)).sum())}"
                   f"/{len(g)} after BH")
-    print(f"\n  wrote {RESULTS/'external_validation_pan.csv'}")
+    print(f"\n  wrote {RESULTS / (out_name or 'external_validation_pan.csv')}")
     return tab
 
 
@@ -189,4 +205,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--realign", type=int, default=4)
+    ap.add_argument("--eluted", action="store_true",
+                    help="also train on eluted ligands; every test peptide is "
+                         "excluded from them first, or the comparison would "
+                         "be measuring leakage")
+    ap.add_argument("--out", dest="out_name", default=None,
+                    help="result CSV name under results/")
     run(**vars(ap.parse_args()))

@@ -100,6 +100,24 @@ def scan(seq, models):
     return df.sort_values("pred_IC50_nM").reset_index(drop=True)
 
 
+def score_peptides(peptides, allele, models):
+    """Predicted IC50 (nM) for given peptides against one allele.
+
+    scan() tiles a protein; this scores peptides you already have, which is
+    what a substitution test needs - the same model, the same encoding, one
+    residue different.
+    """
+    d = models.get(allele)
+    if d is None:
+        raise ValueError(f"no model for {allele}")
+    L = d["length"]
+    peps = [str(p) for p in peptides]
+    bad = [p for p in peps if len(p) != L]
+    if bad:
+        raise ValueError(f"{allele} scores {L}-mers; got {len(bad[0])}")
+    return inv_log50k(d["model"].predict(encode(peps, L)))
+
+
 # --- mapping predictions onto C-ImmSim's bit-string world -------------------
 
 def affinity_to_match(nm):

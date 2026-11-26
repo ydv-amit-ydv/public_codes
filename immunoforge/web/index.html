@@ -101,6 +101,7 @@ details>summary{cursor:pointer}
 <button data-t="construct">Construct</button>
 <button data-t="comparison">Comparison</button>
 <button data-t="simulation">Simulation</button>
+<button data-t="simcompare">Sim compare</button>
 <button data-t="evidence">Evidence</button>
 <button data-t="projects">Projects</button>
 <button data-t="settings">Settings</button></nav>
@@ -378,6 +379,75 @@ KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
 </div>
 
 <!-- ============================ PROJECTS ============================ -->
+<!-- ========================= SIM COMPARISON ========================= -->
+<div class="pane" id="simcompare">
+ <div class="fcol">
+  <h3>What to compare</h3>
+  <label class="i">Antigen <span class="q" data-h="sc_antigen">?</span>
+    <select id="sc_antigen" style="width:100%"></select></label>
+  <div id="sc_seqbox" style="display:none;margin:6px 0">
+    <textarea id="sc_seq" rows="5" spellcheck="false"
+      placeholder="Paste one protein; every arm uses it."></textarea>
+  </div>
+
+  <h3>Arms</h3>
+  <div class="muted sm" style="margin-bottom:6px">Each arm is one
+   formulation. They share the antigen and the schedule below.</div>
+  <div id="sc_arms"></div>
+  <button class="b" id="sc_add" style="margin-top:6px">Add an arm</button>
+
+  <h3>Shared schedule</h3>
+  <div class="grid2">
+    <span>Dose days</span><input type="text" id="sc_inject" value="0, 28">
+    <span>Follow-up (days)</span>
+    <input type="number" id="sc_follow" value="240" min="10" max="1000" step="10">
+  </div>
+
+  <h3>Presets <span class="q" data-h="sc_preset">?</span></h3>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class="b" data-preset="platforms">Platforms</button>
+    <button class="b" data-preset="adjuvants">Adjuvants</button>
+    <button class="b" data-preset="dose">Dose response</button>
+    <button class="b" data-preset="controls">Controls (+ve / &minus;ve)</button>
+  </div>
+
+  <div style="margin-top:14px">
+    <button class="primary" id="sc_run">Compare</button>
+  </div>
+ </div>
+
+ <div class="ocol">
+  <div class="card" id="sc_empty">
+   <b>Nothing compared yet</b>
+   <div class="muted sm" style="margin-top:6px">Pick a preset on the left and
+    press Compare. <b>Controls</b> is the useful one to start with: it puts a
+    real antigen beside a human self protein, which is the comparison that
+    shows whether the model is reading the antigen at all.</div>
+  </div>
+  <div class="card" id="sc_busy" style="display:none">
+   <b>Running the arms…</b>
+   <div class="bar ind" style="margin:8px 0"><i></i></div>
+   <div class="muted sm" id="sc_busymsg"></div>
+  </div>
+  <div id="sc_results" style="display:none">
+   <div class="card">
+    <b>Summary</b>
+    <div style="overflow:auto;margin-top:6px" id="sc_table"></div>
+    <div class="muted sm" id="sc_failed" style="margin-top:6px"></div>
+   </div>
+   <div class="card">
+    <b>Antibody</b><div id="sc_plot_igg" style="height:330px"></div>
+   </div>
+   <div class="card">
+    <b>CD8 effector T cells</b><div id="sc_plot_ctl" style="height:330px"></div>
+   </div>
+   <div class="card">
+    <b>B cells</b><div id="sc_plot_b" style="height:330px"></div>
+   </div>
+  </div>
+ </div>
+</div>
+
 <!-- ============================ EVIDENCE ============================ -->
 <div class="pane" id="evidence" style="flex-direction:column;overflow:auto;padding:14px">
  <div style="max-width:1100px">
@@ -650,11 +720,14 @@ function show(t){
   store.set("tab", t);
   if (t == "simulation" && typeof simLoadRuns === "function") simLoadRuns();
   if (t == "evidence" && typeof evLoad === "function") evLoad();
+  if (t == "simcompare" && typeof scInit === "function" && !SCARMS.length) scInit();
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.t));
 
 /* ---------- help: a small ? next to every parameter ---------- */
 const HELP = {
+ sc_antigen: "Every arm uses the same antigen, so the comparison is about the formulation. To compare ANTIGENS instead, use the Controls preset, which varies the antigen and holds the formulation fixed.",
+ sc_preset: "<b>Controls</b> puts a real antigen beside a human self protein and a sequence with no epitope structure. If those come out the same, the model is not reading the antigen - that is the failure reported for C-ImmSim, and it is worth checking on your own antigen.",
  sim_engine: "The best input there is: a finished run from this engine, where eleven predictors were fused with population-weighted HLA coverage. The simulator's own models are a fallback for when you have not run the engine on this antigen.",
  sim_platform: "How the antigen is delivered. mRNA-LNP and viral vectors express antigen <b>inside</b> cells, so they route to MHC class I and prime CD8 T cells; protein and peptide are taken up from outside and route mainly to class II.",
  sim_adjuvant: "The danger signal. Alum is Th2-biased (antibody); AS01 and CpG are Th1-biased (cell-mediated). RNA and vector platforms adjuvant themselves, which is what 'intrinsic' means.",
@@ -2525,6 +2598,191 @@ async function evLoad() {
       + (x.means ? `<div class="sm" style="margin-top:3px"><b>So:</b> ${esc(x.means)}</div>` : "")
       + `</div>`;
   }).join("");
+}
+
+
+/* ====================== SIMULATION COMPARISON ============================
+   Several arms on one axis. An arm that produces no response keeps its row
+   and says why: a self protein giving nothing is the most informative arm in
+   the comparison, and dropping it would hide the result. */
+let SCARMS = [];
+
+const SC_PRESETS = {
+  platforms: () => [
+    {label:"mRNA-LNP", platform:"mrna_lnp", adjuvant:"intrinsic", dose_ug:30},
+    {label:"Protein + alum", platform:"protein", adjuvant:"alum", dose_ug:30},
+    {label:"Protein + AS01", platform:"protein", adjuvant:"as01", dose_ug:30},
+    {label:"Adenovirus", platform:"adenovirus", adjuvant:"intrinsic", dose_ug:30},
+  ],
+  adjuvants: () => [
+    {label:"No adjuvant", platform:"protein", adjuvant:"none", dose_ug:30},
+    {label:"Alum (Th2)", platform:"protein", adjuvant:"alum", dose_ug:30},
+    {label:"AS01 (Th1)", platform:"protein", adjuvant:"as01", dose_ug:30},
+    {label:"CpG 1018", platform:"protein", adjuvant:"cpg1018", dose_ug:30},
+  ],
+  dose: () => [
+    {label:"5 ug", platform:"mrna_lnp", adjuvant:"intrinsic", dose_ug:5},
+    {label:"30 ug", platform:"mrna_lnp", adjuvant:"intrinsic", dose_ug:30},
+    {label:"100 ug", platform:"mrna_lnp", adjuvant:"intrinsic", dose_ug:100},
+  ],
+  // Two DIFFERENT positives, and negatives that fail for different reasons.
+  // The first version used the demo antigen and SARS-2 spike as the two
+  // positives, which are the same protein - the demo epitope set was
+  // generated from spike - so the two arms were identical by construction
+  // and the preset showed nothing.
+  controls: () => [
+    {label:"+ve: SARS-2 spike", platform:"mrna_lnp", adjuvant:"intrinsic",
+     dose_ug:30, antigen_source:"uniprot_P0DTC2"},
+    {label:"+ve: ovalbumin", platform:"mrna_lnp", adjuvant:"intrinsic",
+     dose_ug:30, antigen_source:"uniprot_P01012"},
+    {label:"-ve: GAPDH (human self)", platform:"mrna_lnp",
+     adjuvant:"intrinsic", dose_ug:30, antigen_source:"uniprot_P04406"},
+    {label:"-ve: IFN-gamma (human self)", platform:"mrna_lnp",
+     adjuvant:"intrinsic", dose_ug:30, antigen_source:"uniprot_P01579"},
+    {label:"-ve: poly-A (low complexity)", platform:"mrna_lnp",
+     adjuvant:"intrinsic", dose_ug:30, antigen_source:"polyA"},
+  ],
+};
+
+function scArmRow(a, i) {
+  const d = document.createElement("div");
+  d.className = "arm";
+  d.innerHTML = `<div class="armhead"><input type="text" value="${esc(a.label||"")}"
+      data-k="label" style="flex:1;font-weight:600">
+      <button class="b" data-del="${i}">remove</button></div>
+    <div class="grid2" style="margin-top:4px">
+      <span>Platform</span><select data-k="platform"></select>
+      <span>Adjuvant</span><select data-k="adjuvant"></select>
+      <span>Dose (ug)</span><input type="number" data-k="dose_ug" value="${a.dose_ug||30}">
+    </div>`;
+  const ps = d.querySelector('[data-k=platform]'), as = d.querySelector('[data-k=adjuvant]');
+  ps.innerHTML = SIMMETA.platforms.map(x=>`<option value="${x.key}">${esc(x.label)}</option>`).join("");
+  as.innerHTML = SIMMETA.adjuvants.map(x=>`<option value="${x.key}">${esc(x.label)}</option>`).join("");
+  ps.value = a.platform || "mrna_lnp";
+  as.value = a.adjuvant || "intrinsic";
+  d.querySelector("[data-del]").onclick = () => { SCARMS.splice(i,1); scDraw(); };
+  d.querySelectorAll("[data-k]").forEach(el => el.onchange = () => {
+    SCARMS[i][el.dataset.k] = el.type === "number" ? Number(el.value) : el.value;
+  });
+  return d;
+}
+
+function scDraw() {
+  const host = document.getElementById("sc_arms");
+  host.innerHTML = "";
+  SCARMS.forEach((a,i) => host.appendChild(scArmRow(a,i)));
+}
+
+async function scInit() {
+  await simLoadMeta();
+  const sel = document.getElementById("sc_antigen");
+  sel.innerHTML = '<option value="demo">Demo antigen (SARS-CoV-2 spike)</option>'
+    + '<option value="sequence">Paste a protein sequence</option>';
+  sel.onchange = () => {
+    document.getElementById("sc_seqbox").style.display =
+      sel.value === "sequence" ? "" : "none";
+  };
+  if (!SCARMS.length) SCARMS = SC_PRESETS.platforms();
+  scDraw();
+  document.getElementById("sc_add").onclick = () => {
+    SCARMS.push({label:`arm ${SCARMS.length+1}`, platform:"mrna_lnp",
+                 adjuvant:"intrinsic", dose_ug:30});
+    scDraw();
+  };
+  document.querySelectorAll("[data-preset]").forEach(b => b.onclick = () => {
+    SCARMS = SC_PRESETS[b.dataset.preset]();
+    scDraw();
+  });
+  document.getElementById("sc_run").onclick = scRun;
+}
+
+async function scRun() {
+  const sel = document.getElementById("sc_antigen");
+  const shared = {
+    antigen_source: sel.value,
+    sequence: document.getElementById("sc_seq").value,
+    inject_days: document.getElementById("sc_inject").value.split(",")
+      .map(x=>Number(x.trim())).filter(n=>!Number.isNaN(n)),
+    days: Number(document.getElementById("sc_follow").value),
+  };
+  // the Controls preset varies the ANTIGEN, so each arm may override it
+  const arms = SCARMS.map(a => {
+    const o = Object.assign({}, a);
+    if (typeof o.antigen_source === "string" && o.antigen_source.startsWith("uniprot_")) {
+      o.accession = o.antigen_source.slice(8);
+      o.antigen_source = "uniprot";
+    } else if (o.antigen_source === "polyA") {
+      o.antigen_source = "sequence";
+      o.sequence = "A".repeat(300);
+    }
+    return o;
+  });
+  document.getElementById("sc_empty").style.display = "none";
+  document.getElementById("sc_results").style.display = "none";
+  document.getElementById("sc_busy").style.display = "";
+  document.getElementById("sc_busymsg").textContent =
+    `${arms.length} arms. Any that fetch a sequence will take longer.`;
+  document.getElementById("sc_run").disabled = true;
+  try {
+    const r = await fetch("api/sim/compare", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(Object.assign({}, shared, {arms}))});
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    document.getElementById("sc_busy").style.display = "none";
+    scRender(j.arms);
+  } catch (e) {
+    document.getElementById("sc_busy").style.display = "none";
+    document.getElementById("sc_empty").style.display = "";
+    document.getElementById("sc_empty").innerHTML =
+      `<b class="bad">Could not compare</b><div class="sm">${esc(e.message)}</div>`;
+  } finally {
+    document.getElementById("sc_run").disabled = false;
+  }
+}
+
+function scRender(arms) {
+  document.getElementById("sc_results").style.display = "";
+  const ok = arms.filter(a => !a.error);
+  const bad = arms.filter(a => a.error);
+
+  const cols = ["arm","peak IgG","day of peak","boost rise","peak CD8",
+                "memory B","epitopes"];
+  let html = "<table><thead><tr>" + cols.map(c=>`<th>${c}</th>`).join("")
+           + "</tr></thead><tbody>";
+  arms.forEach(a => {
+    if (a.error) {
+      html += `<tr><td><b>${esc(a.label)}</b></td>`
+        + `<td colspan="6" class="${a.no_response?"warn":"bad"}">`
+        + (a.no_response ? "no response — " : "") + esc(a.error.slice(0,150))
+        + "</td></tr>";
+      return;
+    }
+    const s = a.summary;
+    html += `<tr><td><b>${esc(a.label)}</b></td>`
+      + `<td class="num">${simFmt(s.peak_IgG)}</td>`
+      + `<td class="num">${Math.round(s.peak_IgG_day)} d</td>`
+      + `<td class="num">${s.boost_fold_over_baseline!=null?s.boost_fold_over_baseline.toFixed(2)+"×":"—"}</td>`
+      + `<td class="num">${simFmt(s.peak_CTL)}</td>`
+      + `<td class="num">${simFmt(s.B_memory_end)}</td>`
+      + `<td class="num">${a.epitopes?a.epitopes.n_clones:"—"}</td></tr>`;
+  });
+  document.getElementById("sc_table").innerHTML = html + "</tbody></table>";
+  document.getElementById("sc_failed").textContent = bad.length
+    ? `${bad.length} arm(s) produced no response. That is a result, not a `
+      + `failure — they are kept in the table above so the comparison is complete.`
+    : "";
+
+  const mk = (el, key, title) => simPlot(document.getElementById(el),
+    ok.map(a => ({x:a.day, y:a.series[key]||[], name:a.label})),
+    title, title);
+  mk("sc_plot_igg", "IgG", "IgG");
+  mk("sc_plot_ctl", "TC_active", "CD8 effector cells");
+  mk("sc_plot_b", "B_active", "B cells");
+  ["sc_plot_igg","sc_plot_ctl","sc_plot_b"].forEach(id => {
+    const d = document.getElementById(id);
+    if (d && typeof Plotly !== "undefined") Plotly.relayout(d, {showlegend:true});
+  });
 }
 
 simInit();

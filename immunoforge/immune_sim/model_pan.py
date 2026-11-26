@@ -41,6 +41,8 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
+import dataio
+
 import encoding as E
 from model import BINDER_NM, SEED, inv_log50k, load, split_by_peptide
 
@@ -107,12 +109,19 @@ class CoreScan:
             validation_fraction=0.1, n_iter_no_change=12,
             random_state=self.seed)
 
-    def _fit_base(self, X, y):
+    def _fit_base(self, X, y, sw=None):
         if self.base_kind == "mlp":
             self.scaler = StandardScaler().fit(X)
             X = self.scaler.transform(X)
         m = self._new_base()
-        m.fit(X, y)
+        # MLPRegressor takes no sample_weight; the GBM does. Eluted ligands
+        # are down-weighted relative to measured affinities because they are
+        # a different quantity (what a cell presented, not what binds in a
+        # tube), so they should inform the model without overruling it.
+        if sw is not None and self.base_kind != "mlp":
+            m.fit(X, y, sample_weight=sw)
+        else:
+            m.fit(X, y)
         self.model = m
 
     def _predict_base(self, X):
@@ -121,9 +130,10 @@ class CoreScan:
         return self.model.predict(X)
 
     # -- public ----------------------------------------------------------
-    def fit(self, peptides, y, allele_idx=None, verbose=False):
+    def fit(self, peptides, y, allele_idx=None, verbose=False, sw=None):
         peptides = list(peptides)
         y = np.asarray(y, dtype=np.float64)
+        sw = None if sw is None else np.asarray(sw, dtype=np.float64)
         if allele_idx is None:
             allele_idx = np.zeros(len(peptides), dtype=np.int64)
         allele_idx = np.asarray(allele_idx, dtype=np.int64)
@@ -137,7 +147,7 @@ class CoreScan:
 
         for r in range(max(1, self.realign)):
             X = E.encode_cores(peptides, offs)
-            self._fit_base(self._with_allele(X, allele_idx), y)
+            self._fit_base(self._with_allele(X, allele_idx), y, sw)
             if r == self.realign - 1:
                 break
             s = self._predict_base(RXa)
@@ -224,15 +234,15 @@ class PanEnsemble:
     def allele_coverage(self, allele):
         return self.allele_enc.coverage(allele)
 
-    def _fit_members(self, peptides, y, ai, verbose):
+    def _fit_members(self, peptides, y, ai, verbose, sw=None):
         for name, m in zip(self.names, self.members):
             t = time.time()
-            m.fit(peptides, y, ai, verbose=verbose)
+            m.fit(peptides, y, ai, verbose=verbose, sw=sw)
             if verbose:
                 print(f"    {name:14s} fitted in {time.time() - t:5.1f}s",
                       flush=True)
 
-    def fit(self, peptides, y, alleles, verbose=True, blend_frac=0.15):
+    def fit(self, peptides, y, alleles, verbose=True, blend_frac=0.15, sw=None):
         """
         Two passes. First on a sub-split to learn the blend weights, then on
         everything with those weights kept. The blend split is
@@ -244,6 +254,7 @@ class PanEnsemble:
 
         peptides = np.asarray(list(peptides), dtype=object)
         y = np.asarray(y, dtype=np.float64)
+        sw = None if sw is None else np.asarray(sw, dtype=np.float64)
         ai = self._ai(alleles)
 
         peps = np.unique(peptides)
@@ -256,7 +267,8 @@ class PanEnsemble:
             if verbose:
                 print(f"    blend split: {int((~bm).sum())} fit / "
                       f"{int(bm.sum())} weight-fitting rows", flush=True)
-            self._fit_members(peptides[~bm], y[~bm], ai[~bm], verbose=False)
+            self._fit_members(peptides[~bm], y[~bm], ai[~bm], verbose=False,
+                              sw=None if sw is None else sw[~bm])
             Pm = np.vstack([m.predict(peptides[bm], ai[bm])
                             for m in self.members]).T
             w, _ = nnls(Pm, y[bm])
@@ -277,7 +289,7 @@ class PanEnsemble:
             self.weights = np.ones(len(self.members)) / len(self.members)
 
         # refit on everything, weights fixed
-        self._fit_members(peptides, y, ai, verbose)
+        self._fit_members(peptides, y, ai, verbose, sw=sw)
         return self
 
     def predict_members(self, peptides, alleles):
@@ -326,12 +338,57 @@ def load_wide(mhc_class):
     return df.reset_index(drop=True)
 
 
+# Eluted ligands as a SECOND training signal.
+#
+# Class II affinity data is thin: 21,394 measurements over 4 alleles, against
+# 97,746 eluted-ligand rows over 11 alleles that this project previously used
+# only for validation. That imbalance is the most likely reason class II
+# generalises so poorly, and training on both assays is what NetMHCIIpan 4.x
+# does.
+#
+# The two assays measure different things - what binds in a tube, and what a
+# cell actually presented - so eluted rows are mapped onto the same [0,1]
+# scale at values that say "a presented peptide is at least a good binder"
+# and "a peptide never detected is probably not", and carry less weight than
+# a real measurement. They inform the model; they do not overrule it.
+EL_POS_Y, EL_NEG_Y = 0.85, 0.05
+EL_WEIGHT = 0.35
+EL_DECOYS_PER_POS = 5          # the harvest ships 19; more only adds bulk
+
+
+def load_eluted(mhc_class, exclude_peptides=None, seed=0):
+    """Eluted ligands for one class, as (peptide, allele, y, weight) rows."""
+    try:
+        el = dataio.read("eluted_ligands")
+    except FileNotFoundError:
+        return None
+    el = el[(el.mhc_class == mhc_class)
+            & (el.length >= MIN_LEN[mhc_class])
+            & (el.length <= MAX_LEN[mhc_class])].copy()
+    if exclude_peptides:
+        el = el[~el.peptide.isin(set(exclude_peptides))]
+    if el.empty:
+        return None
+    pos = el[el.label == 1]
+    neg = el[el.label == 0]
+    want = len(pos) * EL_DECOYS_PER_POS
+    if len(neg) > want:
+        neg = neg.sample(n=want, random_state=seed)
+    out = pd.concat([pos, neg], ignore_index=True)
+    out["y"] = np.where(out.label == 1, EL_POS_Y, EL_NEG_Y)
+    out["w"] = EL_WEIGHT
+    return out[["peptide", "allele", "y", "w"]]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true",
                     help="small models, for checking the plumbing")
     ap.add_argument("--realign", type=int, default=4)
     ap.add_argument("--classes", default="I,II")
+    ap.add_argument("--eluted", default="II",
+                    help="classes to also train on eluted ligands "
+                         "(e.g. 'II', 'I,II', or 'none')")
     args = ap.parse_args()
 
     from sklearn.metrics import roc_auc_score
@@ -351,8 +408,28 @@ def main():
               f"canonical length - model.py would have used only those)")
 
         tr, te = split_by_peptide(df)
+
+        # Eluted ligands, if asked for. Any peptide in the affinity TEST set
+        # is removed from them first: the two sources overlap, and a test
+        # peptide arriving through the other assay would be leakage.
+        peps = tr.peptide.values
+        ys = tr.y.values
+        als = tr.allele.values
+        sw = np.ones(len(tr))
+        if mclass in [c.strip() for c in args.eluted.split(",")]:
+            el = load_eluted(mclass, exclude_peptides=set(te.peptide), seed=SEED)
+            if el is not None and len(el):
+                peps = np.concatenate([peps, el.peptide.values])
+                ys = np.concatenate([ys, el.y.values])
+                als = np.concatenate([als, el.allele.values])
+                sw = np.concatenate([sw, el.w.values])
+                alleles = sorted(set(alleles) | set(el.allele.unique()))
+                print(f"  + {len(el):,} eluted-ligand rows over "
+                      f"{el.allele.nunique()} alleles "
+                      f"(weight {EL_WEIGHT}), test peptides excluded")
+
         ens = PanEnsemble(alleles, realign=args.realign, quick=args.quick)
-        ens.fit(tr.peptide.values, tr.y.values, tr.allele.values)
+        ens.fit(peps, ys, als, sw=sw)
 
         y = (inv_log50k(te.y.values) < BINDER_NM).astype(int)
         members = ens.predict_members(te.peptide.values, te.allele.values)

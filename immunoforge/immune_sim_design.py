@@ -59,13 +59,20 @@ def _clean_sequence(raw, name):
     # A, C, G, T and U are ALL valid amino acid letters (Ala, Cys, Gly, Thr,
     # Sec), so a pasted gene passes the check above and would be silently
     # scanned as a protein. Catch it by composition instead.
-    if len(seq) >= 24 and set(seq) <= set("ACGTU"):
+    # A, C, G, T and U are all valid amino acid letters, so a pasted gene
+    # looks like a protein. Real nucleotide sequence uses the whole alphabet,
+    # though: requiring at least three distinct letters keeps this from
+    # firing on a low-complexity protein such as a poly-alanine control,
+    # which it did.
+    nt = set(seq) <= set("ACGTU") and len(set(seq)) >= 3
+    if len(seq) >= 24 and nt:
         kind = "RNA" if "U" in seq and "T" not in seq else "DNA"
         raise ValueError(
-            f"This looks like a {kind} sequence, not a protein: every one of "
-            f"its {len(seq)} residues is A, C, G, T or U. Those are also "
-            f"valid amino acid letters, so nothing here can tell them apart "
-            f"for you. Translate it to protein first, then paste that.")
+            f"This looks like a {kind} sequence, not a protein: all "
+            f"{len(seq)} residues are A, C, G, T or U and it uses "
+            f"{len(set(seq))} of them. Those are also valid amino acid "
+            f"letters, so nothing here can tell them apart for you. "
+            f"Translate it to protein first, then paste that.")
     if not name and header:
         name = header.lstrip(">").split("|")[-1].strip()[:40]
     return seq, name
@@ -166,6 +173,20 @@ def design(payload):
         table = ep_raw
         provenance = ("epitopes from an engine run: eleven predictors fused, "
                       "with population-weighted HLA coverage")
+    elif source == "uniprot":
+        acc = "".join(c for c in str(payload.get("accession", ""))
+                      if c.isalnum() or c in "-_")[:20]
+        if not acc:
+            raise ValueError("Give a UniProt accession, e.g. P0DTC2.")
+        import predict as PR
+        try:
+            fetched, seq = PR.fetch_uniprot(acc)
+        except Exception as e:                               # noqa: BLE001
+            raise ValueError(f"Could not fetch {acc} from UniProt: {e}")
+        name = name or (fetched.split("|")[-1].strip()[:40] or acc)
+        table, name = _from_sequence(seq, payload.get("alleles"), name)
+        provenance = (f"{acc} fetched from UniProt, then scanned with "
+                      f"immune_sim's own models")
     elif source == "demo":
         name = name or "demo (SARS-CoV-2 spike)"
         f = os.path.join(SIM, "results", "demo_epitopes.csv")
