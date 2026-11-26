@@ -161,9 +161,35 @@ pip install -r requirements.txt
 cd webapp && python3 app.py        # http://127.0.0.1:5000
 ```
 
-Simulate, compare up to six formulations, predict epitopes from a UniProt
-accession, and read the validation dashboard — all calling the same functions
-as the CLI, so the GUI cannot drift from the validated pipeline. Details in
+**Everything in this README is reachable from the GUI, including the setup.**
+A fresh clone has no data and no trained weights; the GUI downloads and builds
+them. Seven pages:
+
+| Page | Does |
+|---|---|
+| Simulate | platform, adjuvant, dose, schedule → the full response course |
+| Compare | up to six formulations on one axis |
+| Epitopes | UniProt accession or pasted sequence → ranked epitopes → straight into a simulation |
+| Data | download IEDB, CMI-PB, mass-spec ligands, trial fold-rises |
+| Models | train the per-allele, pan-allele and immunogenicity models |
+| Calibrate | refit the 36 ODE parameters against measured human data |
+| Validation | every claim graded A–D, with a button to re-run any of it |
+
+Simulate, Compare and Validation work immediately in a clean clone, because
+the calibrated parameters and a demo epitope set are committed. Only the
+epitope predictions need the download-and-train path, and that path is on the
+Data and Models pages.
+
+Each button runs the project's **own CLI script** as a subprocess and streams
+its output into the page — live log, progress, elapsed time, cancel. The GUI
+reimplements no analysis, so a figure in the browser and a number in
+`VALIDATION.md` come from the same code. The browser sends a task *name*, never
+a command; `webapp/tasks.py` is the allowlist that turns it into arguments.
+
+Two things it is careful about: calibration writes a **candidate** and never
+overwrites the parameter set in use until you promote it, and any result
+computed from something that has since been rebuilt is shown as **stale**
+rather than served as current. Details, and why both exist, in
 [`webapp/README.md`](webapp/README.md).
 
 ---

@@ -14,6 +14,10 @@
     <a href="/" class="{{ 'on' if request.path == '/' }}">Simulate</a>
     <a href="/compare" class="{{ 'on' if request.path == '/compare' }}">Compare</a>
     <a href="/epitopes" class="{{ 'on' if request.path == '/epitopes' }}">Epitopes</a>
+    <span class="sep"></span>
+    <a href="/data" class="{{ 'on' if request.path == '/data' }}">Data</a>
+    <a href="/train" class="{{ 'on' if request.path == '/train' }}">Models</a>
+    <a href="/calibrate" class="{{ 'on' if request.path == '/calibrate' }}">Calibrate</a>
     <a href="/validation" class="{{ 'on' if request.path == '/validation' }}">Validation</a>
   </nav>
   <div class="cal" title="parameter set in use">{{ meta.calibration }}</div>
@@ -29,6 +33,7 @@
 
 <script>window.META = {{ meta | tojson }};</script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='jobs.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

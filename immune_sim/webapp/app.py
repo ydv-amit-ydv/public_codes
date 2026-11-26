@@ -5,12 +5,21 @@ Flask front end for immune_sim.
     cd immune_sim/webapp && python3 app.py
     open http://127.0.0.1:5000
 
-Four things it does:
+What it does:
 
   /            platform + adjuvant + schedule -> simulated T/B/antibody course
   /epitopes    paste or fetch a protein -> ranked epitopes -> feed the sim
   /compare     several formulations on one axis
-  /validation  the evidence behind every claim, read from results/
+  /data        download every dataset; see what is present and what is stale
+  /train       train the epitope models, with their held-out metrics
+  /calibrate   refit the ODE parameters against measured human data
+  /validation  the evidence behind every claim, and re-run any of it
+
+Deliberately a thin layer: every route calls the same functions the CLI does,
+and every long operation runs the same script the README documents, as a
+subprocess with its output streamed to the browser. The GUI therefore cannot
+drift from the validated pipeline, and a number on screen is always something
+a reader could reproduce from a terminal.
 
 Deliberately a thin layer: every route calls the same functions the CLI does,
 so the GUI cannot drift from the validated pipeline. Nothing is cached that
@@ -33,6 +42,12 @@ sys.path.insert(0, str(ROOT))
 
 import platforms as PF                                      # noqa: E402
 from dynamics import P, Sim, load_epitopes                   # noqa: E402
+
+sys.path.insert(0, str(HERE))
+import jobs as JOBS                                          # noqa: E402
+import tasks as TASKS                                        # noqa: E402
+
+MANAGER = JOBS.JobManager()
 
 RESULTS = ROOT / "results"
 MODELS = ROOT / "models"
@@ -177,12 +192,48 @@ def page_compare():
     return render_template("compare.html", meta=_meta())
 
 
+@app.route("/data")
+def page_data():
+    return render_template("run.html", meta=_meta(), group="data",
+                           title="Data", groups=TASKS.GROUPS)
+
+
+@app.route("/train")
+def page_train():
+    return render_template("run.html", meta=_meta(), group="train",
+                           title="Models", groups=TASKS.GROUPS,
+                           reports={
+                               "report.json": _read_json("models/report.json"),
+                               "pan_report.json": _read_json("models/pan_report.json"),
+                           })
+
+
+@app.route("/calibrate")
+def page_calibrate():
+    return render_template("run.html", meta=_meta(), group="calibrate",
+                           title="Calibration", groups=TASKS.GROUPS)
+
+
 @app.route("/validation")
 def page_validation():
-    return render_template("validation.html", meta=_meta(),
+    return render_template("validation.html", meta=_meta(), group="validate",
+                           title="Validation", groups=TASKS.GROUPS,
                            ev=_read_csv("external_validation.csv"),
+                           evp=_read_csv("external_validation_pan.csv"),
+                           el=_read_csv("eluted_validation.csv"),
+                           tr=_read_csv("trial_validation.csv"),
                            wl=_read_csv("wetlab_validation_test.csv"),
                            sc=_read_csv("scorecard.csv"))
+
+
+def _read_json(rel):
+    f = ROOT / rel
+    if not f.exists():
+        return None
+    try:
+        return json.loads(f.read_text())
+    except (ValueError, OSError):
+        return None
 
 
 def _meta():
@@ -357,7 +408,161 @@ def api_results(name):
     return send_file(f)
 
 
+# --------------------------------------------------------------------------
+# jobs: run the project's own scripts and stream their output
+# --------------------------------------------------------------------------
+def _file_info(rel):
+    f = ROOT / rel
+    if not f.exists():
+        return {"path": rel, "exists": False}
+    st = f.stat()
+    info = {"path": rel, "exists": True, "bytes": st.st_size,
+            "mtime": st.st_mtime, "stale": TASKS.stale_because(rel)}
+    if f.suffix == ".csv":
+        try:                            # row count without loading the file
+            with f.open("rb") as fh:
+                info["rows"] = max(sum(1 for _ in fh) - 1, 0)
+        except OSError:
+            pass
+    return info
+
+
+@app.route("/api/status")
+def api_status():
+    """What exists on disk, what each task needs, and what is running.
+
+    The browser polls this so a page never shows a button as available when
+    its inputs are missing, and never shows a result as current when
+    something upstream of it has been rebuilt since.
+    """
+    specs = {}
+    for name, spec in TASKS.TASKS.items():
+        specs[name] = {
+            "name": name, "group": spec["group"], "label": spec["label"],
+            "about": spec["about"], "est": spec["est"],
+            "network": bool(spec.get("network")),
+            "requires": spec["requires"], "produces": spec["produces"],
+            "fields": spec.get("fields", []),
+            "missing": TASKS.missing(name),
+            "outputs": [_file_info(p) for p in spec["produces"]],
+        }
+    return jsonify({
+        "tasks": specs,
+        "groups": [{"key": k, "label": l, "about": a} for k, l, a in TASKS.GROUPS],
+        "inventory": [dict(_file_info(rel), label=label)
+                      for rel, label in TASKS.INVENTORY],
+        "jobs": [j.snapshot(log_lines=0) for j in MANAGER.recent(24)],
+        "param_files": sorted(f"models/{f.name}"
+                              for f in MODELS.glob("calibrated*.json")),
+        "candidates": _candidates(),
+        "shipped": _param_score("models/calibrated_wetlab.json"),
+    })
+
+
+def _param_score(rel):
+    """The training score stored in a fitted parameter file, if any."""
+    f = ROOT / rel
+    if not f.exists():
+        return None
+    try:
+        d = json.loads(f.read_text())
+    except (ValueError, OSError):
+        return None
+    return {"path": rel, "score": d.get("score"),
+            "mtime": f.stat().st_mtime}
+
+
+def _candidates():
+    return sorted(
+        (c for c in (_param_score(f"models/{f.name}")
+                     for f in MODELS.glob("calibrated_candidate_*.json")) if c),
+        key=lambda c: -(c["mtime"] or 0))
+
+
+@app.route("/api/promote", methods=["POST"])
+def api_promote():
+    """Make a calibration candidate the parameter set everything else uses.
+
+    Deliberately explicit and deliberately separate from running the search.
+    The previous set is kept as models/calibrated_wetlab_prev.json so this is
+    reversible, and a WORSE training score is allowed through with a warning
+    rather than blocked: a lower training score is not the same as a better
+    model, and the held-out split on the Validation page is the thing that
+    decides. Refusing on training score would be the GUI pretending to know
+    better than the out-of-sample test.
+    """
+    body = request.get_json(force=True) or {}
+    rel = str(body.get("file", ""))
+    src = (ROOT / rel).resolve()
+    allowed = (ROOT / "models").resolve()
+    if (src.parent != allowed or not src.name.startswith("calibrated_candidate_")
+            or src.suffix != ".json" or not src.exists()):
+        abort(400, "not a calibration candidate in models/")
+    cand = _param_score(rel)
+    cur = _param_score("models/calibrated_wetlab.json")
+    dest = ROOT / "models" / "calibrated_wetlab.json"
+    if dest.exists():
+        (ROOT / "models" / "calibrated_wetlab_prev.json").write_text(
+            dest.read_text())
+    dest.write_text(src.read_text())
+    warn = None
+    if cand and cur and cand["score"] is not None and cur["score"] is not None:
+        if cand["score"] > cur["score"]:
+            warn = (f"the promoted candidate's training score "
+                    f"({cand['score']:.4g}) is WORSE than the set it replaced "
+                    f"({cur['score']:.4g}); the previous set is kept as "
+                    f"models/calibrated_wetlab_prev.json")
+    return jsonify({"promoted": rel, "previous": cur, "warning": warn,
+                    "note": "Re-run the held-out validation and the platform "
+                            "benchmarks: every result computed from the old "
+                            "parameters is now stale."})
+
+
+@app.route("/api/jobs", methods=["POST"])
+def api_job_start():
+    body = request.get_json(force=True) or {}
+    name = str(body.get("task", ""))
+    if name not in TASKS.TASKS:
+        abort(400, f"unknown task {name!r}")
+    miss = TASKS.missing(name)
+    if miss:
+        abort(400, "missing input: " + ", ".join(miss)
+                   + ". Download it on the Data page first.")
+    try:
+        label, argv, produces, parser = TASKS.build(name, body.get("args") or {})
+    except ValueError as e:
+        abort(400, str(e))
+    try:
+        job = MANAGER.submit(name, label, argv, ROOT, produces, parser)
+    except RuntimeError as e:
+        abort(409, str(e))
+    return jsonify(job.snapshot(log_lines=0))
+
+
+@app.route("/api/jobs/<job_id>")
+def api_job(job_id):
+    job = MANAGER.get(job_id)
+    if job is None:
+        abort(404, "no such job (the server may have restarted)")
+    try:
+        n = min(max(int(request.args.get("log", 200)), 0), 600)
+    except ValueError:
+        n = 200
+    return jsonify(job.snapshot(log_lines=n))
+
+
+@app.route("/api/jobs/<job_id>/cancel", methods=["POST"])
+def api_job_cancel(job_id):
+    job = MANAGER.get(job_id)
+    if job is None:
+        abort(404, "no such job")
+    job.cancel()
+    return jsonify(job.snapshot(log_lines=0))
+
+
 @app.errorhandler(400)
+@app.errorhandler(404)
+@app.errorhandler(409)
 @app.errorhandler(503)
 def _err(e):
     return jsonify({"error": getattr(e, "description", str(e))}), e.code

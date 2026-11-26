@@ -141,3 +141,148 @@ pre { overflow:auto; background:var(--bg); border:1px solid var(--line);
 
 footer { padding:18px 16px 28px; color:var(--muted); font-size:12.5px;
          text-align:center; }
+
+/* ---------------------------------------------------------------- runner
+   Data / Models / Calibrate / Validation: cards that start a real
+   subprocess on the server and stream its output back. */
+:root { --ok:#1a7f4b; --stale:#8a6d00; --none:#7a7f88; --bad:#a32020; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ok:#5fd19a; --stale:#e0c060; --none:#98a0ac; --bad:#f08080;
+  }
+}
+:root[data-theme="dark"] {
+  --ok:#5fd19a; --stale:#e0c060; --none:#98a0ac; --bad:#f08080;
+}
+
+header nav .sep {
+  width:1px; align-self:stretch; background:var(--line); margin:0 6px;
+}
+.lede { color:var(--muted); max-width:72ch; }
+
+/* `hidden` must win over the display values below, or every idle card shows
+   an empty progress bar: [hidden] is only `display:none` at browser-default
+   specificity and a class rule beats it. */
+[hidden] { display:none !important; }
+
+.tasks { display:grid; gap:14px; margin:18px 0 28px; align-items:start; }
+@media (min-width:1100px) { .tasks { grid-template-columns:1fr 1fr; } }
+
+.card.task {
+  background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  padding:14px 16px; display:flex; flex-direction:column; gap:10px;
+}
+.card.task .thead {
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  flex-wrap:wrap;
+}
+.card.task h3 { margin:0; font-size:1.02rem; }
+.tags { display:flex; gap:6px; flex-wrap:wrap; }
+.tag {
+  font-size:.72rem; padding:2px 7px; border-radius:99px;
+  border:1px solid var(--line); color:var(--muted); white-space:nowrap;
+}
+.tag.net { color:var(--warn); background:var(--warn-bg); border-color:transparent; }
+.card.task .about { margin:0; color:var(--muted); font-size:.88rem; }
+
+.fields { display:grid; gap:10px; }
+@media (min-width:640px) { .fields { grid-template-columns:1fr 1fr; } }
+.field { display:grid; gap:3px; font-size:.84rem; }
+.field.checkbox {
+  grid-template-columns:auto 1fr; align-items:center; gap:8px;
+}
+.field.checkbox .flabel { order:2; }
+.field.checkbox input { order:1; width:16px; height:16px; }
+/* order:3 matters — without it the help text has order 0 and renders ABOVE
+   the checkbox it explains. */
+.field.checkbox .fhelp { order:3; grid-column:1/-1; }
+.flabel { font-weight:600; }
+.fhelp { color:var(--muted); font-size:.76rem; line-height:1.35; }
+.field input, .field select {
+  padding:6px 8px; border:1px solid var(--line); border-radius:6px;
+  background:var(--bg); color:var(--ink); font:inherit; font-size:.86rem;
+}
+
+.outs { display:grid; gap:5px; }
+.out {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:.8rem;
+}
+.out code { font-size:.78rem; color:var(--ink); }
+.out .dim { color:var(--muted); }
+.out .warn { color:var(--stale); flex-basis:100%; }
+.pill {
+  font-size:.68rem; text-transform:uppercase; letter-spacing:.04em;
+  padding:2px 6px; border-radius:4px; font-weight:700;
+}
+.pill.ok { color:var(--accent-ink); background:var(--ok); }
+.pill.stale { color:#1a1403; background:var(--stale); }
+.pill.none { color:var(--accent-ink); background:var(--none); }
+
+.actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.actions button {
+  font:inherit; font-size:.86rem; padding:6px 14px; border-radius:6px;
+  cursor:pointer; border:1px solid var(--line);
+}
+.actions button.primary {
+  background:var(--accent); color:var(--accent-ink); border-color:transparent;
+  font-weight:600;
+}
+.actions button.primary:disabled { opacity:.5; cursor:not-allowed; }
+.actions button.ghost { background:transparent; color:var(--ink); }
+.jstatus { font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.jstatus.good { color:var(--ok); font-weight:600; }
+.jstatus.bad { color:var(--bad); font-weight:600; }
+.jstatus.warnc { color:var(--stale); font-weight:600; }
+.blocked { margin:0; font-size:.82rem; color:var(--warn); }
+
+.progwrap { display:grid; gap:4px; }
+.prog {
+  height:5px; background:var(--grid); border-radius:99px; overflow:hidden;
+}
+.prog .fill {
+  height:100%; width:0; background:var(--accent); border-radius:99px;
+  transition:width .3s linear;
+}
+.prog .fill.indet {
+  background:linear-gradient(90deg,var(--grid),var(--accent),var(--grid));
+  background-size:200% 100%; animation:slide 1.4s linear infinite;
+}
+@keyframes slide { from { background-position:200% 0; } to { background-position:0 0; } }
+.progwrap .note {
+  font-size:.78rem; color:var(--muted); font-variant-numeric:tabular-nums;
+}
+
+pre.log {
+  margin:0; max-height:260px; overflow:auto; background:var(--bg);
+  border:1px solid var(--line); border-radius:6px; padding:8px 10px;
+  font-size:.74rem; line-height:1.45; white-space:pre-wrap; word-break:break-word;
+}
+
+#inventory table { font-size:.82rem; }
+#inventory td.num { text-align:right; font-variant-numeric:tabular-nums; }
+#inventory td.small { font-size:.76rem; color:var(--muted); }
+.dot {
+  display:inline-block; width:9px; height:9px; border-radius:99px;
+  background:var(--none);
+}
+.dot.ok { background:var(--ok); }
+.dot.stale { background:var(--stale); }
+.dot.none { background:var(--none); opacity:.45; }
+
+/* calibration candidates: promotion is explicit and reversible */
+.shipped { font-size:.86rem; margin:0 0 6px; }
+.cands { display:grid; gap:8px; margin-bottom:22px; }
+.cand {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--panel); border:1px solid var(--line); border-radius:8px;
+  padding:9px 12px; font-size:.84rem;
+}
+.cand button {
+  margin-left:auto; font:inherit; font-size:.8rem; padding:5px 11px;
+  border-radius:6px; border:1px solid var(--line); background:transparent;
+  color:var(--ink); cursor:pointer;
+}
+.cand p { flex-basis:100%; margin:4px 0 0; font-size:.8rem; }
+
+/* a group with one task should not sit in half a column */
+.tasks:has(> :only-child) { grid-template-columns:1fr; }

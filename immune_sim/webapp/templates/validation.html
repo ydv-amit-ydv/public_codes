@@ -19,6 +19,13 @@ that the biology is true. It is the share of plausible parameter sets giving
 the stated direction — it answers "is this an artefact of my tuning?", not
 "is this real".</p>
 
+<h2>Re-run any of it</h2>
+<p class="hint">These are the same scripts that produced the tables below.
+They can fail, and a failure is a result: the first out-of-sample run of this
+model overestimated the human boost response by roughly tenfold, and that is
+how it was found.</p>
+<div id="tasks" class="tasks"></div>
+
 {% macro table(d, caption) %}
   {% if d %}
   <h2>{{ caption }}</h2>
@@ -30,12 +37,19 @@ the stated direction — it answers "is this an artefact of my tuning?", not
   </table></div>
   {% else %}
   <h2>{{ caption }}</h2>
-  <p class="hint">Not generated yet. Run the script named in the README.</p>
+  <p class="hint">Not generated yet &mdash; run it in the panel above.</p>
   {% endif %}
 {% endmacro %}
 
 {{ table(sc, "Every claim, graded") }}
-{{ table(ev, "Grade A — leave-one-pathogen-out binding prediction") }}
+{{ table(evp, "Grade A — leave-one-pathogen-out, pan-allele vs per-allele") }}
+{{ table(ev, "Grade A — leave-one-pathogen-out, per-allele model") }}
+{{ table(el, "Grade A — mass-spectrometry eluted ligands, by allele coverage") }}
 {{ table(wl, "Grade A — boost kinetics vs held-out CMI-PB subjects") }}
+{{ table(tr, "Clinical trial fold-rises, clustered by trial") }}
+
+<h2>What is on disk</h2>
+<div id="inventory"></div>
 </section>
 {% endblock %}
+{% block scripts %}<script>initRunPage({{ group | tojson }});</script>{% endblock %}

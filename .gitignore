@@ -89,6 +89,13 @@ immune_sim/results/*_timecourse.csv
 *.tar.gz
 *.zip
 
+# immune_sim: calibration runs started from the GUI. A candidate is a local
+# experiment: it is not used by anything until it is explicitly promoted, and
+# the promoted set (calibrated_wetlab.json) IS tracked. _prev.json is the
+# one-step undo that promotion leaves behind.
+immune_sim/models/calibrated_candidate_*.json
+immune_sim/models/calibrated_wetlab_prev.json
+
 # immune_sim: CMI-PB harvest (regenerate with harvest_cmipb.py)
 immune_sim/data/cmipb_*.csv
 immune_sim/results/*.json
