@@ -172,7 +172,14 @@ def run(quick=False, realign=4, eluted=False, out_name=None,
             adj, sig = bh_fdr(tab.loc[ok, col].values)
             tab.loc[ok, newcol] = adj.round(4)
             tab.loc[ok, newcol.replace("q_", "sig_")] = sig
-    tab.to_csv(RESULTS / "external_validation_pan.csv", index=False)
+    # Honour --out. This line was NOT patched when the flag was added - only
+    # the message that claims where it wrote was - so a run with --out
+    # printed the name it was asked for and silently overwrote the shipped
+    # results file instead. That dropped class I from a file the Evidence
+    # tab reads. Third time a run has clobbered a shipped artefact; the
+    # lesson each time is the same, so: one name, used for both.
+    dest = RESULTS / (out_name or "external_validation_pan.csv")
+    tab.to_csv(dest, index=False)
 
     print("\n" + "=" * 78)
     print("PAN-ALLELE CORE-SCAN vs model.py, on pathogens neither has seen")
@@ -198,7 +205,7 @@ def run(quick=False, realign=4, eluted=False, out_name=None,
             print(f"    beats composition baseline in "
                   f"{int(g.get('sig_vs_comp', pd.Series(dtype=bool)).sum())}"
                   f"/{len(g)} after BH")
-    print(f"\n  wrote {RESULTS / (out_name or 'external_validation_pan.csv')}")
+    print(f"\n  wrote {dest}")
     return tab
 
 
