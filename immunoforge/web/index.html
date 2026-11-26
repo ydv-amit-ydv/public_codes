@@ -487,6 +487,13 @@ KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
   <label class="i"><input type="radio" name="sim_src" value="demo">
     Demo antigen (SARS-CoV-2 spike)</label>
 
+  <label class="i" style="margin-top:8px">Epitope predictor
+    <span class="q" data-h="sim_predictor">?</span>
+    <select id="sim_predictor" style="width:100%">
+      <option value="per_allele">Per-allele (faster)</option>
+      <option value="pan">Pan-allele core-scan (better, slower)</option>
+    </select></label>
+
   <h3>2 &middot; Vaccine</h3>
   <label class="i">Platform <span class="q" data-h="sim_platform">?</span>
     <select id="sim_platform" style="width:100%"></select></label>
@@ -726,6 +733,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.da
 
 /* ---------- help: a small ? next to every parameter ---------- */
 const HELP = {
+ sim_predictor: "Which of immune_sim's own models ranks the epitopes. The <b>pan-allele core-scan</b> model is the better one on a pathogen it has never seen - median ROC-AUC 0.873 against 0.766 for class I - but it scores every peptide length at every binding register, so it takes several times longer on a long protein. Neither is as good as a finished run of this engine's eleven fused predictors, which is the first antigen option above.",
  sc_antigen: "Every arm uses the same antigen, so the comparison is about the formulation. To compare ANTIGENS instead, use the Controls preset, which varies the antigen and holds the formulation fixed.",
  sc_preset: "<b>Controls</b> puts a real antigen beside a human self protein and a sequence with no epitope structure. If those come out the same, the model is not reading the antigen - that is the failure reported for C-ImmSim, and it is worth checking on your own antigen.",
  sim_engine: "The best input there is: a finished run from this engine, where eleven predictors were fused with population-weighted HLA coverage. The simulator's own models are a fallback for when you have not run the engine on this antigen.",
@@ -2277,6 +2285,7 @@ function simPayload(){
     antigen_source: simSource(),
     run_id: $("sim_run").value,
     sequence: $("sim_seq").value,
+    predictor: $("sim_predictor").value,
     platform: $("sim_platform").value,
     adjuvant: $("sim_adjuvant").value,
     heterologous: $("sim_het").value || null,

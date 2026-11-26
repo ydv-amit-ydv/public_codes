@@ -103,16 +103,63 @@ def _from_engine(run_id, name):
     return ep, (name or f"engine run {run_id[:8]}")
 
 
-def _from_sequence(seq, alleles, name):
-    """Epitopes from immune_sim's own models."""
+def _from_sequence(seq, alleles, name, predictor="per_allele"):
+    """Epitopes from immune_sim's own models.
+
+    `predictor` picks which one. The pan-allele core-scan model is the
+    better of the two on a pathogen it has never seen - median ROC-AUC
+    0.873 against 0.766 for class I - but it scores every length at every
+    register, so it is several times slower on a long protein. The choice
+    is offered rather than imposed, and whichever ran is reported back.
+    """
+    import pandas as _pd
     import predict as PR
-    models = PR.load_models(alleles or None)
-    if not models:
-        raise ValueError(
-            "The simulation models are not installed yet. Settings -> Immune "
-            "simulation -> Install trains them from the data committed in "
-            "this repository; it needs no network.")
-    pred = PR.scan(seq, models)
+
+    def per_allele(classes=None):
+        try:
+            models = PR.load_models(alleles or None)
+        except ValueError:
+            models = {}
+        if classes is not None:
+            models = {a: m for a, m in models.items()
+                      if m["mhc_class"] in classes}
+        if not models:
+            return None
+        return PR.scan(seq, models)
+
+    pred, used = None, "per-allele"
+    if predictor == "pan":
+        try:
+            pan = PR.scan_pan(seq, alleles or None)
+        except Exception as e:                               # noqa: BLE001
+            pan, used = None, f"per-allele (the pan model failed: {e})"
+        if pan is not None and len(pan):
+            # Fill in any class the pan model does not cover from the
+            # per-allele models. Without this, a half-trained pan model
+            # silently returns class I only - and a class I-only epitope set
+            # gives NO CD4 help and therefore zero antibody, which looks
+            # like a result rather than a missing model. It cost 86 seconds
+            # and an answer of 0 to find that.
+            have = set(pan.mhc_class.unique())
+            missing = {"I", "II"} - have
+            filled = per_allele(missing) if missing else None
+            if filled is not None and len(filled):
+                pan = _pd.concat([pan, filled], ignore_index=True)
+                used = ("pan-allele core-scan for class "
+                        + "/".join(sorted(have))
+                        + ", per-allele for class "
+                        + "/".join(sorted(missing))
+                        + " (the pan model is not trained for it)")
+            else:
+                used = "pan-allele core-scan"
+            pred = pan
+    if pred is None:
+        pred = per_allele()
+        if pred is None:
+            raise ValueError(
+                "The simulation models are not installed yet. Settings -> "
+                "Immune simulation -> Install trains them from the data "
+                "committed in this repository; it needs no network.")
     binders = pred[pred.call != "non-binder"].sort_values("pred_IC50_nM")
     if binders.empty:
         raise ValueError(
@@ -122,7 +169,7 @@ def _from_sequence(seq, alleles, name):
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
     binders.to_csv(os.path.join(_results_dir(), f"{safe}_epitopes.csv"),
                    index=False)
-    return binders, name
+    return binders, name, used
 
 
 def _add_host_self(table):
@@ -184,9 +231,10 @@ def design(payload):
         except Exception as e:                               # noqa: BLE001
             raise ValueError(f"Could not fetch {acc} from UniProt: {e}")
         name = name or (fetched.split("|")[-1].strip()[:40] or acc)
-        table, name = _from_sequence(seq, payload.get("alleles"), name)
+        table, name, used = _from_sequence(seq, payload.get("alleles"), name,
+                                           payload.get("predictor", "per_allele"))
         provenance = (f"{acc} fetched from UniProt, then scanned with "
-                      f"immune_sim's own models")
+                      f"immune_sim's own models \u2014 {used}")
     elif source == "demo":
         name = name or "demo (SARS-CoV-2 spike)"
         f = os.path.join(SIM, "results", "demo_epitopes.csv")
@@ -197,8 +245,9 @@ def design(payload):
     else:
         seq, name = _clean_sequence(payload.get("sequence") or "", name)
         name = name or "query"
-        table, name = _from_sequence(seq, payload.get("alleles"), name)
-        provenance = ("epitopes from immune_sim's own IEDB-trained models. "
+        table, name, used = _from_sequence(seq, payload.get("alleles"), name,
+                                           payload.get("predictor", "per_allele"))
+        provenance = (f"epitopes from immune_sim's own models \u2014 {used}. "
                       "An engine run would be a better input: on an unseen "
                       "pathogen these reach 0.873 ROC-AUC for class I and "
                       "0.748 for class II")
