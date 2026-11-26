@@ -10,7 +10,7 @@ const PALETTE = ["#2b6cb0", "#1a7f4b", "#b4530a", "#7a4fbf",
                  "#0d8b8b", "#b03060", "#6b7280", "#8a6d00"];
 
 function layout(title, yTitle, opts) {
-  const ink = css("--ink"), muted = css("--muted"), grid = css("--grid");
+  const ink = css("--fg"), muted = css("--muted"), grid = css("--grid");
   return Object.assign({
     title: { text: title, font: { size: 13.5, color: ink }, x: 0, xanchor: "left" },
     paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
@@ -28,6 +28,17 @@ const CONFIG = { displaylogo: false, responsive: true,
                  modeBarButtonsToRemove: ["lasso2d", "select2d"] };
 
 function draw(el, traces, lay) {
+  // If the chart library is missing, say so in the box rather than leaving an
+  // empty rectangle. The numbers above the plots are the real content; a
+  // missing chart should not look like a missing result.
+  if (typeof Plotly === "undefined") {
+    el.innerHTML = '<p class="muted sm" style="padding:12px">The chart library '
+      + 'did not load, so this plot is missing. The numbers above are '
+      + 'unaffected, and the CSV download has the full time course. '
+      + 'Check that <code>webapp/static/vendor/plotly-basic.min.js</code> '
+      + 'is present.</p>';
+    return;
+  }
   traces.forEach((t, i) => {
     t.type = t.type || "scatter"; t.mode = t.mode || "lines";
     t.line = Object.assign({ width: 2, color: PALETTE[i % PALETTE.length] },
@@ -361,3 +372,240 @@ function renderEpitopes(j) {
     j.rows.map((r) => `<tr>${r.map((v) => `<td>${v}</td>`).join("")}</tr>`)
       .join("") + `</tbody></table></div>`;
 }
+
+/* ------------------------------------------------------------------ tips
+   The small circled "?" next to a field, same idiom as the engine: hover or
+   focus shows one short paragraph explaining what the setting does and, where
+   it matters, what the measured consequence of getting it wrong is. */
+(function tips() {
+  const tip = document.getElementById("tip");
+  if (!tip) return;
+  const show = (el) => {
+    tip.innerHTML = el.dataset.tip || "";
+    tip.style.display = "block";
+    const r = el.getBoundingClientRect();
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = r.left, y = r.bottom + 7;
+    if (x + w > innerWidth - 10) x = Math.max(10, innerWidth - w - 10);
+    if (y + h > innerHeight - 10) y = Math.max(10, r.top - h - 7);
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  };
+  const hide = () => { tip.style.display = "none"; };
+  document.addEventListener("mouseover", (e) => {
+    const q = e.target.closest("span.q[data-tip]");
+    if (q) show(q); else if (!e.target.closest("#tip")) hide();
+  });
+  document.addEventListener("focusin", (e) => {
+    const q = e.target.closest("span.q[data-tip]");
+    if (q) show(q);
+  });
+  document.addEventListener("focusout", hide);
+  addEventListener("scroll", hide, true);
+  // Scoped to span.q[data-tip]: a bare ".q" also matched .verdict.q on the
+  // validation page and replaced four whole verdicts with a "?".
+  document.querySelectorAll("span.q[data-tip]").forEach((q) => {
+    q.tabIndex = 0;
+    q.textContent = "?";
+  });
+})();
+
+/* ---------------------------------------------------------------- design
+   The merged pipeline: a sequence goes in, epitopes and a simulated response
+   come out of one request. Before this page the two halves of the project
+   were joined only by a CSV on disk. */
+function initDesign() {
+  const $ = (id) => document.getElementById(id);
+  fillSelect($("platform"), META.platforms, "key", "label");
+  fillSelect($("adjuvant"), META.adjuvants, "key", "label");
+  const het = $("heterologous");
+  het.innerHTML = '<option value="">— same platform —</option>';
+  META.platforms.forEach((p) => {
+    const o = document.createElement("option");
+    o.value = p.key; o.textContent = p.label; het.appendChild(o);
+  });
+  $("platform").value = "mrna_lnp";
+  $("adjuvant").value = "intrinsic";
+
+  // allele chips, from whichever models are trained
+  fetch("/api/alleles").then((r) => r.json()).then((d) => {
+    const box = $("alleles");
+    if (!d.alleles || !d.alleles.length) {
+      box.innerHTML = '<span class="muted">No trained models yet. '
+        + '<a href="/setup">Set them up</a> — no network needed.</span>';
+      return;
+    }
+    box.innerHTML = d.alleles.map((a) =>
+      `<label class="chip"><input type="checkbox" value="${a.allele}"> `
+      + `${a.allele} <span class="muted">${a.mhc_class}</span></label>`).join("");
+  }).catch(() => { $("alleles").textContent = "could not list alleles"; });
+
+  document.querySelectorAll('input[name="asrc"]').forEach((r) =>
+    r.addEventListener("change", () => {
+      $("box-sequence").hidden = r.value !== "sequence" || !r.checked
+        ? document.querySelector('input[name="asrc"]:checked').value !== "sequence"
+        : false;
+      $("box-uniprot").hidden =
+        document.querySelector('input[name="asrc"]:checked').value !== "uniprot";
+    }));
+
+  $("sequence").addEventListener("input", () => {
+    const raw = $("sequence").value;
+    const seq = raw.split("\n").filter((l) => !l.startsWith(">")).join("")
+      .replace(/[^A-Za-z]/g, "").toUpperCase();
+    const bad = [...new Set(seq.split(""))]
+      .filter((c) => !"ACDEFGHIKLMNPQRSTVWY".includes(c));
+    $("seqinfo").innerHTML = !seq.length ? "&nbsp;"
+      : `${seq.length.toLocaleString()} residues`
+        + (bad.length ? ` <span class="bad">— not amino acids: ${bad.join(", ")}`
+           + (/^[ACGTU]+$/.test(seq) ? " (this looks like a DNA or RNA sequence)" : "")
+           + "</span>" : "");
+  });
+
+  $("run").addEventListener("click", runDesign);
+  $("dlcsv").addEventListener("click", () => downloadCsv(designPayload()));
+}
+
+function designPayload() {
+  const $ = (id) => document.getElementById(id);
+  const src = document.querySelector('input[name="asrc"]:checked').value;
+  const alleles = [...document.querySelectorAll("#alleles input:checked")]
+    .map((c) => c.value);
+  return {
+    antigen_source: src,
+    sequence: $("sequence").value,
+    accession: $("accession").value,
+    name: $("name").value,
+    alleles: alleles.length ? alleles : null,
+    platform: $("platform").value,
+    adjuvant: $("adjuvant").value,
+    dose_ug: Number($("dose").value),
+    heterologous: $("heterologous").value || null,
+    inject_days: $("inject").value.split(",").map((s) => Number(s.trim()))
+      .filter((n) => !Number.isNaN(n)),
+    days: Number($("days").value),
+    resolution_h: Number($("resolution").value),
+    calibration: $("calibration").value,
+    replicating: $("replicating").checked,
+  };
+}
+
+async function runDesign() {
+  const $ = (id) => document.getElementById(id);
+  const btn = $("run");
+  btn.disabled = true;
+  $("empty").hidden = true;
+  $("results").hidden = true;
+  $("progress").hidden = false;
+  $("pstate").textContent = "Working…";
+  $("pstate").className = "";
+  $("pbar").classList.add("ind");
+  $("pstages").innerHTML =
+    '<div class="stage"><span>&#9654; Ranking epitopes</span>'
+    + '<div class="bar thin ind"><i></i></div></div>'
+    + '<div class="stage"><span>&middot; Simulating the response</span>'
+    + '<div class="bar thin"><i></i></div></div>';
+  const t0 = Date.now();
+  const timer = setInterval(() => {
+    $("ptime").textContent = Math.round((Date.now() - t0) / 1000) + " s elapsed";
+  }, 500);
+  try {
+    const j = await post("/api/design", designPayload());
+    clearInterval(timer);
+    $("progress").hidden = true;
+    renderDesign(j);
+  } catch (e) {
+    clearInterval(timer);
+    $("pbar").classList.remove("ind");
+    $("pstate").textContent = "Could not run";
+    $("pstate").className = "bad";
+    $("pstages").innerHTML = `<div class="bad">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderDesign(j) {
+  const $ = (id) => document.getElementById(id);
+  $("results").hidden = false;
+  const a = j.antigen;
+  $("rtitle").textContent = a.name + (a.length ? ` · ${a.length} residues` : "");
+  $("describe").textContent = j.describe || "";
+
+  const s = j.summary;
+  // Keys must match _summary() in app.py exactly. They did not the first
+  // time: this read s.boost_fold, which does not exist, and so displayed a
+  // real 1.41x boost as "0.00x".
+  const K = [
+    ["Peak IgG", fmt(s.peak_IgG), "arbitrary units, comparable only to another run"],
+    ["Day of peak", Math.round(s.peak_IgG_day) + " d", "after the first dose"],
+    ["Boost rise", s.boost_fold_over_baseline != null
+      ? s.boost_fold_over_baseline.toFixed(2) + "×" : "—",
+     "over the pre-boost level"],
+    ["Peak CD8", fmt(s.peak_CTL), "effector T cells"],
+    ["Memory B", fmt(s.B_memory_end), "cells at the end"],
+    ["IgG still up", s.igg_durability != null
+      ? Math.round(s.igg_durability * 100) + "%" : "—", "of its peak, at the end"],
+    ["Affinity gain", s.affinity_fold != null
+      ? s.affinity_fold.toFixed(2) + "×" : "—", "antibody affinity maturation"],
+  ];
+  $("kpis").innerHTML = K.map(([k, v, sub]) =>
+    `<div class="kpi"><b>${v}</b><span>${k}</span>`
+    + `<span class="sm" style="display:block">${sub}</span></div>`).join("");
+
+  const d = j.day, S = j.series;
+  const ser = (k) => S[k] || [];
+  draw($("plot-ab"), [
+    { x: d, y: ser("IgG"), name: "IgG" },
+    { x: d, y: ser("IgM"), name: "IgM" },
+    { x: d, y: ser("affinity"), name: "affinity", yaxis: "y2" },
+  ], Object.assign(layout("Antibody", "arbitrary units"), {
+    yaxis2: { overlaying: "y", side: "right", title: "affinity",
+              showgrid: false },
+  }));
+  draw($("plot-cell"), [
+    { x: d, y: ser("TC_active"), name: "CD8 effector" },
+    { x: d, y: ser("TH_active"), name: "CD4 effector" },
+    { x: d, y: ser("B_active"), name: "B cell" },
+    { x: d, y: ser("TC_memory"), name: "CD8 memory", line: { dash: "dot" } },
+    { x: d, y: ser("B_memory"), name: "B memory", line: { dash: "dot" } },
+  ], layout("Cells", "cells"));
+  draw($("plot-ag"), [
+    { x: d, y: ser("antigen"), name: "antigen (free)" },
+    { x: d, y: ser("antigen_depot"), name: "antigen on FDC" },
+    { x: d, y: ser("template"), name: "template (mRNA/vector)" },
+    { x: d, y: ser("danger"), name: "danger signal" },
+  ], layout("Antigen and danger signal", "arbitrary units"));
+
+  const ep = j.epitopes;
+  if (!ep.rows || !ep.rows.length) {
+    $("epcard").hidden = true;
+    return;
+  }
+  $("epcard").hidden = false;
+  const byClass = Object.entries(ep.by_class || {})
+    .map(([k, v]) => `${v.toLocaleString()} class ${k}`).join(", ");
+  $("epnote").textContent =
+    `${(ep.n_binders || 0).toLocaleString()} binders (${byClass}) over `
+    + `${ep.n_alleles} alleles · saved as results/${ep.saved_as}`;
+  const head = ep.columns.map((c) => `<th>${c}</th>`).join("");
+  const body = ep.rows.map((r) => "<tr>" + r.map((v, i) =>
+    `<td class="${ep.columns[i] === "peptide" ? "seq" : (typeof v === "number" ? "num" : "")}">`
+    + `${v === null ? "" : v}</td>`).join("") + "</tr>").join("");
+  $("eptable").innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function downloadCsv(payload) {
+  const r = await fetch("/api/timecourse.csv", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) return;
+  const blob = await r.blob();
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = u; a.download = "timecourse.csv"; a.click();
+  URL.revokeObjectURL(u);
+}
+
+window.initDesign = initDesign;

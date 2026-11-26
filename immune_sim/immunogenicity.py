@@ -29,6 +29,8 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from model import CANON_LEN, encode, inv_log50k
 
+import dataio
+
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 MODELS = HERE / "models"
@@ -54,7 +56,7 @@ def load_binding_models():
 
 
 def load_tcell():
-    d = pd.read_csv(DATA / "tcell_immunogenicity.csv")
+    d = dataio.read("tcell_immunogenicity")
     before = len(d)
     d = d[d.assay.isin(FUNCTIONAL)].copy()
     print(f"  kept {len(d):,}/{before:,} rows from functional assays only "

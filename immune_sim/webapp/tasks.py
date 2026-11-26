@@ -154,6 +154,130 @@ def _scorecard(a):
             "--robustness", str(_int(a, "robustness", 100, 0, 2000))], None
 
 
+def _present(rel):
+    """True if a path exists, counting the gzipped bundle for a data CSV.
+
+    data/foo.csv and data/foo.csv.gz are the same dataset as far as every
+    script is concerned - dataio.py opens whichever is there - so a task must
+    not be blocked just because the plain CSV has never been harvested.
+    """
+    p = ROOT / rel
+    if p.exists():
+        return True
+    return rel.startswith("data/") and (ROOT / (rel + ".gz")).exists()
+
+
+# ---------------------------------------------------------------------------
+# one-click plans: several steps, run in order, as one job
+# ---------------------------------------------------------------------------
+# A plan exists so that "set this up" is one button rather than a sequence the
+# user has to know. Each step is still the project's own script, and the
+# browser sees every step by name before any of them starts, so a plan is not
+# a black box: it is a visible plan with a progress bar per step.
+PLANS = {
+    "setup": dict(
+        group="setup", label="Set up everything",
+        est="about 10 min, no network needed",
+        about="Trains all three epitope models from the datasets bundled in "
+              "this repository, then checks the dynamic model against the "
+              "held-out human subjects and runs the 13 platform benchmarks. "
+              "After this everything on every page works. Needs no network: "
+              "the data is already here.",
+        steps=[
+            ("train_allele", "Per-allele binding models"),
+            ("train_pan",    "Pan-allele core-scan ensemble"),
+            ("train_immuno", "Immunogenicity model"),
+            ("wetlab",       "Check against held-out human subjects"),
+            ("benchmarks",   "13 platform benchmarks"),
+        ],
+        args={"train_pan": {"realign": 4, "classes": "I,II"}},
+        produces=["models/report.json", "models/pan_report.json",
+                  "models/immuno_report.json",
+                  "results/wetlab_validation_test.csv"]),
+
+    "setup_quick": dict(
+        group="setup", label="Quick setup",
+        est="about 1 min, no network needed",
+        about="Trains only the fast per-allele models and runs the "
+              "benchmarks, so you can use the Design page straight away. The "
+              "pan-allele model is the better predictor on an unseen "
+              "pathogen (0.873 against 0.766 class I); come back and run the "
+              "full setup when you have ten minutes.",
+        steps=[
+            ("train_allele", "Per-allele binding models"),
+            ("benchmarks",   "13 platform benchmarks"),
+        ],
+        args={},
+        produces=["models/report.json"]),
+
+    "refresh_data": dict(
+        group="setup", label="Re-download every dataset",
+        est="15-40 min, needs network",
+        about="Replaces the bundled copies with a fresh harvest from IEDB, "
+              "CMI-PB and ClinicalTrials.gov. Only worth doing if you want "
+              "data newer than the bundle; the models and every number in "
+              "the validation were produced from the bundled copies.",
+        steps=[
+            ("harvest_iedb",   "IEDB binding + immunogenicity"),
+            ("harvest_cmipb",  "CMI-PB human boost data"),
+            ("harvest_eluted", "Mass-spec eluted ligands"),
+            ("harvest_trials", "ClinicalTrials.gov fold-rises"),
+        ],
+        args={},
+        produces=["data/binding_affinity.csv"]),
+
+    "validate_all": dict(
+        group="setup", label="Re-run the whole validation",
+        est="about 2 h",
+        about="Everything in VALIDATION.md, end to end: both "
+              "leave-one-pathogen-out comparisons, the eluted ligands, the "
+              "held-out human subjects, the clinical trials, the benchmarks "
+              "and the evidence scorecard. Any of these can fail, and a "
+              "failure is a result.",
+        steps=[
+            ("benchmarks", "13 platform benchmarks"),
+            ("wetlab",     "Held-out human subjects"),
+            ("lopo",       "Leave-one-pathogen-out, per-allele"),
+            ("lopo_pan",   "Leave-one-pathogen-out, pan-allele"),
+            ("eluted",     "Mass-spec eluted ligands"),
+            ("trials",     "Clinical trial fold-rises"),
+            ("scorecard",  "Evidence scorecard + robustness"),
+        ],
+        args={},
+        produces=["results/scorecard.csv"]),
+}
+
+
+def build_plan(name):
+    """[(step_name, label, argv, parser)] for a plan, ready for run_plan."""
+    spec = PLANS.get(name)
+    if spec is None:
+        raise ValueError(f"unknown plan {name!r}")
+    out = []
+    for step, label in spec["steps"]:
+        _lbl, argv, _prod, parser = build(step, spec["args"].get(step, {}))
+        out.append((step, label, argv, parser))
+    return spec["label"], out, spec["produces"]
+
+
+def plan_missing(name):
+    """Inputs the plan needs that are absent (checked across every step)."""
+    spec = PLANS.get(name)
+    if spec is None:
+        return []
+    # A step may be fed by an earlier step, so only count inputs that no
+    # earlier step produces.
+    made = set()
+    miss = []
+    for step, _label in spec["steps"]:
+        st = TASKS[step]
+        for r in st["requires"]:
+            if r not in made and not _present(r):
+                miss.append(r)
+        made.update(st["produces"])
+    return sorted(set(miss))
+
+
 # ---------------------------------------------------------------------------
 # the registry
 # ---------------------------------------------------------------------------
@@ -320,6 +444,8 @@ TASKS = {
 }
 
 GROUPS = [
+    ("setup", "Setup", "One button each. The datasets are already in this "
+                       "repository, so the first two need no network at all."),
     ("data", "Data", "Nothing is redistributed in the clone. Each dataset "
                      "is downloaded from its source, which is also what "
                      "keeps the licence and citation with the provider."),
@@ -375,6 +501,8 @@ INVENTORY = [
 ]
 
 
+
+
 def stale_because(rel):
     """Inputs modified more recently than this output, newest first."""
     out = ROOT / rel
@@ -401,4 +529,4 @@ def missing(name):
     spec = TASKS.get(name)
     if spec is None:
         return []
-    return [r for r in spec["requires"] if not (ROOT / r).exists()]
+    return [r for r in spec["requires"] if not _present(r)]

@@ -40,6 +40,7 @@ warnings.filterwarnings("ignore")
 from model import CANON_LEN, encode                     # noqa: E402
 from stats import (auc_ci_delong, bh_fdr, brier,         # noqa: E402
                    calibration, delong_test, fmt_p)
+import dataio                                            # noqa: E402
 
 DATA = HERE / "data"
 MODELS = HERE / "models"
@@ -86,9 +87,9 @@ def main():
                     help="cap rows per allele so one allele cannot dominate")
     args = ap.parse_args()
 
-    f = DATA / "eluted_ligands.csv"
-    if not f.exists():
-        sys.exit(f"missing {f} - run harvest_eluted.py first")
+    f = dataio.data_path("eluted_ligands")
+    if f is None:
+        sys.exit("missing data/eluted_ligands.csv[.gz] - run harvest_eluted.py")
     df = pd.read_csv(f)
     meta = {}
     mf = DATA / "eluted_ligands_meta.json"

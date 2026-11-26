@@ -61,9 +61,14 @@ construct_design/data/*.json
 # ===========================================================================
 # immune_sim
 # ===========================================================================
-# Harvested IEDB data (~22 MB). Regenerate with: python3 harvest_iedb.py
-# Not redistributed here - IEDB has its own citation and licence terms.
-immune_sim/data/
+# Datasets. The repository SHIPS a gzipped copy of each one (~8.6 MB total)
+# so a clone can train and validate with no network at all - see
+# immune_sim/DATA_SOURCES.md for where each came from and what to cite.
+# A fresh harvest writes the plain .csv, which stays untracked: it is a local
+# refresh of a file the bundle already provides, and dataio.py prefers it
+# automatically when present.
+immune_sim/data/*.csv
+!immune_sim/data/*.csv.gz
 # Trained model weights. Regenerate with: python3 model.py && python3 immunogenicity.py
 immune_sim/models/*.pkl
 immune_sim/models/immuno_curves.json
@@ -96,7 +101,7 @@ immune_sim/results/*_timecourse.csv
 immune_sim/models/calibrated_candidate_*.json
 immune_sim/models/calibrated_wetlab_prev.json
 
-# immune_sim: CMI-PB harvest (regenerate with harvest_cmipb.py)
+# immune_sim: CMI-PB harvest (the bundle covers it; this is a local refresh)
 immune_sim/data/cmipb_*.csv
 immune_sim/results/*.json
 !immune_sim/results/wetlab_validation_*.json

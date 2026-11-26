@@ -34,6 +34,8 @@ import pandas as pd
 
 from dynamics import P, Sim, load_epitopes
 
+import dataio
+
 warnings.filterwarnings("ignore")
 HERE = Path(__file__).parent
 MODELS = HERE / "models"
@@ -57,8 +59,9 @@ def wetlab_targets(seed=0, train_frac=0.5):
     """
     import pandas as pd
     f = Path(__file__).parent / "data" / "cmipb_ab_titer.csv"
-    if not f.exists():
-        return None, f"missing {f} - run harvest_cmipb.py"
+    f = dataio.data_path("cmipb_ab_titer")
+    if f is None:
+        return None, "missing data/cmipb_ab_titer.csv[.gz] - run harvest_cmipb.py"
     sys.path.insert(0, str(Path(__file__).parent))
     from wetlab_validation import VACCINE_AG, per_subject
 

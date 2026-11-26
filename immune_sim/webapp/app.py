@@ -46,6 +46,9 @@ from dynamics import P, Sim, load_epitopes                   # noqa: E402
 sys.path.insert(0, str(HERE))
 import jobs as JOBS                                          # noqa: E402
 import tasks as TASKS                                        # noqa: E402
+import verdicts as VERDICTS                                  # noqa: E402
+sys.path.insert(0, str(ROOT))
+import dataio as DATAIO                                      # noqa: E402
 
 MANAGER = JOBS.JobManager()
 
@@ -102,6 +105,12 @@ def _epitope_table(payload):
         if not DEMO_EPITOPES.exists():
             abort(503, "results/demo_epitopes.csv is missing; run predict.py")
         return load_epitopes(DEMO_EPITOPES), "demo (SARS-CoV-2 spike)"
+    if src == "inline":
+        rows = payload.get("epitope_rows") or []
+        if not rows:
+            abort(400, "no epitopes were given for epitope_source=inline")
+        d = pd.DataFrame(rows)
+        return load_epitopes(d), "pasted sequence"
     f = RESULTS / Path(src).name                    # never leave results/
     if not f.exists():
         abort(400, f"no such epitope file: {f.name}")
@@ -122,6 +131,8 @@ def _schedule(payload):
 def run_sim(payload):
     ep, ep_name = _epitope_table(payload)
     params, params_name = _params(payload.get("calibration", "wetlab"))
+    if payload.get("replicating"):
+        params = dict(params, ag_growth=0.55)   # same value simulate.py uses
     inj = _schedule(payload)
     days = float(payload.get("days", 240))
     n_steps = int(max(30, min(days * 3, 3000)))      # 8 h per step
@@ -132,7 +143,8 @@ def run_sim(payload):
               dose_ug=(float(payload["dose_ug"])
                        if payload.get("dose_ug") else None),
               heterologous=payload.get("heterologous") or None)
-    df = sim.run(n_steps=n_steps)
+    res_h = float(payload.get("resolution_h", 8.0))
+    df = sim.run(n_steps=n_steps, out_hours=max(0.5, min(res_h, 48.0)))
     return df, sim, dict(epitopes=ep_name, params=params_name,
                          n_clones=int(len(ep)),
                          injection_days=[round(s * 8 / 24, 2) for s, _, _ in inj])
@@ -178,7 +190,14 @@ def _summary(df, sim, inj_days):
 # pages
 # --------------------------------------------------------------------------
 @app.route("/")
+def page_design():
+    """The merged pipeline: antigen in, predicted response out."""
+    return render_template("design.html", meta=_meta())
+
+
+@app.route("/simulate")
 def page_simulate():
+    """The original epitope-file-driven simulator, kept for the CSV route."""
     return render_template("simulate.html", meta=_meta())
 
 
@@ -190,6 +209,12 @@ def page_epitopes():
 @app.route("/compare")
 def page_compare():
     return render_template("compare.html", meta=_meta())
+
+
+@app.route("/setup")
+def page_setup():
+    return render_template("setup.html", meta=_meta(), group="setup",
+                           title="Setup", groups=TASKS.GROUPS)
 
 
 @app.route("/data")
@@ -216,7 +241,9 @@ def page_calibrate():
 
 @app.route("/validation")
 def page_validation():
+    vs = VERDICTS.all_verdicts()
     return render_template("validation.html", meta=_meta(), group="validate",
+                           verdicts=vs, headline=VERDICTS.headline(vs),
                            title="Validation", groups=TASKS.GROUPS,
                            ev=_read_csv("external_validation.csv"),
                            evp=_read_csv("external_validation_pan.csv"),
@@ -376,6 +403,168 @@ def api_predict():
     })
 
 
+@app.route("/api/alleles")
+def api_alleles():
+    """Alleles the trained models cover, so the form offers only those.
+
+    An allele the models were NOT trained on is deliberately not offered:
+    zero-shot transfer to a new allele does not work here (PPV@1% 0.087 to
+    0.121, Wilcoxon p = 0.45), so letting someone pick one would be offering
+    a number that means nothing.
+    """
+    f = MODELS / "report.json"
+    if not f.exists():
+        return jsonify({"alleles": [], "trained": False})
+    try:
+        rep = json.loads(f.read_text())
+    except (ValueError, OSError):
+        return jsonify({"alleles": [], "trained": False})
+    out = [{"allele": a, "mhc_class": v.get("mhc_class"),
+            "auc": v.get("auc"), "n_train": v.get("n_train")}
+           for a, v in sorted(rep.items())]
+    return jsonify({"alleles": out, "trained": bool(out)})
+
+
+@app.route("/api/design", methods=["POST"])
+def api_design():
+    """The whole pipeline in one call: a sequence in, a predicted response out.
+
+    This exists because the two halves of this project were only ever joined
+    by a CSV on disk: predict.py wrote epitopes, simulate.py read them, and
+    the GUI made you do the same thing by hand. Here the antigen goes in once
+    and the answer comes back once - the epitope prediction and the dynamic
+    simulation are two stages of one request, not two tools.
+
+    Accepts a pasted sequence, a UniProt accession, or the committed demo
+    antigen, and every simulation setting. Returns the epitopes it found AND
+    the simulated response, so the page can show which epitopes drove it.
+    """
+    payload = request.get_json(force=True) or {}
+    source = (payload.get("antigen_source") or "sequence").strip()
+
+    # --- 1. get the antigen ------------------------------------------------
+    name = (payload.get("name") or "").strip()[:40]
+    seq = ""
+    if source == "uniprot":
+        acc = "".join(c for c in str(payload.get("accession", ""))
+                      if c.isalnum() or c in "-_")[:20]
+        if not acc:
+            abort(400, "give a UniProt accession")
+        try:
+            import predict as PR
+            fetched, seq = PR.fetch_uniprot(acc)
+        except Exception as e:
+            abort(502, f"could not fetch {acc}: {e}")
+        name = name or fetched[:40] or acc
+    elif source == "demo":
+        name = name or "demo (SARS-CoV-2 spike)"
+    else:
+        raw = payload.get("sequence") or ""
+        if ">" in raw:                       # FASTA: drop the header line(s)
+            raw = "\n".join(l for l in raw.splitlines()
+                             if not l.startswith(">"))
+            if not name:
+                hdr = next((l for l in (payload.get("sequence") or "").splitlines()
+                            if l.startswith(">")), "")
+                name = hdr.lstrip(">").split("|")[-1].strip()[:40]
+        seq = "".join(c for c in raw.upper() if c.isalpha())
+        if len(seq) < 9:
+            abort(400, "need at least 9 amino acid residues")
+        if len(seq) > 4000:
+            abort(400, f"sequence is {len(seq)} residues; the limit is 4000")
+        bad = sorted(set(seq) - set("ACDEFGHIKLMNPQRSTVWY"))
+        if bad:
+            abort(400, "not amino acids: " + ", ".join(bad)
+                       + ". Is this a DNA or RNA sequence?")
+        # A, C, G, T and U are ALL valid amino acid letters (Ala, Cys, Gly,
+        # Thr, Sec), so a pasted gene passes the check above and is silently
+        # scanned as a protein. Catch it by composition instead: a real
+        # protein of any length is essentially never built from four or five
+        # residues alone.
+        if len(seq) >= 24 and set(seq) <= set("ACGTU"):
+            kind = "RNA" if "U" in seq and "T" not in seq else "DNA"
+            abort(400,
+                  f"This looks like a {kind} sequence, not a protein: every "
+                  f"one of its {len(seq)} residues is A, C, G, T or U. Those "
+                  f"are also valid amino acid letters, so nothing here can "
+                  f"tell them apart for you. Translate it to protein first, "
+                  f"then paste that.")
+    name = name or "query"
+
+    # --- 2. epitopes -------------------------------------------------------
+    stages = {}
+    if source == "demo":
+        ep_src, ep_rows, ep_cols, counts = "demo", None, None, {}
+        stages["predict"] = "used the committed demo epitope set"
+    else:
+        try:
+            import predict as PR
+            models = PR.load_models(payload.get("alleles") or None)
+        except Exception as e:
+            app.logger.error(traceback.format_exc())
+            abort(500, f"{type(e).__name__}: {e}")
+        if not models:
+            abort(503, "No trained models yet. Press 'Set up everything' on "
+                       "the Setup page - it needs no network, the data is "
+                       "already in this repository.")
+        try:
+            pred = PR.scan(seq, models)
+        except Exception as e:
+            app.logger.error(traceback.format_exc())
+            abort(500, f"{type(e).__name__}: {e}")
+        binders = pred[pred.call != "non-binder"].sort_values("pred_IC50_nM")
+        if binders.empty:
+            abort(400, "No binders predicted for this sequence and these "
+                       "alleles, so there is nothing to simulate. Try more "
+                       "alleles, or a longer sequence.")
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+        (RESULTS / f"{safe}_epitopes.csv").write_text(binders.to_csv(index=False))
+        ep_src = "inline"
+        ep_rows = binders.to_dict("records")
+        ep_cols = ["allele", "mhc_class", "start", "peptide", "length",
+                   "pred_IC50_nM", "percentile_rank", "call"]
+        counts = {"n_binders": int(len(binders)),
+                  "n_strong": int((binders.call == "strong").sum()),
+                  "by_class": binders.groupby("mhc_class").size().to_dict(),
+                  "n_alleles": int(binders.allele.nunique()),
+                  "saved_as": f"{safe}_epitopes.csv"}
+        stages["predict"] = (f"{len(binders):,} binders over "
+                             f"{binders.allele.nunique()} alleles")
+
+    # --- 3. simulate -------------------------------------------------------
+    cfg = dict(payload)
+    cfg["epitope_source"] = ep_src
+    if ep_rows is not None:
+        cfg["epitope_rows"] = ep_rows
+    try:
+        df, sim, info = run_sim(cfg)
+    except ValueError as e:
+        abort(400, str(e))
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        abort(500, f"{type(e).__name__}: {e}")
+
+    keep = [k for k, _, _ in SERIES if k in df.columns]
+    step = max(1, len(df) // 900)
+    d = df.iloc[::step]
+    top = (pd.DataFrame(ep_rows)[ep_cols]
+           .head(int(payload.get("limit", 80)))
+           .round({"pred_IC50_nM": 2, "percentile_rank": 3})
+           .values.tolist()) if ep_rows is not None else []
+    return jsonify({
+        "antigen": {"name": name, "length": len(seq) or None,
+                    "source": source},
+        "epitopes": {"columns": ep_cols, "rows": top, **counts},
+        "day": d.day.round(3).tolist(),
+        "series": {k: np.nan_to_num(d[k].values, posinf=0, neginf=0)
+                    .round(6).tolist() for k in keep},
+        "summary": _summary(df, sim, info["injection_days"]),
+        "info": info,
+        "stages": stages,
+        "describe": PF.describe(sim.platform_key, sim.adj.key, sim.dose_ug),
+    })
+
+
 @app.route("/api/uniprot/<acc>")
 def api_uniprot(acc):
     """Fetch a sequence by accession, so a user need not paste FASTA."""
@@ -449,6 +638,14 @@ def api_status():
     return jsonify({
         "tasks": specs,
         "groups": [{"key": k, "label": l, "about": a} for k, l, a in TASKS.GROUPS],
+        "plans": {n: {"name": n, "group": p["group"], "label": p["label"],
+                      "about": p["about"], "est": p["est"],
+                      "steps": [{"name": sn, "label": sl}
+                                for sn, sl in p["steps"]],
+                      "missing": TASKS.plan_missing(n),
+                      "outputs": [_file_info(o) for o in p["produces"]]}
+                  for n, p in TASKS.PLANS.items()},
+        "data": DATAIO.inventory(),
         "inventory": [dict(_file_info(rel), label=label)
                       for rel, label in TASKS.INVENTORY],
         "jobs": [j.snapshot(log_lines=0) for j in MANAGER.recent(24)],
@@ -539,6 +736,24 @@ def api_job_start():
     return jsonify(job.snapshot(log_lines=0))
 
 
+@app.route("/api/plans", methods=["POST"])
+def api_plan_start():
+    """Start a one-click plan: several steps, one job, one progress view."""
+    body = request.get_json(force=True) or {}
+    name = str(body.get("plan", ""))
+    if name not in TASKS.PLANS:
+        abort(400, f"unknown plan {name!r}")
+    miss = TASKS.plan_missing(name)
+    if miss:
+        abort(400, "missing input: " + ", ".join(miss))
+    label, steps, produces = TASKS.build_plan(name)
+    try:
+        job = MANAGER.submit_plan(name, label, steps, ROOT, produces)
+    except RuntimeError as e:
+        abort(409, str(e))
+    return jsonify(job.snapshot(log_lines=0))
+
+
 @app.route("/api/jobs/<job_id>")
 def api_job(job_id):
     job = MANAGER.get(job_id)
@@ -563,6 +778,8 @@ def api_job_cancel(job_id):
 @app.errorhandler(400)
 @app.errorhandler(404)
 @app.errorhandler(409)
+@app.errorhandler(500)
+@app.errorhandler(502)
 @app.errorhandler(503)
 def _err(e):
     return jsonify({"error": getattr(e, "description", str(e))}), e.code

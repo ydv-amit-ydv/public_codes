@@ -1,0 +1,10 @@
+{
+  "n_positives": 42641,
+  "n_decoys": 810179,
+  "prevalence": 0.05,
+  "alleles": 42,
+  "publications": 131,
+  "decoy_ratio": 19,
+  "decoy_source": "same parent proteins as the ligands, same lengths",
+  "caveat": "mass spectrometry reports only detections, so decoys are unobserved rather than measured negatives; absolute AUC depends on the decoy ratio, PPV@1% much less so"
+}

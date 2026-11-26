@@ -36,13 +36,14 @@ from model import (BINDER_NM, CANON_LEN, SEED, encode,               # noqa: E40
 from model_pan import MAX_LEN, MIN_LEN, PanEnsemble                  # noqa: E402
 from stats import (auc_ci_delong, bh_fdr, calibration,               # noqa: E402
                    delong_test, fmt_p)
+import dataio                                            # noqa: E402
 
 RESULTS = HERE / "results"
 RESULTS.mkdir(exist_ok=True)
 
 
 def tag_organism(df):
-    raw = pd.read_csv(HERE / "data" / "binding_affinity.csv")
+    raw = dataio.read("binding_affinity")
     raw["org"] = organism(raw)
     pep_org = (raw.groupby("peptide").org
                   .agg(lambda s: s.value_counts().index[0]))

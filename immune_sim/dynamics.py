@@ -169,10 +169,10 @@ def load_epitopes(csv, top_i=4, top_ii=3, use_immunogenicity=True):
     weight = binding strength (log50k) x predicted immunogenicity (if a model
     for that allele exists). This is the immunodominance hierarchy.
     """
-    d = pd.read_csv(csv)
+    d = csv if isinstance(csv, pd.DataFrame) else pd.read_csv(csv)
     d = d[d.call != "non-binder"].copy()
     if d.empty:
-        raise SystemExit("no binders in the prediction file")
+        raise ValueError("no binders in the prediction")
 
     keep = []
     for mclass, n in (("I", top_i), ("II", top_ii)):
@@ -491,8 +491,14 @@ class Sim:
                                dBa, dBm, dPL, dPLl,
                                [dIgM], [dIgG], [dAff], [dIL2]])
 
-    def run(self, n_steps=540):
-        """Integrate, applying injections as discontinuous boluses."""
+    def run(self, n_steps=540, out_hours=STEP_HOURS):
+        """Integrate, applying injections as discontinuous boluses.
+
+        `out_hours` is only the spacing of the reported grid. The integrator
+        is adaptive (LSODA), so this changes how finely the result is sampled,
+        not the dynamics or the accuracy - a coarser grid is a smaller table,
+        not a cruder simulation.
+        """
         days_total = n_steps * STEP_HOURS / 24.0
         events = sorted(self.injections, key=lambda e: e["step"])
         y = self.y0()
@@ -507,7 +513,7 @@ class Sim:
                 sol = solve_ivp(self.rhs, (t0, day), y, method="LSODA",
                                 dense_output=True, rtol=1e-6, atol=1e-8,
                                 max_step=0.5)
-                grid = np.arange(t0, day, 8.0 / 24.0)
+                grid = np.arange(t0, day, max(out_hours, 0.25) / 24.0)
                 if len(grid):
                     ts.append(grid); ys.append(sol.sol(grid))
                 y = sol.y[:, -1]

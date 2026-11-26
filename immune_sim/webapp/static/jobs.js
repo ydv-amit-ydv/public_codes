@@ -117,80 +117,195 @@ function outputLine(o) {
   return row;
 }
 
+function progressBlock() {
+  /* The engine's progress idiom: state + elapsed/ETA on one line, an overall
+     bar, a row per step with its own bar, then the script's own log. */
+  const wrap = el("div", "progress");
+  wrap.hidden = true;
+  const head = el("div", "thead");
+  head.appendChild(el("b", "pstate", "Working…"));
+  head.appendChild(el("span", "muted ptime"));
+  wrap.appendChild(head);
+  const bar = el("div", "bar");
+  bar.style.margin = "8px 0";
+  bar.appendChild(el("i"));
+  wrap.appendChild(bar);
+  wrap.appendChild(el("div", "pstages"));
+  const det = el("details");
+  det.appendChild(el("summary", "muted sm", "Log"));
+  det.appendChild(el("pre", "log"));
+  wrap.appendChild(det);
+  return wrap;
+}
+
 function taskCard(spec) {
   const card = el("section", "card task");
   card.dataset.task = spec.name;
 
   const head = el("div", "thead");
-  head.appendChild(el("h3", null, spec.label));
-  const tags = el("div", "tags");
-  tags.appendChild(el("span", "tag", spec.est));
+  head.appendChild(el("h3", "t", spec.label));
+  const tags = el("div");
+  tags.appendChild(el("span", "tag plain", spec.est));
   if (spec.network) tags.appendChild(el("span", "tag net", "downloads"));
   head.appendChild(tags);
   card.appendChild(head);
-
-  card.appendChild(el("p", "about", spec.about));
+  card.appendChild(el("p", "sm muted", spec.about));
 
   if (spec.fields && spec.fields.length) {
-    const form = el("div", "fields");
-    spec.fields.forEach((f) => form.appendChild(fieldInput(spec.name, f)));
+    const form = el("div", "grid2");
+    form.style.margin = "8px 0";
+    spec.fields.forEach((f) => fieldRow(form, f));
     card.appendChild(form);
   }
 
   if (spec.outputs && spec.outputs.length) {
-    const outs = el("div", "outs");
+    const outs = el("div");
     spec.outputs.forEach((o) => outs.appendChild(outputLine(o)));
     card.appendChild(outs);
   }
 
-  const bar = el("div", "actions");
-  const run = el("button", "primary", "Run");
-  const cancel = el("button", "ghost", "Cancel");
+  card.appendChild(actionBar(card, spec, () => startJob(spec.name, card)));
+  card.appendChild(progressBlock());
+  return card;
+}
+
+function planCard(spec) {
+  /* A plan is several scripts in order. Its steps are listed before it runs,
+     so one click is still a visible plan rather than a black box. */
+  const card = el("section", "card task");
+  card.dataset.task = spec.name;
+
+  const head = el("div", "thead");
+  head.appendChild(el("h3", "t", spec.label));
+  const tags = el("div");
+  tags.appendChild(el("span", "tag plain", spec.est));
+  head.appendChild(tags);
+  card.appendChild(head);
+  card.appendChild(el("p", "sm muted", spec.about));
+
+  const list = el("ol", "sm muted");
+  list.style.margin = "6px 0 8px 18px";
+  spec.steps.forEach((st) => list.appendChild(el("li", null, st.label)));
+  card.appendChild(list);
+
+  if (spec.outputs && spec.outputs.length) {
+    const outs = el("div");
+    spec.outputs.forEach((o) => outs.appendChild(outputLine(o)));
+    card.appendChild(outs);
+  }
+
+  card.appendChild(actionBar(card, spec, () => startPlan(spec.name, card),
+                             spec.name.startsWith("setup")));
+  card.appendChild(progressBlock());
+  return card;
+}
+
+function actionBar(card, spec, onRun, primary) {
+  const bar = el("div");
+  bar.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px";
+  const run = el("button", primary ? "primary" : "b", "Run");
+  const cancel = el("button", "b cancel", "Cancel");
   cancel.hidden = true;
   bar.appendChild(run);
   bar.appendChild(cancel);
-  const status = el("span", "jstatus");
-  bar.appendChild(status);
-  card.appendChild(bar);
-
-  if (spec.missing && spec.missing.length) {
-    run.disabled = true;
-    const m = el("p", "blocked",
-      `Needs ${spec.missing.join(", ")} first.`);
-    const link = el("a", null, "Go to Data →");
-    link.href = "/data";
-    m.appendChild(document.createTextNode(" "));
-    m.appendChild(link);
-    card.appendChild(m);
-  }
-
-  const prog = el("div", "progwrap");
-  prog.hidden = true;
-  const bar2 = el("div", "prog");
-  const fill = el("div", "fill");
-  bar2.appendChild(fill);
-  prog.appendChild(bar2);
-  prog.appendChild(el("div", "note"));
-  card.appendChild(prog);
-
-  const logBox = el("pre", "log");
-  logBox.hidden = true;
-  card.appendChild(logBox);
-
-  run.addEventListener("click", () => startJob(spec.name, card));
+  bar.appendChild(el("span", "muted sm jstatus"));
+  run.addEventListener("click", onRun);
   cancel.addEventListener("click", () => {
     const id = card.dataset.job;
     if (id) fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
   });
-  return card;
+  if (spec.missing && spec.missing.length) {
+    run.disabled = true;
+    const m = el("p", "sm warn");
+    m.style.margin = "6px 0 0";
+    m.textContent = `Needs ${spec.missing.join(", ")} first. `;
+    const link = el("a", null, "Go to Data →");
+    link.href = "/data";
+    m.appendChild(link);
+    bar.appendChild(m);
+  }
+  card.dataset.primary = primary ? "1" : "";
+  return bar;
+}
+
+function fieldRow(form, f) {
+  const lab = el("span", null, f.label);
+  if (f.help) {
+    const q = el("span", "q", "?");
+    q.dataset.tip = f.help;
+    q.tabIndex = 0;
+    lab.appendChild(q);
+  }
+  form.appendChild(lab);
+  let input;
+  if (f.type === "bool") {
+    input = el("input");
+    input.type = "checkbox";
+    input.checked = !!f.default;
+  } else if (f.type === "choice") {
+    input = el("select");
+    (f.options || []).forEach((o) => {
+      const opt = el("option", null, o);
+      opt.value = o;
+      if (o === f.default) opt.selected = true;
+      input.appendChild(opt);
+    });
+  } else if (f.type === "params") {
+    input = el("select");
+    const blank = el("option", null, "— literature defaults —");
+    blank.value = "";
+    input.appendChild(blank);
+    (STATUS.param_files || []).forEach((o) => {
+      const opt = el("option", null, o.replace("models/", ""));
+      opt.value = o;
+      if (o === f.default) opt.selected = true;
+      input.appendChild(opt);
+    });
+  } else {
+    input = el("input");
+    input.type = "number";
+    input.value = f.default;
+    if (f.min != null) input.min = f.min;
+    if (f.max != null) input.max = f.max;
+  }
+  input.dataset.field = f.name;
+  input.dataset.ftype = f.type;
+  form.appendChild(input);
 }
 
 /* ------------------------------------------------------------ job driving */
+async function startPlan(name, card) {
+  const btn = card.querySelector("button.primary, button.b");
+  const status = card.querySelector(".jstatus");
+  btn.disabled = true;
+  status.textContent = "starting…";
+  let r;
+  try {
+    r = await fetch("/api/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan: name }),
+    });
+  } catch (e) {
+    status.textContent = "could not reach the server";
+    btn.disabled = false;
+    return;
+  }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    status.className = "muted sm jstatus bad";
+    status.textContent = body.error || `failed (${r.status})`;
+    btn.disabled = false;
+    return;
+  }
+  attach(card, body.id);
+}
+
 async function startJob(name, card) {
-  const run = card.querySelector("button.primary");
+  const run = card.querySelector("button.primary, button.b");
   const status = card.querySelector(".jstatus");
   run.disabled = true;
-  status.className = "jstatus";
+  status.className = "muted sm jstatus";
   status.textContent = "starting…";
   let r;
   try {
@@ -200,14 +315,14 @@ async function startJob(name, card) {
       body: JSON.stringify({ task: name, args: readArgs(card) }),
     });
   } catch (e) {
-    status.className = "jstatus bad";
+    status.className = "muted sm jstatus bad";
     status.textContent = "could not reach the server";
     run.disabled = false;
     return;
   }
   const body = await r.json().catch(() => ({}));
   if (!r.ok) {
-    status.className = "jstatus bad";
+    status.className = "muted sm jstatus bad";
     status.textContent = body.error || `failed (${r.status})`;
     run.disabled = false;
     return;
@@ -217,9 +332,8 @@ async function startJob(name, card) {
 
 function attach(card, jobId) {
   card.dataset.job = jobId;
-  card.querySelector(".log").hidden = false;
-  card.querySelector(".progwrap").hidden = false;
-  card.querySelector("button.ghost").hidden = false;
+  card.querySelector(".progress").hidden = false;
+  card.querySelector("button.cancel").hidden = false;
   if (POLLING.has(jobId)) return;
   const tick = async () => {
     let snap;
@@ -234,8 +348,8 @@ function attach(card, jobId) {
     if (["done", "failed", "cancelled"].includes(snap.state)) {
       clearInterval(POLLING.get(jobId));
       POLLING.delete(jobId);
-      card.querySelector("button.primary").disabled = false;
-      card.querySelector("button.ghost").hidden = true;
+      card.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+      card.querySelector("button.cancel").hidden = true;
       refresh();                               // outputs and staleness changed
     }
   };
@@ -244,39 +358,65 @@ function attach(card, jobId) {
 }
 
 function render(card, snap) {
-  const status = card.querySelector(".jstatus");
-  const prog = card.querySelector(".progwrap");
-  const fill = card.querySelector(".fill");
-  const note = card.querySelector(".progwrap .note");
-  const log = card.querySelector(".log");
+  const q = (sel) => card.querySelector(sel);
+  const pstate = q(".pstate"), ptime = q(".ptime");
+  const bar = q(".bar"), stages = q(".pstages"), log = q(".log");
 
-  const mins = Math.floor(snap.elapsed / 60);
-  const secs = Math.round(snap.elapsed % 60);
-  const t = mins ? `${mins}m ${secs}s` : `${secs}s`;
-  status.className = "jstatus " + (
-    snap.state === "done" ? "good" :
-    snap.state === "failed" ? "bad" :
-    snap.state === "cancelled" ? "warnc" : "");
-  status.textContent = `${snap.state} · ${t}`;
+  const pct = snap.progress == null ? 0 : Math.round(snap.progress * 100);
+  const names = {
+    queued: "Waiting to start…",
+    running: snap.progress == null ? "Running" : `Running: ${pct}%`,
+    done: "Finished", failed: "Failed", cancelled: "Cancelled",
+  };
+  pstate.textContent = names[snap.state] || snap.state;
+  pstate.className = "pstate "
+    + (snap.state === "failed" ? "bad" : snap.state === "done" ? "ok"
+       : snap.state === "cancelled" ? "warn" : "");
 
-  if (snap.progress != null) {
-    fill.style.width = `${Math.round(snap.progress * 100)}%`;
-    fill.classList.remove("indet");
-  } else if (snap.state === "running") {
-    fill.style.width = "100%";
-    fill.classList.add("indet");
+  ptime.textContent = snap.state === "running"
+    ? fmtT(snap.elapsed) + " elapsed"
+      + (snap.eta != null ? `, about ${fmtT(snap.eta)} left` : "")
+    : snap.state === "queued" ? "" : fmtT(snap.elapsed);
+
+  bar.classList.toggle("ind", snap.state === "running" && !pct);
+  bar.firstElementChild.style.width = pct + "%";
+
+  // Per-step rows, so a ten-minute plan says what it is doing and what is
+  // still to come, rather than showing one bar and a wall of log.
+  if (snap.stages && snap.stages.length) {
+    stages.innerHTML = snap.stages.map((st) => {
+      const known = st.total ? Math.min(100, Math.round(100 * st.done / st.total))
+        : (st.state === "done" ? 100 : 0);
+      const ind = st.state === "running" && !st.total;
+      const mark = st.state === "done" ? "&#10003; "
+        : st.state === "running" ? "&#9654; "
+        : st.state === "failed" ? "&#10007; " : "&middot; ";
+      return `<div class="stage ${st.state}"><span>${mark}${esc(st.label)}</span>`
+        + `<div class="bar thin ${ind ? "ind" : ""}"><i style="width:${known}%"></i></div>`
+        + (st.msg ? `<div class="m">${esc(st.msg)}</div>` : "") + "</div>";
+    }).join("");
+  } else {
+    stages.innerHTML = snap.note
+      ? `<div class="stage"><span>&#9654; working</span>`
+        + `<div class="bar thin ${pct ? "" : "ind"}"><i style="width:${pct}%"></i></div>`
+        + `<div class="m">${esc(snap.note)}</div></div>`
+      : "";
   }
-  note.textContent = snap.note || "";
-  prog.hidden = false;
+  if (snap.error) {
+    stages.innerHTML += `<div class="bad sm" style="margin-top:6px">`
+      + `${esc(snap.error)} — the log below is the script's own output</div>`;
+  }
 
-  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
   log.textContent = (snap.log || []).join("\n");
-  if (atBottom) log.scrollTop = log.scrollHeight;
-
-  if (snap.state === "failed" && snap.error) {
-    note.textContent = snap.error + " — the log above is the script's own output";
-  }
+  if (atEnd) log.scrollTop = log.scrollHeight;
 }
+
+const esc = (t) => String(t == null ? "" : t)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const fmtT = (s) => s == null ? ""
+  : s < 90 ? Math.round(s) + " s"
+  : Math.floor(s / 60) + " min " + Math.round(s % 60) + " s";
 
 /* ------------------------------------------------------------ candidates */
 function renderCandidates() {
@@ -371,6 +511,70 @@ function renderInventory() {
   host.appendChild(wrap);
 }
 
+function renderPlans() {
+  const host = document.getElementById("plans");
+  if (!host) return;
+  const open = {};
+  host.querySelectorAll(".task").forEach((c) => {
+    if (c.dataset.job) open[c.dataset.task] = c.dataset.job;
+  });
+  host.textContent = "";
+  Object.values(STATUS.plans || {})
+    .filter((p) => p.group === GROUP)
+    .forEach((p) => {
+      const card = planCard(p);
+      host.appendChild(card);
+      if (open[p.name]) attach(card, open[p.name]);
+    });
+  (STATUS.jobs || []).forEach((j) => {
+    if (j.state !== "running" && j.state !== "queued") return;
+    const card = host.querySelector(`.task[data-task="${j.task}"]`);
+    if (card && !card.dataset.job) attach(card, j.id);
+  });
+}
+
+function renderData() {
+  /* Where each dataset came from and whether you are using the copy that
+     ships with the repository or one you harvested yourself. Citations are
+     shown because redistributing someone's database carries their terms. */
+  const host = document.getElementById("datainv");
+  if (!host) return;
+  host.textContent = "";
+  const rows = STATUS.data || [];
+  if (!rows.length) return;
+  const t = el("table");
+  const th = el("thead"), hr = el("tr");
+  ["", "Dataset", "Copy in use", "Size", "Source", "Cite"].forEach((h) =>
+    hr.appendChild(el("th", null, h)));
+  th.appendChild(hr); t.appendChild(th);
+  const tb = el("tbody");
+  rows.forEach((r) => {
+    const tr = el("tr");
+    const dot = el("td");
+    dot.appendChild(el("span", `dot ${r.present ? "ok" : "none"}`));
+    tr.appendChild(dot);
+    const name = el("td");
+    name.appendChild(el("b", null, r.what));
+    name.appendChild(el("br"));
+    name.appendChild(el("code", null, r.path || `data/${r.name}.csv`));
+    name.style.whiteSpace = "normal";
+    tr.appendChild(name);
+    tr.appendChild(el("td", null, r.copy === "bundled" ? "bundled with the repo"
+      : r.copy === "harvested" ? "harvested by you" : "missing"));
+    tr.appendChild(el("td", "num", r.bytes ? fmtBytes(r.bytes) : "—"));
+    tr.appendChild(el("td", null, r.source));
+    const cite = el("td", "sm muted", r.citation);
+    cite.style.whiteSpace = "normal";
+    cite.style.maxWidth = "320px";
+    tr.appendChild(cite);
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+  const wrap = el("div", "tablewrap");
+  wrap.appendChild(t);
+  host.appendChild(wrap);
+}
+
 function renderTasks() {
   const host = document.getElementById("tasks");
   if (!host) return;
@@ -401,6 +605,8 @@ async function refresh() {
     return;
   }
   renderTasks();
+  renderPlans();
+  renderData();
   renderCandidates();
   renderInventory();
 }

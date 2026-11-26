@@ -37,6 +37,8 @@ sys.path.insert(0, str(HERE))
 
 from stats import bootstrap_ci, fmt_p, prob_direction          # noqa: E402
 
+import dataio
+
 DATA = HERE / "data" / "cmipb_ab_titer.csv"
 RESULTS = HERE / "results"
 RESULTS.mkdir(exist_ok=True)
@@ -170,9 +172,10 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
-    if not DATA.exists():
-        sys.exit(f"missing {DATA}\nrun: python3 harvest_cmipb.py")
-    df = pd.read_csv(DATA)
+    src = dataio.data_path("cmipb_ab_titer")
+    if src is None:
+        sys.exit("missing data/cmipb_ab_titer.csv[.gz]\nrun: python3 harvest_cmipb.py")
+    df = pd.read_csv(src)
     tr, te = split_subjects(df, seed=args.seed)
     if args.split == "train":
         df = df[df.subject_id.isin(tr)]

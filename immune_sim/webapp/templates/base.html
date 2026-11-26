@@ -5,25 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}immune_sim{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"></script>
+<!-- Vendored, not from a CDN: this project is meant to run offline, and a
+     CDN made every plot a silent empty rectangle on a machine with no
+     internet. See static/vendor/README.md. -->
+<script src="{{ url_for('static', filename='vendor/plotly-basic.min.js') }}"></script>
 </head>
 <body>
-<header>
-  <div class="brand">immune_sim</div>
-  <nav>
-    <a href="/" class="{{ 'on' if request.path == '/' }}">Simulate</a>
-    <a href="/compare" class="{{ 'on' if request.path == '/compare' }}">Compare</a>
-    <a href="/epitopes" class="{{ 'on' if request.path == '/epitopes' }}">Epitopes</a>
-    <span class="sep"></span>
-    <a href="/data" class="{{ 'on' if request.path == '/data' }}">Data</a>
-    <a href="/train" class="{{ 'on' if request.path == '/train' }}">Models</a>
-    <a href="/calibrate" class="{{ 'on' if request.path == '/calibrate' }}">Calibrate</a>
-    <a href="/validation" class="{{ 'on' if request.path == '/validation' }}">Validation</a>
-  </nav>
-  <div class="cal" title="parameter set in use">{{ meta.calibration }}</div>
-</header>
+<nav class="top">
+  <b>immune_sim</b>
+  <a href="/" class="{{ 'on' if request.path == '/' }}">Design</a>
+  <a href="/compare" class="{{ 'on' if request.path == '/compare' }}">Compare</a>
+  <a href="/validation" class="{{ 'on' if request.path == '/validation' }}">Validation</a>
+  <span class="sep"></span>
+  <a href="/setup" class="{{ 'on' if request.path == '/setup' }}">Setup</a>
+  <a href="/data" class="{{ 'on' if request.path == '/data' }}">Data</a>
+  <a href="/train" class="{{ 'on' if request.path == '/train' }}">Models</a>
+  <a href="/calibrate" class="{{ 'on' if request.path == '/calibrate' }}">Calibrate</a>
+  <span class="cal" title="fitted parameter set in use">{{ meta.calibration }}</span>
+</nav>
 
-<main>{% block body %}{% endblock %}</main>
+{% block main %}
+<main class="single"><div class="content">{% block body %}{% endblock %}</div></main>
+{% endblock %}
 
 <footer>
   Ratios and timings are validated against measured human data; absolute
@@ -31,6 +34,7 @@
   <a href="/validation">What is and is not claimed &rarr;</a>
 </footer>
 
+<div id="tip"></div>
 <script>window.META = {{ meta | tojson }};</script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 <script src="{{ url_for('static', filename='jobs.js') }}"></script>

@@ -40,6 +40,8 @@ warnings.filterwarnings("ignore")
 from dynamics import P, Sim, load_epitopes            # noqa: E402
 from stats import bootstrap_ci                        # noqa: E402
 
+import dataio
+
 DATA = HERE / "data"
 MODELS = HERE / "models"
 RESULTS = HERE / "results"
@@ -87,9 +89,9 @@ def main():
     ap.add_argument("--epitopes", default="results/demo_epitopes.csv")
     args = ap.parse_args()
 
-    f = DATA / "trial_foldrise.csv"
-    if not f.exists():
-        sys.exit(f"missing {f} - run harvest_trials.py first")
+    f = dataio.data_path("trial_foldrise")
+    if f is None:
+        sys.exit("missing data/trial_foldrise.csv[.gz] - run harvest_trials.py")
     obs = pd.read_csv(f)
     obs = obs[obs.fold_rise.notna()]
 

@@ -14,6 +14,69 @@ epitope source  ->  dynamic model  ->  T / B / antibody time course + figures
 
 ---
 
+## Start here
+
+```bash
+git clone https://github.com/ydv-amit-ydv/public_codes.git
+cd public_codes/immune_sim
+pip install -r requirements.txt
+python3 webapp/app.py          # then open http://127.0.0.1:5000
+```
+
+Press **Setup → Set up everything**. About ten minutes, and **no network
+needed**: every dataset is already in this repository, gzipped
+(see [DATA_SOURCES.md](DATA_SOURCES.md)). That one button trains all three
+epitope models and then checks the dynamic model against held-out human
+subjects, so you can see it work before you trust it.
+
+Then go to **Design**, paste a protein sequence, and press the button. One
+click predicts the epitopes and simulates the response they produce.
+
+### The GUI is the whole tool
+
+| Page | Does |
+|---|---|
+| **Design** | A protein sequence in → ranked epitopes → the immune response they drive. Both halves of the pipeline in one request. |
+| **Compare** | Up to six formulations on one axis. |
+| **Validation** | Nine plain questions about whether this works, answered from the measurements. The noes are listed beside the yeses. |
+| **Setup** | One button to set everything up, one to re-download the data, one to re-run the whole validation. |
+| **Data / Models / Calibrate** | The individual steps, if you want them separately. |
+
+Every button runs the project's **own CLI script** as a subprocess and streams
+its output into the page: a progress bar per step, elapsed time and an
+estimate, cancel, and the script's log. Nothing is reimplemented in the web
+layer, so a figure in the browser and a number in `VALIDATION.md` come from
+the same code.
+
+### If you would rather use the command line
+
+```bash
+python3 model.py                                   # train, ~10 s
+python3 predict.py P0DTC2 --top 20                 # epitopes for a UniProt accession
+python3 simulate.py results/P0DTC2_epitopes.csv --platform mrna_lnp
+```
+
+`simulate.py` also runs straight from the committed demo epitope set, with no
+training at all:
+
+```bash
+python3 simulate.py results/demo_epitopes.csv --platform mrna_lnp --params models/calibrated_wetlab.json
+```
+
+```bash
+python3 simulate.py results/demo_epitopes.csv --platform adenovirus --heterologous mva
+```
+
+```bash
+python3 simulate.py --list-platforms
+```
+
+It writes a time course CSV, a six-panel response figure (antigen/antibody,
+T cells, B cells, innate + cytokine, affinity maturation, immunodominance by
+clone) and a prime/boost comparison.
+
+---
+
 ## Where epitopes come from
 
 Two sources, in order of preference.
@@ -132,133 +195,37 @@ python3 platforms.py mrna_lnp as01  # one combination
 
 ---
 
-## Running it
+## Platform benchmarks
 
 ```bash
-# protein + alum, prime and boost 90 days apart
-python3 simulate.py results/demo_epitopes.csv --platform protein --adjuvant alum \
-                    --inject 2,270 --steps 700
-
-# mRNA-LNP at 30 ug
-python3 simulate.py results/demo_epitopes.csv --platform mrna_lnp --dose-ug 30
-
-# adenovirus prime, MVA boost
-python3 simulate.py results/demo_epitopes.csv --platform adenovirus --heterologous mva
-
-python3 simulate.py --list-platforms
+python3 test_platforms.py
 ```
 
-Writes a time course CSV, a six-panel response figure (antigen/antibody,
-T cells, B cells, innate + cytokine, affinity maturation, immunodominance by
-clone) and a prime/boost comparison.
-
----
-
-## Web GUI
-
-```bash
-pip install -r requirements.txt
-cd webapp && python3 app.py        # http://127.0.0.1:5000
-```
-
-**Everything in this README is reachable from the GUI, including the setup.**
-A fresh clone has no data and no trained weights; the GUI downloads and builds
-them. Seven pages:
-
-| Page | Does |
-|---|---|
-| Simulate | platform, adjuvant, dose, schedule → the full response course |
-| Compare | up to six formulations on one axis |
-| Epitopes | UniProt accession or pasted sequence → ranked epitopes → straight into a simulation |
-| Data | download IEDB, CMI-PB, mass-spec ligands, trial fold-rises |
-| Models | train the per-allele, pan-allele and immunogenicity models |
-| Calibrate | refit the 36 ODE parameters against measured human data |
-| Validation | every claim graded A–D, with a button to re-run any of it |
-
-Simulate, Compare and Validation work immediately in a clean clone, because
-the calibrated parameters and a demo epitope set are committed. Only the
-epitope predictions need the download-and-train path, and that path is on the
-Data and Models pages.
-
-Each button runs the project's **own CLI script** as a subprocess and streams
-its output into the page — live log, progress, elapsed time, cancel. The GUI
-reimplements no analysis, so a figure in the browser and a number in
-`VALIDATION.md` come from the same code. The browser sends a task *name*, never
-a command; `webapp/tasks.py` is the allowlist that turns it into arguments.
-
-Two things it is careful about: calibration writes a **candidate** and never
-overwrites the parameter set in use until you promote it, and any result
-computed from something that has since been rebuilt is shown as **stale**
-rather than served as current. Details, and why both exist, in
-[`webapp/README.md`](webapp/README.md).
-
----
-
-## Model structure
-
-An ODE system with compartments matching C-ImmSim's: extracellular antigen,
-**follicular-DC antigen depot**, **template** (mRNA/circRNA/vector),
-**endogenous antigen**, danger signal, mature DC, macrophages, per-clone TH,
-CTL and B cells with their memory pools, plasma cells, IgM, IgG, antibody
-affinity, IL-2. One step is 8 h, as in C-ImmSim.
-
-Three mechanisms that are easy to get wrong and are handled explicitly:
-
-- **Density-dependent limitation** (C-ImmSim's `MaxLocalFact`). The IL-2 /
-  T-help loop is positive feedback; without a carrying capacity it diverges.
-- **The FDC antigen depot.** On a boost, pre-existing antibody clears free
-  antigen within days. Germinal centres run off antigen retained on follicular
-  dendritic cells, so a model gated on free antigen starves the secondary
-  response.
-- **Immune clearance of replicating templates.** saRNA and live attenuated
-  amplify; CTL killing and antibody neutralisation must control them, or they
-  saturate and express indefinitely.
-
-### Calibration
-
-Hand-tuning this many coupled rates does not converge — each fix displaces the
-imbalance elsewhere. `calibrate.py` instead states nine quantitative targets
-and searches:
-
-| Target | Band | Achieved |
-|---|---|---|
-| Primary IgG peak | 10–21 d | 17.7 d |
-| Secondary IgG peak | 4–10 d | 9.3 d |
-| Secondary/primary ratio | 5–50× | 5.8× |
-| Class switching (IgG:IgM shift) | 2–200× | 2.5× |
-| T cell contraction by 60 d | 80–99.5% | 97.9% |
-| Affinity maturation | 2–10× | 2.3× |
-
-Final score **0.0** — all nine met.
-
-```bash
-python3 calibrate.py --iters 1500
-```
-
----
-
-## Validation
-
-```bash
-python3 validate.py        # ROC + PR curves, bootstrap CIs, for both predictors
-python3 test_platforms.py  # 10 wet-lab benchmark comparisons
-```
-
-The benchmarks assert the **direction** of documented findings, two-sided and
-with physiological bounds:
+Thirteen checks that assert the **direction** of documented wet-lab findings,
+two-sided and with physiological bounds. All thirteen pass on the shipped
+parameters:
 
 | Benchmark | Result |
 |---|---|
-| mRNA beats protein on CD8 | CTL 18,806 vs 3 |
-| Alum is Th2, AS01 is Th1 | CTL/IgG ratio 0.0041 vs 0.0005 |
-| Adjuvant is required | IgG 5,881 vs 47 |
-| circRNA expresses longer | template 11 d vs 8.7 d |
-| saRNA is dose-sparing | 2.7× at a tenth of the dose |
-| Anti-vector blunts homologous boost | IgG 8,836 vs 6,323 |
-| Boost beats prime | 10,192 → 11,294; peak 16 d → 8 d |
-| Dose-response monotonic | 8,832 < 10,544 < 12,125 |
-| Live attenuated most durable | CTL memory 52,152 vs 3 |
+| mRNA beats protein on CD8 | CTL 654,833 vs 6,431 |
+| Alum is Th2, AS01 is Th1 | CTL/IgG ratio 314 vs 5.48 |
+| Adjuvant is required | IgG 1,173 vs 51 |
+| circRNA expresses longer | template 7 d vs 4 d (1.8×) |
+| saRNA is dose-sparing | 0.92× at a tenth of the dose |
+| Anti-vector blunts homologous boost | IgG 1,627 vs 1,272 |
+| Boost beats prime | peak 24 d → 19 d, 2.04× over baseline |
+| Dose-response monotonic | 1,570 < 2,450 < 2,921 |
+| Live attenuated most durable | 12.7× cumulative antigen, 113× CTL memory |
+| mRNA boosts antibody, not only CD8 | 2.04× over the pre-boost baseline |
+| B cell numbers physiological | peak B 1,269, memory 1,487, plasma 474 |
+| IgG is durable | 70% of peak at the end, on 204 long-lived plasma cells |
 | All platforms physiological | 10/10 within bounds |
+
+**These are grade C, not grade A.** The model was tuned to reproduce these
+directions, so passing them shows it is self-consistent, not that it predicts
+anything. A benchmark you tuned against cannot fail you honestly. One of them
+was in fact passing on a scale artefact until the parameters changed — see
+VALIDATION.md.
 
 ---
 
@@ -340,7 +307,22 @@ documented comparisons. They are not measured constants, and
 | `external_validation.py` | Leave-one-pathogen-out for `model.py` |
 | `stats.py` | DeLong, bootstrap, permutation, BH-FDR, calibration |
 | `scorecard.py` | Every claim graded A-D, with robustness sampling |
-| `webapp/` | Flask GUI — simulate, compare, predict, validation dashboard |
+| `dataio.py` | Opens a dataset from the bundle or a fresh harvest, and says which |
+| `harvest_eluted.py` | Mass-spec eluted ligands + proteome-sampled decoys |
+| `harvest_trials.py` | Posted fold-rise results from ClinicalTrials.gov |
+| `validate_eluted.py` | Eluted-ligand validation, stratified by allele coverage |
+| `validate_trials.py` | Clinical trial comparison, clustered by trial |
+| `webapp/app.py` | Flask GUI, all seven pages |
+| `webapp/tasks.py` | The allowlist of operations the GUI may run, and the plans |
+| `webapp/jobs.py` | Background jobs: stages, progress, cancel |
+| `webapp/verdicts.py` | The plain-language validation answers, computed from results |
+| `DATA_SOURCES.md` | Where each bundled dataset came from and what to cite |
 
-Data and trained weights are gitignored; the scripts regenerate them.
-Requires `numpy`, `pandas`, `scipy`, `scikit-learn`, `matplotlib`.
+**The datasets ship with the repository**, gzipped, about 8.6 MB in total, so
+a clone needs no network. Trained weights do not ship — they are rebuilt in
+about ten minutes from the bundled data by one button on the Setup page, which
+is both smaller than shipping them and safer than asking you to unpickle
+someone else's file.
+
+Requires `numpy`, `pandas`, `scipy`, `scikit-learn`, `matplotlib`, and `Flask`
+for the GUI.

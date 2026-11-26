@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Design &middot; immune_sim{% endblock %}
+{% block main %}
+<main class="split">
+<div id="form">
+  <h3>Antigen</h3>
+  <label class="i"><input type="radio" name="asrc" value="sequence" checked>
+    Paste a protein sequence</label>
+  <label class="i"><input type="radio" name="asrc" value="uniprot">
+    Fetch from UniProt</label>
+  <label class="i"><input type="radio" name="asrc" value="demo">
+    Use the demo antigen (SARS-CoV-2 spike)</label>
+
+  <div id="box-sequence" style="margin-top:6px">
+    <textarea id="sequence" rows="7" spellcheck="false"
+      placeholder="Paste amino acids, or a FASTA record (the > header line is ignored).
+
+MFVFLVLLPLVSSQCVNLTTRTQLPPAYTNSFTRGVYYPDKVFRSSVLHS..."></textarea>
+    <div class="sm muted" id="seqinfo">&nbsp;</div>
+  </div>
+
+  <div id="box-uniprot" hidden style="margin-top:6px">
+    <div class="grid2">
+      <span>Accession</span><input type="text" id="accession" value="P0DTC2">
+    </div>
+    <div class="sm muted">e.g. P0DTC2 (SARS-CoV-2 spike), P01579 (interferon gamma).</div>
+  </div>
+
+  <div class="grid2" style="margin-top:8px">
+    <span>Name for this run</span><input type="text" id="name" placeholder="optional">
+  </div>
+
+  <h3>Which HLA alleles<span class="q" data-tip="Leave all unticked to use every allele the models were trained on. An allele the model has <b>not</b> been trained on is not offered, because zero-shot transfer to a new allele does not work in this model: PPV in the top 1% went 0.087 to 0.121 at p=0.45, which is no measurable improvement.">?</span></h3>
+  <div id="alleles" class="sm">loading…</div>
+
+  <h3>Vaccine</h3>
+  <div class="grid2">
+    <label class="row"><span>Platform<span class="q" data-tip="How the antigen is delivered. mRNA-LNP and viral vectors express antigen <b>inside</b> cells, so they route to MHC class I and prime CD8 T cells; protein and peptide are taken up from outside and route mainly to class II.">?</span></span>
+      <select id="platform"></select></label>
+    <label class="row"><span>Adjuvant<span class="q" data-tip="The danger signal. Alum is Th2-biased (antibody); AS01 and CpG are Th1-biased (cell-mediated). RNA and vector platforms are self-adjuvanting, which is what 'intrinsic' means.">?</span></span>
+      <select id="adjuvant"></select></label>
+    <label class="row"><span>Boost with a different platform<span class="q" data-tip="Boost with a <b>different</b> platform. Avoids anti-vector immunity: antibodies raised against an adenovirus vector blunt a second dose of the same vector.">?</span></span>
+      <select id="heterologous"></select></label>
+    <span>Dose (&micro;g)</span><input type="number" id="dose" value="30" min="0.01" step="1">
+  </div>
+
+  <h3>Schedule and follow-up</h3>
+  <div class="grid2">
+    <span>Dose days<span class="q" data-tip="Days on which a dose is given, counted from day 0. '0, 28' is a prime and a boost four weeks apart.">?</span></span>
+    <input type="text" id="inject" value="0, 90">
+    <span>Follow-up (days)<span class="q" data-tip="How long to simulate. Long-lived plasma cells keep antibody up for months, so a short follow-up will miss the durable part of the response.">?</span></span>
+    <input type="number" id="days" value="240" min="10" max="1000" step="10">
+    <span>Output every (h)<span class="q" data-tip="How finely the result is sampled for the table and the plot. The integrator is adaptive, so this changes the <b>size of the output</b>, not the accuracy of the simulation. One step is 8 h internally, as in C-ImmSim.">?</span></span>
+    <input type="number" id="resolution" value="8" min="1" max="48" step="1">
+  </div>
+
+  <h3>Model</h3>
+  <div class="grid2">
+    <label class="row"><span>Parameters<span class="q" data-tip="Which fitted parameter set to use. 'calibrated_wetlab.json' is the one validated against held-out human subjects. 'none' uses the literature defaults, which over-predicted the human boost response roughly tenfold.">?</span></span>
+      <select id="calibration"><option value="wetlab">calibrated_wetlab.json (validated)</option>
+      <option value="none">literature defaults (not validated)</option></select></label>
+    <span>Replicating antigen<span class="q" data-tip="Tick for a live pathogen or a replicating vaccine: the antigen multiplies in vivo rather than only decaying.">?</span></span>
+    <input type="checkbox" id="replicating">
+  </div>
+
+  <div style="margin-top:16px">
+    <button class="primary" id="run">Predict epitopes and simulate</button>
+  </div>
+  <p class="sm muted" style="margin-top:8px">One click runs both halves: the
+  trained models rank the epitopes in your sequence, then those epitopes become
+  the T and B cell clones in the simulation. The epitopes the model is most
+  confident about carry the most weight.</p>
+</div>
+
+<div id="out">
+  <div class="card" id="empty">
+    <h3 class="t">Nothing run yet</h3>
+    <p class="muted" style="margin:0">Paste a protein sequence on the left and
+    press the button. If you have not set up the models yet, the
+    <a href="/setup">Setup</a> page does it in one click and needs no network —
+    the datasets are already in this repository.</p>
+  </div>
+
+  <div class="card" id="progress" hidden>
+    <div class="thead"><b id="pstate">Working…</b>
+      <span class="muted" id="ptime"></span></div>
+    <div class="bar ind" id="pbar" style="margin:8px 0"><i></i></div>
+    <div id="pstages"></div>
+  </div>
+
+  <div id="results" hidden>
+    <div class="card">
+      <div class="thead">
+        <h3 class="t" id="rtitle">Result</h3>
+        <span><button class="b" id="dlcsv">Download time course (CSV)</button></span>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <p class="sm muted" id="describe"></p>
+    </div>
+
+    <div class="card">
+      <h3 class="t">Predicted response</h3>
+      <div class="plotrow two">
+        <div id="plot-ab" class="plot"></div>
+        <div id="plot-cell" class="plot"></div>
+      </div>
+      <div id="plot-ag" class="plot" style="height:300px"></div>
+    </div>
+
+    <div class="card" id="epcard">
+      <div class="thead">
+        <h3 class="t">Epitopes driving this response</h3>
+        <span class="muted sm" id="epnote"></span>
+      </div>
+      <div class="tablewrap" id="eptable"></div>
+    </div>
+  </div>
+</div>
+</main>
+{% endblock %}
+{% block scripts %}<script>initDesign();</script>{% endblock %}

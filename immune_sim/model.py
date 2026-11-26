@@ -21,6 +21,8 @@ from scipy.stats import spearmanr
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import roc_auc_score
 
+import dataio
+
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 MODELS = HERE / "models"
@@ -82,7 +84,7 @@ def inv_log50k(score):
 
 
 def load():
-    d = pd.read_csv(DATA / "binding_affinity.csv")
+    d = dataio.read("binding_affinity")
     d = d.dropna(subset=["peptide", "allele", "affinity_nM", "mhc_class"])
     # One measurement per peptide/allele: geometric mean across studies.
     d["log_nm"] = np.log(d.affinity_nM)

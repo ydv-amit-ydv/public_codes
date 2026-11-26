@@ -30,6 +30,7 @@ sys.path.insert(0, str(HERE))
 from model import BINDER_NM, CANON_LEN, SEED, encode, inv_log50k, load  # noqa: E402
 from stats import (auc_ci_delong, bh_fdr, brier, calibration,           # noqa: E402
                    delong_test, fmt_p, permutation_auc)
+import dataio                                            # noqa: E402
 
 RESULTS = HERE / "results"
 RESULTS.mkdir(exist_ok=True)
@@ -76,7 +77,7 @@ def aa_composition_baseline(train, test, L):
 
 def run():
     df = load()
-    raw = pd.read_csv(HERE / "data" / "binding_affinity.csv")
+    raw = dataio.read("binding_affinity")
     raw["org"] = organism(raw)
     pep_org = (raw.groupby("peptide").org
                   .agg(lambda s: s.value_counts().index[0]))
