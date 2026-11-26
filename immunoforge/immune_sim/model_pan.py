@@ -386,9 +386,13 @@ def main():
                     help="small models, for checking the plumbing")
     ap.add_argument("--realign", type=int, default=4)
     ap.add_argument("--classes", default="I,II")
-    ap.add_argument("--eluted", default="II",
-                    help="classes to also train on eluted ligands "
-                         "(e.g. 'II', 'I,II', or 'none')")
+    ap.add_argument("--eluted", default="none",
+                    help="classes to ALSO train on eluted ligands "
+                         "('II', 'I,II', or 'none'). Default none: whether "
+                         "this helps is being measured by "
+                         "external_validation_pan.py --eluted, and the "
+                         "shipped model should not change on a hunch before "
+                         "that answers")
     args = ap.parse_args()
 
     from sklearn.metrics import roc_auc_score
