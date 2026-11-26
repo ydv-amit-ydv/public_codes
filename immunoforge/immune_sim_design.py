@@ -75,9 +75,16 @@ def _from_engine(run_id, name):
     """Epitopes from a finished engine run, through engine_adapter."""
     from common import config
     import engine_adapter
-    d = config.run_dir(run_id)
+    # NOT config.run_dir(): that calls os.makedirs, so merely asking about a
+    # run id creates a directory for it. A read path must not write, and a
+    # browser sending a stale or mistyped id was littering the workspace with
+    # empty run folders.
+    rid = str(run_id).split("_")[0]
+    if not rid or rid in (".", "..") or "/" in rid or "\\" in rid:
+        raise ValueError("That is not a run id.")
+    d = os.path.join(config.workspace(), "runs", rid)
     if not os.path.isdir(d):
-        raise ValueError(f"No engine run {run_id!r} in the workspace.")
+        raise ValueError(f"No engine run {rid!r} in the workspace.")
     try:
         ep = engine_adapter.load(d)
     except Exception as e:                                   # noqa: BLE001
