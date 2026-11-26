@@ -1,9 +1,27 @@
 # public_codes
 
-## epitope_filter_engine
+## immunoforge
 
-A local, offline web GUI that runs **eleven MHC epitope predictors** side by side and fuses
-them into one ranked peptide list — both T-cell arms in one job:
+A local, offline workbench for designing and assessing an immunogen. It is one
+application with several modules, all in one GUI:
+
+| Module | Does |
+|---|---|
+| **Pipeline / Single model** | Eleven MHC epitope predictors, fused into one ranked peptide list |
+| **Construct** | Assemble chosen epitopes into a vaccine construct, with linkers and screening |
+| **Comparison** | Several antigens or settings side by side |
+| **Simulation** | What the immune system does with those epitopes over months: T cells, B cells, class switching, affinity maturation, memory, boost response |
+| **Projects / Settings** | Stored runs, per-module install and update, health checks |
+
+It was previously called the Epitope Filter Engine. The name changed when it
+stopped being only an epitope filter; an existing install keeps working, and
+its settings file, workspace and conda environment are all still found under
+their old names.
+
+### Epitope prediction
+
+**Eleven MHC epitope predictors** side by side, fused into one ranked peptide
+list — both T-cell arms in one job:
 
 - **MHC class I (CTL/CD8):** NetMHCpan 4.2, MixMHCpred 3.0, MHCflurry 2, PRIME 2.1,
   BigMHC EL + IM, NetCTLpan 1.1, NetChop 3.1, IEDB/Calis immunogenicity (built in)
@@ -24,15 +42,15 @@ git clone https://github.com/ydv-amit-ydv/public_codes.git
 ```
 
 ```bash
-cd public_codes/epitope_filter_engine && bash start.sh
+cd public_codes/immunoforge && bash start.sh
 ```
 
 The first run installs everything it can and opens the engine on <http://localhost:5000>;
 later runs just open it. The one exception is **NetMHCpan 4.2**, which needs DTU's licence
 form — the engine runs without it and tells you where to put it.
 
-Full details, and every step by hand: [`epitope_filter_engine/INSTALL.md`](epitope_filter_engine/INSTALL.md).
-What each model gives and how the consensus works: [`epitope_filter_engine/README.md`](epitope_filter_engine/README.md).
+Full details, and every step by hand: [`immunoforge/INSTALL.md`](immunoforge/INSTALL.md).
+What each model gives and how the consensus works: [`immunoforge/README.md`](immunoforge/README.md).
 
 ## immune_sim
 
@@ -42,13 +60,13 @@ formulation — mRNA-LNP, circRNA, saRNA, protein + AS01, adenovirus, live atten
 and it simulates the T cell, B cell and antibody response over months: priming, class
 switching, affinity maturation, memory, and the faster, larger response to a boost.
 
-It reads epitopes straight from an **`epitope_filter_engine` run** (the preferred path —
+It reads epitopes straight from an **`immunoforge` run** (the preferred path —
 eleven fused predictors beat anything trained here), and falls back to its own
 IEDB-trained models (67,365 affinity records) when the engine has not been run. The circRNA platform pairs with **`circrna_opt`** in this repo.
 
 ```bash
 cd immune_sim
-python3 simulate.py --engine ../epitope_filter_engine/engine_workspace/runs/<run_id> --platform mrna_lnp
+python3 simulate.py --engine ../immunoforge/engine_workspace/runs/<run_id> --platform mrna_lnp
 python3 simulate.py --list-platforms
 python3 test_platforms.py     # 10 wet-lab benchmark comparisons
 ```
