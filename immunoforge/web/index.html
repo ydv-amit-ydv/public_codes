@@ -2554,7 +2554,10 @@ function drawEv(id, c) {
   } else if (c.kind === "bars") {
     traces.push({x:c.x, y:c.y, type:"bar", marker:{color:acc}, width:0.5,
                  text:c.y.map(v=>v>=1?v.toFixed(2):v.toFixed(3)),
-                 textposition:"outside", hoverinfo:"skip"});
+                 textposition:"outside", cliponaxis:false, hoverinfo:"skip"});
+    // headroom, or the value printed above the tallest bar is cut off
+    const top = Math.max(...c.y, c.ref || 0);
+    if (top > 0 && c.ymax == null) lay.yaxis.range = [0, top * 1.14];
   } else if (c.kind === "grouped_bars") {
     const cols = [acc, bar];
     c.series.forEach((sr,i) => traces.push({
