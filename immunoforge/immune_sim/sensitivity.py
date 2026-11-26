@@ -416,14 +416,23 @@ def verdict(tab, ep_level=None):
                if r.get("mut_anchor_drop") is not None]
     drops_n = [r["mut_non_anchor_drop"] for r in mut.values()
                if r.get("mut_non_anchor_drop") is not None]
-    add("a single point mutation is detected",
-        any(abs(d) > 0.5 for d in drops_a + drops_n),
-        "; ".join(f"{r['parent']}: anchor {r['mut_anchor_drop']}%, "
-                  f"non-anchor {r['mut_non_anchor_drop']}%, "
-                  f"random {r['mut_random_drop']}%" for r in mut.values())
-        or "not run",
-        "one substitution in 1,273 residues is a small change; a model that "
-        "cannot see it cannot be used to study escape")
+    # NOT a pass/fail. The first version of this asserted that a single
+    # substitution moves the whole-protein response, and it "passed" on
+    # drops of 0.09% and -0.49% - noise, including a negative one. A check
+    # that passes on noise is worse than no check. The honest statement is
+    # that at the whole-protein level one substitution is NOT detectable,
+    # and the epitope-level check above is where the question is answerable.
+    out["limitations"] = [{
+        "name": "a single substitution does not move the whole-protein response",
+        "detail": "; ".join(
+            f"{r['parent']}: anchor {r['mut_anchor_drop']}%, non-anchor "
+            f"{r['mut_non_anchor_drop']}%, random {r['mut_random_drop']}%"
+            for r in mut.values()) or "not run",
+        "why": "an antigen with thousands of predicted binders does not "
+               "notice losing one, so escape has to be studied at the "
+               "epitope, not by re-simulating the mutated protein and "
+               "comparing totals",
+    }]
     out["whole_protein_mutation_effect"] = {
         "anchor_mean_drop_pct": round(float(np.mean(drops_a)), 3) if drops_a else None,
         "non_anchor_mean_drop_pct": round(float(np.mean(drops_n)), 3) if drops_n else None,
@@ -441,6 +450,10 @@ def report(summary):
     for c in summary["checks"]:
         print(f"  {'PASS' if c['ok'] else 'FAIL'}  {c['name']}")
         print(f"        {c['detail']}")
+    for l in summary.get("limitations", []):
+        print(f"  NOTE  {l['name']}")
+        print(f"        {l['detail']}")
+        print(f"        {l['why']}")
     print(f"\n  {summary['passed']} of {summary['total']} checks passed")
 
 
