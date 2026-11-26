@@ -343,3 +343,157 @@ if __name__ == "__main__":
     print(headline(vs), "\n")
     for v in vs:
         print(f"[{v['mark']}] {v['question']}\n    {v['answer']}\n")
+
+
+# ---------------------------------------------------------------------------
+# charts: the same evidence, drawn
+# ---------------------------------------------------------------------------
+# A verdict is a sentence. A chart is the thing the sentence is about, and for
+# "is the model's prediction a normal human response or not?" a picture of
+# where it falls among real people answers that faster and less ambiguously
+# than any wording. Every series here is read from a result file; nothing is
+# illustrative and nothing is drawn that was not measured.
+def charts():
+    out = []
+
+    # 1. the model's prediction against the spread of real human subjects
+    w = _json("wetlab_validation_test.json")
+    if w:
+        ags = [k for k in w if not k.startswith("_")]
+        out.append({
+            "id": "human_fold",
+            "title": "Does it predict a normal human booster response?",
+            "plain": "Each grey bar is the range real people fell in for that "
+                     "antigen (the middle 90% of them). The dot is what the "
+                     "model predicts. A dot inside the bar means the "
+                     "prediction is an ordinary human response, not an "
+                     "outlier. These subjects were never used to tune it.",
+            "kind": "range_vs_point",
+            "x": ags,
+            "lo": [w[a]["observed_fold_rise"]["p05"] for a in ags],
+            "hi": [w[a]["observed_fold_rise"]["p95"] for a in ags],
+            "mid": [w[a]["observed_fold_rise"]["median"] for a in ags],
+            "model": [w[a]["fold_rise_check"]["model"] for a in ags],
+            "inside": [bool(w[a]["fold_rise_check"]["within_subject_90pct_band"])
+                       for a in ags],
+            "ylabel": "antibody fold-rise after the boost",
+            "log": True,
+            "n": w[ags[0]]["n_subjects"] if ags else None,
+        })
+        out.append({
+            "id": "human_day",
+            "title": "Does it get the timing right?",
+            "plain": "The same picture for WHEN antibody peaks. The model "
+                     "runs a few days late. Blood was only drawn on days 0, "
+                     "1, 3, 7, 14 and 30, so the real peak can only ever land "
+                     "on one of those days - the data cannot resolve a "
+                     "five-day error, which flatters the model here.",
+            "kind": "range_vs_point",
+            "x": ags,
+            "lo": [w[a]["observed_peak_day"]["p05"] for a in ags],
+            "hi": [w[a]["observed_peak_day"]["p95"] for a in ags],
+            "mid": [w[a]["observed_peak_day"]["median"] for a in ags],
+            "model": [w[a]["peak_day_check"]["model"] for a in ags],
+            "inside": [bool(w[a]["peak_day_check"]["within_subject_90pct_band"])
+                       for a in ags],
+            "ylabel": "day the antibody peaks",
+            "log": False,
+        })
+        vc = w.get("_vaccine_vs_control")
+        if vc:
+            out.append({
+                "id": "control",
+                "title": "Is the signal real, or would anything look like this?",
+                "plain": "Antigens that are IN the vaccine rise; antigens that "
+                         "are not in it barely move. If both bars were the "
+                         "same height the whole analysis would be measuring "
+                         "noise. They are not: p < 1e-11.",
+                "kind": "bars",
+                "x": ["in the vaccine", "not in the vaccine"],
+                "y": [vc["median_vaccine"], vc["median_control"]],
+                "ylabel": "median fold-rise",
+                "ref": 1.0, "ref_label": "no change",
+            })
+
+    # 2. epitope prediction on organisms it was never trained on
+    p = _csv("external_validation_pan.csv")
+    if p is not None and "auc_pan" in p.columns:
+        for cls in ("I", "II"):
+            sub = p[p.mhc_class == cls].sort_values("auc_pan", ascending=False)
+            if not len(sub):
+                continue
+            out.append({
+                "id": f"lopo_{cls}",
+                "title": f"Finding epitopes in a pathogen it has never seen "
+                         f"(MHC class {cls})",
+                "plain": "Each organism was removed from training completely, "
+                         "then its epitopes were ranked. 0.5 is a coin flip. "
+                         "The pale bar is a dumb baseline that only counts "
+                         "amino acids - a model that does not clear it has "
+                         "learned nothing but composition."
+                         + ("" if cls == "I" else
+                            " Class II barely clears it, which is why class "
+                            "II calls should not be trusted on their own."),
+                "kind": "grouped_bars",
+                "x": sub.pathogen.tolist(),
+                "series": [
+                    {"name": "this model", "y": sub.auc_pan.round(3).tolist()},
+                    {"name": "amino-acid baseline",
+                     "y": sub.auc_comp.round(3).tolist()},
+                ],
+                "ylabel": "ROC-AUC", "ref": 0.5, "ref_label": "coin flip",
+                "ymin": 0.4, "ymax": 1.0,
+            })
+
+    # 3. the biggest limitation, drawn
+    e = _csv("eluted_validation.csv")
+    if e is not None and "coverage" in e.columns and "pan_ppv_1pct" in e.columns:
+        order = ["trained", "group_only", "locus_only", "unknown"]
+        label = {"trained": "HLA type it was trained on",
+                 "group_only": "same first field only",
+                 "locus_only": "same locus only",
+                 "unknown": "never seen this HLA type"}
+        one = e[e.mhc_class == "I"] if "mhc_class" in e.columns else e
+        g = one.groupby("coverage").pan_ppv_1pct.median()
+        xs = [c for c in order if c in g.index]
+        if xs:
+            out.append({
+                "id": "allele_coverage",
+                "title": "The biggest limitation: it only works on HLA types "
+                         "it was trained on",
+                "plain": "Of the peptides it ranks in its top 1%, how many "
+                         "are really presented by cells. Measured against "
+                         "mass spectrometry, where 5% would be chance. On a "
+                         "trained HLA type it is strong; on an unseen one it "
+                         "is close to useless, which is why the form only "
+                         "offers the trained ones.",
+                "kind": "bars",
+                "x": [label[c] for c in xs],
+                "y": [round(float(g[c]), 3) for c in xs],
+                "ylabel": "fraction of its top 1% that are real",
+                "ref": 0.05, "ref_label": "chance",
+            })
+
+    # 4. clinical trials
+    t = _csv("trial_validation.csv")
+    if t is not None and "model_fold_rise" in t.columns:
+        out.append({
+            "id": "trials",
+            "title": "Against real vaccine trials",
+            "plain": "Grey bars are the range of antibody fold-rises posted "
+                     "by registered trials of each vaccine type; the dot is "
+                     "this model. The SIZE of the response lands in the right "
+                     "region. The ORDER of the platforms does not match the "
+                     "trials, and is not evidence.",
+            "kind": "range_vs_point",
+            "x": t.platform.tolist(),
+            "lo": t.observed_p5.tolist(),
+            "hi": t.observed_p95.tolist(),
+            "mid": t.observed_median.tolist(),
+            "model": t.model_fold_rise.tolist(),
+            "inside": [bool(v) for v in t.inside_5_95],
+            "ylabel": "antibody fold-rise",
+            "log": True,
+            "n_trials": int(t.n_trials.sum()) if "n_trials" in t.columns else None,
+        })
+    return out

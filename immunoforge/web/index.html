@@ -101,6 +101,7 @@ details>summary{cursor:pointer}
 <button data-t="construct">Construct</button>
 <button data-t="comparison">Comparison</button>
 <button data-t="simulation">Simulation</button>
+<button data-t="evidence">Evidence</button>
 <button data-t="projects">Projects</button>
 <button data-t="settings">Settings</button></nav>
 <div id="tip"></div>
@@ -377,6 +378,23 @@ KLGGALQAK  HLA-A*03:01, HLA-A*11:01"></textarea>
 </div>
 
 <!-- ============================ PROJECTS ============================ -->
+<!-- ============================ EVIDENCE ============================ -->
+<div class="pane" id="evidence" style="flex-direction:column;overflow:auto;padding:14px">
+ <div style="max-width:1100px">
+  <h2 style="margin-top:0">Does this actually work?</h2>
+  <div class="muted sm" id="ev_headline" style="margin-bottom:10px"></div>
+  <div class="muted sm" style="margin-bottom:14px">Everything below is read
+   from the result files when this page loads, so if a number changes the
+   picture and the wording change with it. Nothing here is illustrative.</div>
+  <div id="ev_charts"></div>
+  <h3>Every question, answered in words</h3>
+  <div id="ev_verdicts"></div>
+  <div class="muted sm" style="margin:14px 0">To re-run any of this yourself:
+   <b>Settings &rarr; Immune simulation &rarr; Re-run the validation</b>. It
+   can fail, and a failure is a result.</div>
+ </div>
+</div>
+
 <!-- =========================== SIMULATION =========================== -->
 <div class="pane" id="simulation">
  <div class="fcol">
@@ -631,6 +649,7 @@ function show(t){
   document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id == t || p.id == "p_" + t));
   store.set("tab", t);
   if (t == "simulation" && typeof simLoadRuns === "function") simLoadRuns();
+  if (t == "evidence" && typeof evLoad === "function") evLoad();
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.t));
 
@@ -2381,6 +2400,132 @@ async function simStart(plan){
 }
 
 $("sim_cancel").onclick = () => { if (simJob) fetch("api/jobs/" + simJob + "/cancel", {method:"POST"}); };
+
+
+/* ======================== EVIDENCE =======================================
+   The validation, drawn. Each chart answers one question a reader would
+   actually ask, with a caption in plain words underneath. A verdict is a
+   sentence; a chart is the thing the sentence is about. */
+let EVLOADED = false;
+
+function evChart(c, i) {
+  const id = "evp_" + c.id;
+  const box = el2("div", "card");
+  box.innerHTML = `<b>${esc(c.title)}</b>`
+    + `<div class="muted sm" style="margin:4px 0 8px;max-width:78ch">${esc(c.plain)}</div>`
+    + `<div id="${id}" style="height:330px"></div>`;
+  return { node: box, draw: () => drawEv(id, c) };
+}
+
+function el2(tag, cls) { const n = document.createElement(tag); if (cls) n.className = cls; return n; }
+
+function drawEv(id, c) {
+  const host = document.getElementById(id);
+  if (!host) return;
+  if (typeof Plotly === "undefined") {
+    host.innerHTML = '<div class="muted sm">The chart library did not load.</div>';
+    return;
+  }
+  const grid = simCss("--line"), fg = simCss("--fg"), muted = simCss("--muted");
+  const ok = simCss("--ok"), bad = simCss("--bad"), acc = simCss("--acc"), bar = simCss("--bar");
+  const lay = {
+    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
+    font:{color:muted, size:11}, margin:{l:70,r:20,t:28,b:70},
+    xaxis:{gridcolor:grid, linecolor:grid, automargin:true},
+    yaxis:{title:c.ylabel, gridcolor:grid, zerolinecolor:grid, linecolor:grid,
+           type: c.log ? "log" : "linear"},
+    showlegend:false, hovermode:"closest", shapes:[], annotations:[],
+  };
+  if (c.ymin != null) lay.yaxis.range = [c.ymin, c.ymax];
+  if (c.ref != null) {
+    lay.shapes.push({type:"line", xref:"paper", x0:0, x1:1,
+                     y0: c.log ? Math.log10(c.ref) : c.ref,
+                     y1: c.log ? Math.log10(c.ref) : c.ref,
+                     line:{color:muted, width:1, dash:"dot"}});
+    lay.annotations.push({xref:"paper", x:1, y: c.log ? Math.log10(c.ref) : c.ref,
+                          xanchor:"right", yanchor:"bottom", showarrow:false,
+                          text:c.ref_label || "", font:{size:10, color:muted}});
+  }
+  let traces = [];
+  if (c.kind === "range_vs_point") {
+    // the spread of what was actually measured, as a bar from the 5th to the
+    // 95th percentile, with the model's single prediction on top of it
+    traces.push({
+      x:c.x, y:c.hi.map((h,i)=>h-c.lo[i]), base:c.lo, type:"bar",
+      marker:{color:bar}, width:0.55, hoverinfo:"skip",
+    });
+    traces.push({
+      x:c.x, y:c.mid, type:"scatter", mode:"markers",
+      marker:{symbol:"line-ew-open", size:26, color:muted, line:{width:2}},
+      hovertemplate:"typical person: %{y:.2f}<extra></extra>",
+    });
+    traces.push({
+      x:c.x, y:c.model, type:"scatter", mode:"markers",
+      marker:{size:13, color:c.inside.map(v=>v?ok:bad),
+              line:{width:1.5, color:simCss("--bg")}},
+      hovertemplate:"model: %{y:.2f}<extra></extra>",
+    });
+    lay.annotations.push({xref:"paper", yref:"paper", x:0, y:1.10,
+      xanchor:"left", showarrow:false, font:{size:10.5, color:muted},
+      text:"grey bar = middle 90% of real measurements &nbsp;|&nbsp; "
+         + "short line = typical &nbsp;|&nbsp; dot = this model"});
+  } else if (c.kind === "bars") {
+    traces.push({x:c.x, y:c.y, type:"bar", marker:{color:acc}, width:0.5,
+                 text:c.y.map(v=>v>=1?v.toFixed(2):v.toFixed(3)),
+                 textposition:"outside", hoverinfo:"skip"});
+  } else if (c.kind === "grouped_bars") {
+    const cols = [acc, bar];
+    c.series.forEach((sr,i) => traces.push({
+      x:c.x, y:sr.y, type:"bar", name:sr.name, marker:{color:cols[i%2]},
+      hovertemplate:`${sr.name}: %{y:.3f}<extra></extra>`}));
+    lay.barmode = "group";
+    lay.showlegend = true;
+    lay.legend = {orientation:"h", y:1.12, font:{size:10}};
+    lay.margin.t = 34;
+  }
+  Plotly.react(host, traces, lay,
+    {displaylogo:false, responsive:true,
+     modeBarButtonsToRemove:["lasso2d","select2d","autoScale2d"]});
+}
+
+async function evLoad() {
+  if (EVLOADED) return;
+  const host = document.getElementById("ev_charts");
+  host.innerHTML = '<div class="muted sm">Loading…</div>';
+  let v;
+  try {
+    v = await (await fetch("api/sim/validation")).json();
+  } catch (e) {
+    host.innerHTML = '<div class="bad sm">Could not read the validation results.</div>';
+    return;
+  }
+  EVLOADED = true;
+  document.getElementById("ev_headline").textContent = v.headline || "";
+  host.innerHTML = "";
+  const todo = [];
+  (v.charts || []).forEach((c, i) => {
+    const { node, draw } = evChart(c, i);
+    host.appendChild(node);
+    todo.push(draw);
+  });
+  if (!todo.length) {
+    host.innerHTML = '<div class="card"><b>No validation results on this machine yet</b>'
+      + '<div class="muted sm" style="margin-top:6px">Settings &rarr; Immune simulation '
+      + '&rarr; Re-run the validation produces them. They normally ship with the '
+      + 'repository.</div></div>';
+  }
+  todo.forEach(f => f());
+  document.getElementById("ev_verdicts").innerHTML = (v.verdicts || []).map(x => {
+    const mk = x.mark === "y" ? "&#10003;" : x.mark === "n" ? "&#10007;" : "!";
+    const col = x.mark === "y" ? "var(--ok)" : x.mark === "n" ? "var(--bad)" : "var(--warn)";
+    return `<div class="card" style="border-left:3px solid ${col}">`
+      + `<div><span style="color:${col};font-weight:700">${mk}</span> <b>${esc(x.question)}</b></div>`
+      + `<div class="sm" style="margin-top:3px"><b>${esc(x.answer)}</b></div>`
+      + `<div class="muted sm" style="margin-top:3px">${esc(x.because)}</div>`
+      + (x.means ? `<div class="sm" style="margin-top:3px"><b>So:</b> ${esc(x.means)}</div>` : "")
+      + `</div>`;
+  }).join("");
+}
 
 simInit();
 

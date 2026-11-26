@@ -312,4 +312,5 @@ def register(app):
         sys.path.insert(0, os.path.join(SIM, "webapp"))
         import verdicts
         vs = verdicts.all_verdicts()
-        return jsonify(verdicts=vs, headline=verdicts.headline(vs))
+        return jsonify(verdicts=vs, headline=verdicts.headline(vs),
+                       charts=verdicts.charts())
