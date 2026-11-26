@@ -1,0 +1,6 @@
+platform,adjuvant_simulated,n_measurements,n_trials,unit,observed_median,median_ci_lo,median_ci_hi,observed_p5,observed_p95,model_fold_rise,model_percentile,inside_5_95,inside_median_ci
+inactivated,alum,1223,11,one median fold-rise per trial,4.75,2.2,7.05,1.55,7.725,5.113,54.5,True,True
+live_attenuated,intrinsic,516,18,one median fold-rise per trial,2.425,1.795,4.195,1.077,25.372,1.603,22.2,True,False
+mrna_lnp,intrinsic,3500,46,one median fold-rise per trial,4.2,2.835,5.71,1.972,63.207,2.036,6.5,True,False
+protein,alum,5565,58,one median fold-rise per trial,8.325,6.748,11.51,1.334,31.509,3.849,19.0,True,False
+sarna_lnp,intrinsic,200,4,one median fold-rise per trial,7.75,2.75,11.4,2.968,11.385,1.539,0.0,False,False

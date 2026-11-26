@@ -323,6 +323,59 @@ def _():
             f"{p['LLPC_end']:,.0f} long-lived plasma cells")
 
 
+@check("response_depends_on_the_antigen",
+       "Two different proteins must not give the same response. This check "
+       "exists because C-ImmSim was reported giving the same output for an "
+       "antigenic protein and for GAPDH under the same parameters, and this "
+       "model had the identical defect: weights were rescaled so the best "
+       "epitope of EVERY antigen became 1.0, so every antigen primed equally "
+       "hard. Human GAPDH produced a LARGER antibody peak (1,903) than "
+       "SARS-CoV-2 spike (1,825). Weights are now absolute.")
+def _():
+    import pandas as pd
+    from dynamics import Sim, load_epitopes
+
+    def peak(table):
+        ep = load_epitopes(table)
+        sim = Sim(ep, p=params(), injections=[(2, None, "intrinsic")],
+                  platform="mrna_lnp", dose_ug=30)
+        return float(sim.run(n_steps=400).IgG.max()), float(ep.weight.sum())
+
+    # Two synthetic antigens that differ only in epitope QUALITY: same number
+    # of epitopes, same alleles, same lengths. A model whose weights are
+    # rescaled to the best epitope cannot tell these apart at all.
+    base = dict(mhc_class=["I"] * 6 + ["II"] * 4,
+                allele=["HLA-A*02:01"] * 6 + ["HLA-DRB1*01:01"] * 4,
+                peptide=["YLQPRTFLL", "KIADYNYKL", "NYNYLYRLF", "GVYFASTEK",
+                         "LLYDANYFL", "KLNDLCFTN",
+                         "SFELLHAPATVCGPK", "NLLLQYGSFCTQLN",
+                         "TRFQTLLALHRSYLT", "IWLGFIAGLIAIVMV"],
+                call=["strong"] * 10)
+    strong = pd.DataFrame(dict(base, pred_IC50_nM=[5, 8, 12, 20, 30, 45,
+                                                   15, 25, 40, 60]))
+    weak = pd.DataFrame(dict(base, pred_IC50_nM=[900, 1200, 1500, 2000, 2600,
+                                                 3200, 1100, 1800, 2400, 3000]))
+    hi, w_hi = peak(strong)
+    lo, w_lo = peak(weak)
+    assert w_hi > 2 * w_lo, (w_hi, w_lo)
+    assert hi > 1.5 * lo, (
+        f"strong-epitope antigen {hi:.0f} vs weak-epitope antigen {lo:.0f}: "
+        f"the response barely depends on the antigen")
+
+    # And tolerance: an antigen whose epitopes are all host-identical has no
+    # repertoire left, so it cannot be simulated as an immunogen at all.
+    selfish = strong.copy()
+    selfish["host_self"] = "identical"
+    try:
+        load_epitopes(selfish)
+        raise AssertionError("a wholly self protein was accepted as an immunogen")
+    except ValueError:
+        pass
+    return (f"strong-epitope antigen peak IgG {hi:,.0f} vs weak-epitope "
+            f"{lo:,.0f} ({hi / lo:.1f}x); summed weight {w_hi:.1f} vs "
+            f"{w_lo:.1f}; an all-self protein is refused")
+
+
 @check("all_platforms_stay_physiological",
        "No platform may produce cell or antibody numbers outside a "
        "physiological range - a runaway ODE can pass a one-sided ordinal "

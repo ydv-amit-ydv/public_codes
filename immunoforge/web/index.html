@@ -2215,8 +2215,14 @@ async function simRun(){
   }catch(e){
     $("sim_busy").style.display = "none";
     $("sim_empty").style.display = "";
-    $("sim_empty").innerHTML = `<b class="bad">Could not simulate</b>`
-      + `<div class="sm" style="margin-top:6px">${esc(e.message)}</div>`;
+    const isSelf = /central tolerance/i.test(e.message);
+    $("sim_empty").innerHTML =
+      `<b class="${isSelf ? "warn" : "bad"}">`
+      + (isSelf ? "No response: this protein is self" : "Could not simulate")
+      + `</b><div class="sm" style="margin-top:6px">${esc(e.message)}</div>`
+      + (isSelf ? `<div class="muted sm" style="margin-top:6px">This is the `
+          + `model answering, not failing. A protein the host already makes `
+          + `has no T cell repertoire left to respond to it.</div>` : "");
   }finally{
     $("sim_run_btn").disabled = false;
   }
@@ -2226,7 +2232,13 @@ function simRender(j){
   $("sim_results").style.display = "";
   const a = j.antigen;
   $("sim_title").textContent = a.name + (a.length ? ` · ${a.length} residues` : "");
-  $("sim_prov").textContent = a.provenance || "";
+  // Say what central tolerance did. A self protein giving no response is the
+  // correct answer, not a failure, and the user has to be able to see which
+  // of the two it was.
+  const tol = a.tolerance ? `<div style="margin-top:3px">${esc(a.tolerance)}</div>` : "";
+  const warn = a.tolerance_applied === false
+    ? ' <span class="warn">(tolerance not applied)</span>' : "";
+  $("sim_prov").innerHTML = esc(a.provenance || "") + warn + tol;
   $("sim_describe").textContent = j.describe || "";
 
   const s = j.summary;

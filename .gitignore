@@ -110,7 +110,15 @@ immunoforge/immune_sim/models/calibrated_wetlab_prev.json
 immunoforge/immune_sim/data/cmipb_*.csv
 immunoforge/immune_sim/results/*.json
 !immunoforge/immune_sim/results/wetlab_validation_*.json
-# validation outputs are small and are the evidence for the README claims
+# validation outputs are small and are the evidence for the README claims,
+# AND the Simulation tab's "How good is this?" reads them at page load - so
+# leaving them untracked meant four of the nine verdicts said "not tested yet"
+# in a fresh clone, which reads as the model being unvalidated rather than the
+# results simply not having been shipped.
 !immunoforge/immune_sim/results/external_validation.csv
+!immunoforge/immune_sim/results/external_validation_pan.csv
+!immunoforge/immune_sim/results/eluted_validation.csv
+!immunoforge/immune_sim/results/trial_validation.csv
+!immunoforge/immune_sim/results/trial_validation.json
 !immunoforge/immune_sim/results/wetlab_validation_*.csv
 !immunoforge/immune_sim/results/scorecard.csv

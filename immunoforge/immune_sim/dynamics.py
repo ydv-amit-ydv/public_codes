@@ -162,12 +162,38 @@ def hill(x, k):
 
 
 # --------------------------------------------------------------- epitope load
-def load_epitopes(csv, top_i=4, top_ii=3, use_immunogenicity=True):
+# Central tolerance: how much of a clone survives thymic selection, by how
+# closely its epitope matches the host's own proteome. A T cell whose receptor
+# recognises a self peptide is deleted, so a self protein has essentially no
+# repertoire left to respond to it.
+#
+# "identical" is a 9-mer shared exactly with the host: deleted outright.
+# "near" is within one mismatch: partially deleted, and the survivors are the
+# cells that cause autoimmunity, so they are kept small rather than zeroed.
+TOLERANCE = {"identical": 0.0, "near": 0.15, "distinct": 1.0}
+
+
+def load_epitopes(csv, top_i=4, top_ii=3, use_immunogenicity=True,
+                  apply_tolerance=True):
     """
     Take predicted epitopes and turn them into clones with weights.
 
     weight = binding strength (log50k) x predicted immunogenicity (if a model
-    for that allele exists). This is the immunodominance hierarchy.
+    for that allele exists) x how much of that clone survives central
+    tolerance. This is the immunodominance hierarchy.
+
+    The weight is ABSOLUTE, not rescaled so that the best epitope is 1.0.
+    Rescaling was a real defect: it gave every antigen a clone at full weight,
+    so a protein with weak epitopes primed as hard as one with superb ones,
+    and the simulated response barely depended on which protein you gave it.
+    That is the failure mode reported for C-ImmSim, and this model had it too:
+    human GAPDH produced a LARGER antibody peak than SARS-CoV-2 spike.
+
+    Tolerance is applied when the table carries a `host_self` column
+    ("identical" / "near" / "distinct"), which the host-proteome check
+    produces. Without that column no tolerance is applied and `attrs` records
+    that, because silently treating a self protein as foreign is exactly the
+    bug above.
     """
     d = csv if isinstance(csv, pd.DataFrame) else pd.read_csv(csv)
     d = d[d.call != "non-binder"].copy()
@@ -209,8 +235,26 @@ def load_epitopes(csv, top_i=4, top_ii=3, use_immunogenicity=True):
     # Combined weight. Where no immunogenicity model exists, fall back to
     # binding alone rather than inventing a probability.
     d["weight"] = d.bind_w * np.where(d.immuno_p.notna(), d.immuno_p, 1.0)
-    d["weight"] = d.weight / d.weight.max()
-    return d.sort_values(["mhc_class", "weight"], ascending=[True, False])
+
+    tol_applied, n_deleted = False, 0
+    if apply_tolerance and "host_self" in d.columns:
+        surv = d.host_self.map(TOLERANCE).fillna(1.0).astype(float)
+        n_deleted = int((surv == 0.0).sum())
+        d["tolerance"] = surv
+        d["weight"] = d.weight * surv
+        tol_applied = True
+        d = d[d.weight > 0].copy()
+        if d.empty:
+            raise ValueError(
+                "Every predicted epitope in this protein is identical to a "
+                "host protein, so central tolerance deletes all of them: "
+                "there is no repertoire left to respond. A self protein is "
+                "not an immunogen, and that is the answer, not an error.")
+
+    out = d.sort_values(["mhc_class", "weight"], ascending=[True, False])
+    out.attrs["tolerance_applied"] = tol_applied
+    out.attrs["clones_deleted_by_tolerance"] = n_deleted
+    return out
 
 
 # -------------------------------------------------------------------- the ODE

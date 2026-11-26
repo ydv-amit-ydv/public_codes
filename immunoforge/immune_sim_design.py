@@ -118,6 +118,39 @@ def _from_sequence(seq, alleles, name):
     return binders, name
 
 
+def _add_host_self(table):
+    """Mark each epitope as identical / near / distinct to the host proteome.
+
+    This is the engine's own host-proteome check, and it is what lets the
+    simulation tell a self protein from a foreign one. Without it a human
+    housekeeping protein simulates as a strong immunogen, which is the defect
+    reported for C-ImmSim and which this model shared.
+
+    Returns (table, note). The note is shown to the user: if the proteome has
+    not been downloaded the simulation still runs, but it runs WITHOUT
+    tolerance, and that has to be said rather than quietly assumed away.
+    """
+    try:
+        from common import hostself
+        if not hostself.available():
+            return table, ("the host proteome is not downloaded, so central "
+                           "tolerance was NOT applied: a self protein will "
+                           "simulate as if it were foreign. Settings \u2192 "
+                           "Host proteome downloads it, about 8 MB.")
+        ix = hostself.index()
+    except Exception as e:                                   # noqa: BLE001
+        return table, (f"the host-proteome check could not run ({e}), so "
+                       f"central tolerance was NOT applied.")
+    table = table.copy()
+    table["host_self"] = [hostself.check(str(p), ix)["Host_Self"]
+                          for p in table.peptide]
+    n_self = int((table.host_self == "identical").sum())
+    frac = n_self / max(len(table), 1)
+    note = (f"{n_self:,} of {len(table):,} epitopes ({frac:.0%}) are identical "
+            f"to a host protein and are deleted by central tolerance")
+    return table, note
+
+
 def design(payload):
     import platforms as PF
     from dynamics import Sim, load_epitopes
@@ -149,6 +182,7 @@ def design(payload):
                       "pathogen these reach 0.873 ROC-AUC for class I and "
                       "0.748 for class II")
 
+    table, tol_note = _add_host_self(table)
     ep = load_epitopes(table)
 
     # --- parameters -------------------------------------------------------
@@ -222,7 +256,11 @@ def design(payload):
 
     return {
         "antigen": {"name": name, "length": len(seq) or None,
-                    "source": source, "provenance": provenance},
+                    "source": source, "provenance": provenance,
+                    "tolerance": tol_note,
+                    "tolerance_applied": bool(ep.attrs.get("tolerance_applied")),
+                    "deleted_by_tolerance":
+                        int(ep.attrs.get("clones_deleted_by_tolerance", 0))},
         "epitopes": {
             "columns": cols,
             "rows": top.where(pd.notna(top), None).values.tolist(),

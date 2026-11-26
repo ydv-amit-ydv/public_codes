@@ -1,0 +1,19 @@
+{
+  "n_measurements": 14364,
+  "n_trials": 221,
+  "pooled_median_of_trial_medians": 5.705,
+  "clustering": "one median fold-rise per trial; bootstrap over trials",
+  "pooled_median_ci": [
+    4.8,
+    6.85
+  ],
+  "model_protein_alum": 3.849,
+  "platforms_inside_5_95": 4,
+  "platforms_tested": 5,
+  "between_platform": {
+    "spearman_rho": 0.2,
+    "permutation_p": 0.7837,
+    "n_platforms": 5
+  },
+  "confound": "platform is not randomised across trials; antigen, host age, prior immunity, schedule and assay differ between strata"
+}
